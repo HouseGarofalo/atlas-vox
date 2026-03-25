@@ -1,0 +1,23 @@
+# Atlas Vox GPU Worker — CUDA-enabled Celery worker
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-dev python3-pip \
+    espeak-ng ffmpeg git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY backend/pyproject.toml backend/README.md ./
+COPY backend/app ./app
+
+RUN pip3 install --no-cache-dir . && \
+    pip3 install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+RUN mkdir -p /app/storage/samples /app/storage/preprocessed /app/storage/output /app/storage/models
+
+ENV PYTHONUNBUFFERED=1
+ENV NVIDIA_VISIBLE_DEVICES=all
+
+CMD ["celery", "-A", "app.tasks.celery_app", "worker", \
+     "--loglevel=info", "--queues=training,preprocessing", \
+     "--concurrency=1"]

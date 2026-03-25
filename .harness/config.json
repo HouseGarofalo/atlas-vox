@@ -1,0 +1,55 @@
+{
+  "name": "atlas-vox",
+  "description": "Intelligent Voice Training & Customization Platform — 9 TTS providers, React UI, Python CLI, REST API, MCP server",
+  "project_type": "fullstack",
+  "language": "python",
+  "framework": "fastapi",
+  "frontend_framework": "react",
+  "database": "sqlite",
+  "package_manager": "pip",
+  "max_features": 50,
+  "max_iterations": 100,
+  "model": "claude-opus-4-6",
+  "testing_strategy": "full",
+  "browser_testing": "playwright",
+  "archon_project_id": "f8f125bb-e15e-4632-a4f4-03b6b0870687",
+  "github_repo": null,
+  "phases": [
+    {
+      "id": 1,
+      "name": "Foundation",
+      "status": "complete",
+      "description": "Project scaffolding, database, config, Kokoro provider"
+    },
+    {
+      "id": 2,
+      "name": "Audio Pipeline & Training",
+      "status": "pending",
+      "description": "Upload audio, preprocess, queue training jobs, track progress, version models"
+    },
+    {
+      "id": 3,
+      "name": "All Providers & Synthesis",
+      "status": "pending",
+      "description": "All 9 providers, synthesis with chunking, streaming, batch, comparison"
+    },
+    {
+      "id": 4,
+      "name": "Web UI",
+      "status": "pending",
+      "description": "Complete React frontend with all 8 pages"
+    },
+    {
+      "id": 5,
+      "name": "CLI & MCP Server",
+      "status": "pending",
+      "description": "Full CLI tool and MCP server for AI agent integration"
+    },
+    {
+      "id": 6,
+      "name": "Testing, Docker, Documentation",
+      "status": "pending",
+      "description": "Test coverage, containerized deployment, documentation"
+    }
+  ]
+}

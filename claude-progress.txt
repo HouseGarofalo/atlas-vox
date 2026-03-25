@@ -1,0 +1,55 @@
+# Project Progress: Atlas Vox
+
+## Session: 2026-03-25 22:40
+
+### ALL 6 PHASES + CODE REVIEW FIXES COMPLETE
+
+- [x] Phase 1: Foundation — 86 scaffolded files
+- [x] Phase 2: Audio Pipeline & Training Infrastructure
+- [x] Phase 3: All Providers & Full Synthesis Pipeline
+- [x] Phase 4: Web UI — Complete React Frontend
+- [x] Phase 5: CLI & MCP Server
+- [x] Phase 6: Testing, Docker, Documentation
+- [x] Code Review Fixes — 12 issues resolved
+
+### Code Review Fixes Applied (all 12/12)
+
+**Critical (5 fixed):**
+1. Celery dispatch after DB commit — `training_service.py` now commits before `delay()`
+2. Event loop blocking — `run_sync()` utility in `base.py`, applied to all 7 providers
+3. Upload size limit — 50MB per file, 20 files max in `samples.py`
+4. MCP auth — real API key validation against DB in `transport.py`
+5. WebSocket auth — token query param validation in `training.py`
+
+**Important (7 fixed):**
+6. SSRF protection — URL blocklist for private/internal IPs in `webhook_dispatcher.py`
+7. File handle leak — `contextlib.ExitStack` in ElevenLabs `clone_voice`
+8. Audio auth — `CurrentUser` dependency added to `audio.py`
+9. Comparison docstring — corrected to "sequentially"
+10. Batch limit — `max_length=100` on `BatchSynthesisRequest.lines`
+11. Celery failure — re-raises exception so Celery records FAILURE state
+12. Unused import — removed `import time` and `import asyncio` from comparison_service
+
+### Validation
+- Full syntax check: 97 Python files, 0 errors
+- All test files valid
+- All provider imports updated with `run_sync`
+
+### Files Modified for Fixes (17)
+- backend/app/providers/base.py — added `run_sync()` utility
+- backend/app/providers/coqui_xtts.py — `run_sync` for TTS calls
+- backend/app/providers/elevenlabs.py — `run_sync` + `ExitStack` for clone_voice
+- backend/app/providers/azure_speech.py — `run_sync` for SDK calls
+- backend/app/providers/styletts2.py — `run_sync` for inference
+- backend/app/providers/cosyvoice.py — `run_sync` for inference_sft
+- backend/app/providers/dia.py — `run_sync` for generate
+- backend/app/providers/dia2.py — `run_sync` for generate
+- backend/app/services/training_service.py — commit before Celery dispatch
+- backend/app/services/webhook_dispatcher.py — SSRF blocklist, generic error msgs
+- backend/app/services/comparison_service.py — fixed docstring, removed unused imports
+- backend/app/api/v1/endpoints/samples.py — file size/count limits
+- backend/app/api/v1/endpoints/training.py — WebSocket token auth
+- backend/app/api/v1/endpoints/audio.py — CurrentUser auth
+- backend/app/mcp/transport.py — real API key validation
+- backend/app/schemas/synthesis.py — batch lines max_length=100
+- backend/app/tasks/training.py — re-raise on failure

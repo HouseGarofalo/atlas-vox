@@ -1,0 +1,37 @@
+version: "3.9"
+
+# GPU override — extends docker-compose.yml
+# Usage: docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up
+
+services:
+  gpu-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu-worker
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./atlas_vox.db
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/app/storage
+      - COQUI_XTTS_GPU_MODE=docker_gpu
+      - STYLETTS2_GPU_MODE=docker_gpu
+      - COSYVOICE_GPU_MODE=docker_gpu
+      - DIA_GPU_MODE=docker_gpu
+      - DIA2_GPU_MODE=docker_gpu
+    volumes:
+      - storage_data:/app/storage
+      - db_data:/app
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  storage_data:
+  redis_data:
+  db_data:
