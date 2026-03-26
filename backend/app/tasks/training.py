@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +13,39 @@ import structlog
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger(__name__)
+
+
+def _ensure_wav(file_path: Path) -> Path:
+    """Convert to WAV if not already WAV. Returns path to WAV file.
+
+    Uses ffmpeg for conversion to 16kHz mono PCM. This ensures local
+    providers like Coqui XTTS can read the audio. Cloud providers
+    (ElevenLabs) accept M4A directly so this is only called for
+    providers that require WAV.
+    """
+    if file_path.suffix.lower() == ".wav":
+        return file_path
+    wav_path = file_path.with_suffix(".wav")
+    if wav_path.exists():
+        return wav_path
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(file_path),
+                "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le",
+                str(wav_path),
+            ],
+            capture_output=True,
+            check=True,
+        )
+        logger.info("converted_to_wav", source=str(file_path), target=str(wav_path))
+    except FileNotFoundError:
+        logger.warning("ffmpeg_not_found", hint="Install ffmpeg for automatic audio conversion")
+        return file_path  # Fall back to original if ffmpeg unavailable
+    except subprocess.CalledProcessError as exc:
+        logger.warning("ffmpeg_conversion_failed", source=str(file_path), error=exc.stderr.decode(errors="replace"))
+        return file_path  # Fall back to original
+    return wav_path
 
 
 def _run_async(coro):
@@ -87,6 +121,20 @@ async def _execute_training(job_id: str, task) -> dict:
 
             if not provider_samples:
                 raise ValueError("No audio samples available for training")
+
+            # Convert non-WAV files to WAV for local providers that require it.
+            # Cloud providers (e.g. ElevenLabs) accept M4A/MP3 directly.
+            # Heuristic: if provider only supports WAV output, it likely
+            # needs WAV input too. Cloud providers list multiple formats.
+            if len(capabilities.supported_output_formats) == 1 and capabilities.supported_output_formats[0] == "wav":
+                for i, ps in enumerate(provider_samples):
+                    wav_path = _ensure_wav(ps.file_path)
+                    if wav_path != ps.file_path:
+                        provider_samples[i] = ProviderSample(
+                            file_path=wav_path,
+                            duration_seconds=ps.duration_seconds,
+                            sample_rate=16000,
+                        )
 
             task.update_state(state="PROGRESS", meta={
                 "percent": 25, "status": "Training started...", "job_id": job_id,

@@ -18,7 +18,7 @@ export default function ProfilesPage() {
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"choose" | "training">("choose");
-  const [form, setForm] = useState({ name: "", description: "", language: "en", provider_name: "kokoro" });
+  const [form, setForm] = useState({ name: "", description: "", language: "en", provider_name: "" });
 
   useEffect(() => {
     fetchProfiles();
@@ -32,7 +32,7 @@ export default function ProfilesPage() {
       toast.success("Profile created");
       setShowCreate(false);
       setCreateMode("choose");
-      setForm({ name: "", description: "", language: "en", provider_name: "kokoro" });
+      setForm({ name: "", description: "", language: "en", provider_name: "" });
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -48,7 +48,9 @@ export default function ProfilesPage() {
     }
   };
 
-  // Filter to providers that support cloning or fine-tuning for training mode
+  // Filter to providers that support cloning or fine-tuning for training mode.
+  // Only show providers with actual training capabilities -- never fall back
+  // to non-training providers like Kokoro which cannot clone or fine-tune.
   const trainingProviderOptions = providers
     .filter(
       (p) =>
@@ -58,11 +60,9 @@ export default function ProfilesPage() {
     )
     .map((p) => ({ value: p.name, label: p.display_name }));
 
-  // Fallback if none match
   const providerOptions = trainingProviderOptions.length
     ? trainingProviderOptions
-    : providers.filter((p) => p.enabled).map((p) => ({ value: p.name, label: p.display_name }));
-  if (!providerOptions.length) providerOptions.push({ value: "kokoro", label: "Kokoro" });
+    : [{ value: "", label: "No training-capable providers available" }];
 
   return (
     <div className="space-y-6">
@@ -122,7 +122,13 @@ export default function ProfilesPage() {
                 </div>
               </button>
               <button
-                onClick={() => setCreateMode("training")}
+                onClick={() => {
+                  setCreateMode("training");
+                  // Default to first training-capable provider
+                  if (trainingProviderOptions.length > 0 && !form.provider_name) {
+                    setForm((f) => ({ ...f, provider_name: trainingProviderOptions[0].value }));
+                  }
+                }}
                 className="flex flex-col items-center gap-3 rounded-lg border-2 border-[var(--color-border)] p-6 transition-colors hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950"
               >
                 <Mic className="h-8 w-8 text-primary-500" />

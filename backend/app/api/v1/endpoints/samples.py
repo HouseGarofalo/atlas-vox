@@ -102,6 +102,23 @@ async def upload_samples(
         db.add(sample)
         await db.flush()
 
+        # Auto-analyze to populate duration_seconds and sample_rate
+        try:
+            analysis = await analyze_audio(file_path)
+            sample.duration_seconds = analysis.duration_seconds
+            sample.sample_rate = analysis.sample_rate
+            sample.analysis_json = json.dumps({
+                "duration_seconds": analysis.duration_seconds,
+                "sample_rate": analysis.sample_rate,
+                "pitch_mean": analysis.pitch_mean,
+                "pitch_std": analysis.pitch_std,
+                "energy_mean": analysis.energy_mean,
+                "energy_std": analysis.energy_std,
+            })
+            await db.flush()
+        except Exception as exc:
+            logger.warning("auto_analysis_failed", sample_id=sample.id, error=str(exc))
+
         logger.info("sample_uploaded", sample_id=sample.id, profile_id=profile_id, filename=upload.filename)
         created.append(SampleResponse.model_validate(sample))
 

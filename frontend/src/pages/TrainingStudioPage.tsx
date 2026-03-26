@@ -19,6 +19,8 @@ export default function TrainingStudioPage() {
   const [selectedProfile, setSelectedProfile] = useState(searchParams.get("profile") || "");
   const [samples, setSamples] = useState<any[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [preprocessing, setPreprocessing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const { progress } = useTrainingProgress(activeJobId);
 
   useEffect(() => {
@@ -27,13 +29,35 @@ export default function TrainingStudioPage() {
   }, []);
   useEffect(() => { if (selectedProfile) loadSamples(); }, [selectedProfile]);
 
+  // When training completes, refresh the profile list so status updates from "training" to "ready"
+  useEffect(() => {
+    if (progress && ["DONE", "FAILURE"].includes(progress.state)) {
+      fetchProfiles().catch(() => {});
+      fetchJobs().catch(() => {});
+      if (progress.state === "DONE") {
+        toast.success("Training completed! Voice is ready for synthesis.");
+      } else if (progress.error) {
+        toast.error(`Training failed: ${progress.error}`);
+      }
+    }
+  }, [progress?.state]);
+
   const loadSamples = async () => {
     try { const { samples: s } = await api.listSamples(selectedProfile); setSamples(s); } catch { /* empty */ }
   };
 
   const handleUpload = async (files: File[]) => {
     if (!selectedProfile) { toast.error("Select a profile first"); return; }
-    try { await api.uploadSamples(selectedProfile, files); toast.success(`${files.length} file(s) uploaded`); loadSamples(); } catch (e: any) { toast.error(e.message); }
+    setUploading(true);
+    try {
+      await api.uploadSamples(selectedProfile, files);
+      toast.success(`${files.length} file(s) uploaded and analyzed`);
+      await loadSamples();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleRecord = async (blob: Blob, filename: string) => {
@@ -41,7 +65,26 @@ export default function TrainingStudioPage() {
   };
 
   const handlePreprocess = async () => {
-    try { const r = await api.preprocessSamples(selectedProfile); toast.success(r.message); } catch (e: any) { toast.error(e.message); }
+    setPreprocessing(true);
+    try {
+      const r = await api.preprocessSamples(selectedProfile);
+      toast.success(r.message || "Preprocessing started");
+      // Poll for completion: preprocessing is async via Celery, so we wait
+      // a bit then refresh the sample list to show updated status.
+      if (r.task_id) {
+        setTimeout(async () => {
+          await loadSamples();
+          setPreprocessing(false);
+          toast.success("Samples refreshed");
+        }, 5000);
+      } else {
+        await loadSamples();
+        setPreprocessing(false);
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+      setPreprocessing(false);
+    }
   };
 
   const handleStartTraining = async () => {
@@ -63,18 +106,29 @@ export default function TrainingStudioPage() {
             <div className="space-y-4">
               <FileUploader onFiles={handleUpload} />
               <AudioRecorder onRecorded={handleRecord} />
+              {uploading && (
+                <p className="text-sm text-[var(--color-text-secondary)]">Uploading and analyzing files...</p>
+              )}
               {samples.length > 0 && (
                 <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)] px-2">
+                    <span>Total: {samples.reduce((sum: number, s: any) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
+                  </div>
                   {samples.map((s: any) => (
                     <div key={s.id} className="flex items-center gap-3 rounded border border-[var(--color-border)] p-2">
                       <span className="flex-1 text-sm truncate">{s.original_filename}</span>
+                      <span className="text-xs text-[var(--color-text-secondary)] uppercase">{s.format}</span>
+                      <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "Pending"}</span>
                       <Badge status={s.preprocessed ? "ready" : "pending"} />
-                      <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : ""}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {samples.some((s: any) => !s.preprocessed) && <Button variant="secondary" onClick={handlePreprocess}>Preprocess Samples</Button>}
+              {samples.some((s: any) => !s.preprocessed) && (
+                <Button variant="secondary" onClick={handlePreprocess} disabled={preprocessing}>
+                  {preprocessing ? "Preprocessing..." : "Preprocess Samples"}
+                </Button>
+              )}
             </div>
           </Card>
 
