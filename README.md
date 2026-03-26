@@ -8,11 +8,14 @@
 [![React 18](https://img.shields.io/badge/react-18-61DAFB?logo=react&logoColor=white)](https://react.dev)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![TypeScript](https://img.shields.io/badge/typescript-5.5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Redis](https://img.shields.io/badge/redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
+[![Tailwind CSS](https://img.shields.io/badge/tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 **9 TTS providers** &middot; **4 interfaces** &middot; **Full training pipeline** &middot; **Self-hosted**
 
-[Quick Start](#-quick-start) &middot; [Architecture](#-architecture) &middot; [Providers](#-tts-providers) &middot; [API Docs](docs/API.md) &middot; [CLI Docs](docs/CLI.md) &middot; [Deployment](#-deployment)
+[Quick Start](#-quick-start) &middot; [Features](#-features) &middot; [Providers](#-tts-providers) &middot; [Documentation](#-documentation) &middot; [Architecture](#-architecture)
 
 </div>
 
@@ -20,25 +23,147 @@
 
 ## Overview
 
-Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across 9 TTS engines. It provides a unified interface to cloud providers (ElevenLabs, Azure) and local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2) with voice cloning, fine-tuning, and real-time streaming.
+Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across **9 TTS engines**. It provides a unified interface to cloud providers (ElevenLabs, Azure) and local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2) with voice cloning, fine-tuning, and real-time streaming.
 
-### Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **Voice Profiles** | Create identities bound to any provider, track training versions |
-| **Audio Training** | Upload samples, preprocess (noise reduction, normalization), train models via Celery |
-| **Real-time Synthesis** | Text-to-speech with speed/pitch/volume control and SSML support |
-| **Voice Comparison** | Side-by-side synthesis across multiple profiles |
-| **Persona Presets** | Reusable voice personas (Friendly, Professional, Energetic, etc.) |
-| **4 Interfaces** | Web UI, REST API, CLI, MCP Server |
-| **GPU Flexibility** | Per-provider GPU mode: Docker GPU, host CPU, or auto-detect |
-| **API Key Management** | Scoped keys (read/write/synthesize/train/admin) with Argon2id hashing |
-| **Webhook Events** | HMAC-signed delivery for training.completed / training.failed |
+All data stays on your machine. No audio is sent to third parties unless you explicitly configure a cloud provider.
 
 ---
 
-## Tech Stack
+## ✨ Features
+
+| Category | Features |
+|----------|----------|
+| **Voice Profiles** | Create voice identities bound to any provider, manage training versions, track status |
+| **Audio Training** | Upload samples, record in-browser, preprocess (noise reduction, normalization), train models via Celery |
+| **Real-time Synthesis** | Text-to-speech with speed / pitch / volume controls, SSML support (Azure), streaming |
+| **Voice Comparison** | Side-by-side synthesis across multiple profiles for A/B testing |
+| **Voice Library** | Browse and filter all available voices across all providers in one view |
+| **Persona Presets** | 6 built-in presets (Friendly, Professional, Energetic, Calm, Authoritative, Soothing) + custom |
+| **4 Interfaces** | Web UI, REST API (60+ endpoints), CLI (Typer + Rich), MCP Server (AI agents) |
+| **GPU Flexibility** | Per-provider GPU mode: Docker GPU, host CPU, or auto-detect |
+| **API Key Management** | Scoped keys (read / write / synthesize / train / admin) with Argon2id hashing |
+| **Webhook Events** | HMAC-signed delivery for training.completed / training.failed |
+| **In-App Help** | Built-in help center, provider setup guides, and troubleshooting |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Docker** Engine 24+ with Compose v2 (recommended)
+- Or: Python 3.11+ and Node.js 20+ (for local development)
+
+### 1. Clone & Start
+
+```bash
+git clone https://github.com/HouseGarofalo/atlas-vox.git
+cd atlas-vox
+make docker-up
+```
+
+### 2. Open
+
+| Service | URL |
+|---------|-----|
+| **Web UI** | http://localhost:3100 |
+| **API** | http://localhost:8100 |
+| **Swagger Docs** | http://localhost:8100/docs |
+
+### 3. (Optional) Enable GPU
+
+```bash
+make docker-gpu-up    # Adds NVIDIA GPU worker for local models
+```
+
+That's it. Kokoro (54 voices) and Piper work immediately with no configuration. For cloud providers, add your API keys on the Providers page.
+
+<details>
+<summary><strong>Local Development (without Docker)</strong></summary>
+
+```bash
+make install    # Install Python + Node dependencies
+make dev        # Start backend (localhost:8000) + frontend (localhost:3000)
+```
+
+You will need Redis running locally for training jobs.
+</details>
+
+---
+
+## 🔌 TTS Providers
+
+9 providers ship out of the box. Each extends `TTSProvider` ABC and declares capabilities dynamically — the UI adapts automatically.
+
+| Provider | Type | Cloning | Stream | SSML | GPU | Languages | Key Feature |
+|----------|------|:-------:|:------:|:----:|-----|-----------|-------------|
+| **Kokoro** | Local CPU | | | | CPU | en | 54 voices, 82M params, ultra-fast |
+| **Piper** | Local CPU | | | | CPU | 30+ | ONNX, Home Assistant compatible |
+| **ElevenLabs** | Cloud | ✅ | ✅ | | — | 29 | Premium quality, instant cloning |
+| **Azure Speech** | Cloud | ✅ | ✅ | ✅ | — | 140+ | Enterprise SSML, 400+ voices |
+| **Coqui XTTS v2** | Local | ✅ | ✅ | | Cfg | 17 | Clone from 6s audio |
+| **StyleTTS2** | Local | ✅ | | | Cfg | en | Human-level MOS, style transfer |
+| **CosyVoice** | Local | ✅ | ✅ | | Cfg | 9 | 150ms streaming latency |
+| **Dia** | Local | ✅ | | | Cfg | en | 1.6B param dialogue + non-verbals |
+| **Dia2** | Local | | ✅ | | Cfg | en | 2B param streaming dialogue |
+
+**GPU Modes** (Cfg = configurable per provider):
+
+| Mode | Example | Description |
+|------|---------|-------------|
+| `host_cpu` | `COQUI_XTTS_GPU_MODE=host_cpu` | Run on CPU (default) |
+| `docker_gpu` | `COQUI_XTTS_GPU_MODE=docker_gpu` | NVIDIA GPU in Docker |
+| `auto` | `COQUI_XTTS_GPU_MODE=auto` | Auto-detect, fallback CPU |
+
+---
+
+## 🖥️ Web UI
+
+11 pages accessible via sidebar navigation with full light/dark theme and mobile-responsive layout.
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| **Dashboard** | `/` | Stats, provider health grid, active jobs, recent synthesis |
+| **Voice Profiles** | `/profiles` | Create, manage, delete voice identities |
+| **Voice Library** | `/library` | Browse all voices across all providers with filtering |
+| **Training Studio** | `/training` | Upload/record audio, preprocess, train models |
+| **Synthesis Lab** | `/synthesis` | Text-to-speech with parameter controls + presets |
+| **Comparison** | `/compare` | Side-by-side multi-voice comparison |
+| **Providers** | `/providers` | View all 9 providers with health, config, and test |
+| **API Keys** | `/api-keys` | Create/revoke scoped API keys |
+| **Settings** | `/settings` | Theme toggle, default provider, audio format |
+| **Docs** | `/docs` | Provider setup guides with step-by-step instructions |
+| **Help** | `/help` | In-app help center with FAQ and troubleshooting |
+
+---
+
+## 🏗️ Architecture
+
+```
+                                  +------------------+
+                                  |    Web UI :3100   |
+                                  |  React + Vite     |
+                                  +--------+---------+
+                                           |
+                                           v
++----------+     +------------------+   +-----------+   +------------------+
+|  CLI      +---->                  |   |           |   |                  |
+| (Typer)   |    |  FastAPI :8000   +-->+ SQLite /  |   |  Redis :6379     |
++----------+     |                  |   | PostgreSQL|   |  (Celery broker) |
+                 |  12 API routers  |   |           |   +--------+---------+
++----------+     |  60+ endpoints   |   +-----------+            |
+| MCP Server+--->|  WebSocket       |                            v
+| (JSONRPC) |    +--+--------+-----+                   +---------+---------+
++----------+        |        |                         |  Celery Worker    |
+                    v        v                         |  Training tasks   |
+             +------+--+ +---+--------+                |  Preprocessing    |
+             | Provider| | Provider   |                +-------------------+
+             | Registry| | Storage    |
+             | (9 TTS) | | ./storage  |
+             +---------+ +------------+
+```
+
+**Tech Stack:**
 
 ```
 Backend              Frontend             Infrastructure
@@ -54,157 +179,9 @@ Typer + Rich         Lucide React         HMAC-SHA256 (webhooks)
 
 ---
 
-## Quick Start
+## ⚙️ Configuration
 
-### Prerequisites
-
-- Python 3.11+ and Node.js 20+
-- Redis (for background training jobs) &mdash; optional for basic synthesis
-
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/HouseGarofalo/atlas-vox.git
-cd atlas-vox
-make install
-```
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-# Edit .env to add provider API keys (ElevenLabs, Azure) if needed
-# SQLite works out of the box - no database setup required
-```
-
-### 3. Run
-
-```bash
-make dev
-```
-
-| Service | URL |
-|---------|-----|
-| Web UI | http://localhost:3000 |
-| API | http://localhost:8000 |
-| Swagger Docs | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-
-### Docker (Full Stack)
-
-```bash
-make docker-up        # CPU mode
-make docker-gpu-up    # With NVIDIA GPU support
-```
-
----
-
-## Architecture
-
-```
-                                  +------------------+
-                                  |    Web UI :3000   |
-                                  |  React + Vite     |
-                                  +--------+---------+
-                                           |
-                                           v
-+----------+     +------------------+   +-----------+   +------------------+
-|  CLI      +---->                  |   |           |   |                  |
-| (Typer)   |    |  FastAPI :8000   +-->+ SQLite /  |   |  Redis :6379     |
-+----------+     |                  |   | PostgreSQL|   |  (Celery broker) |
-                 |  11 API routers  |   |           |   +--------+---------+
-+----------+     |  60+ endpoints   |   +-----------+            |
-| MCP Server+--->|  WebSocket       |                            v
-| (JSONRPC) |    +--+--------+-----+                   +---------+---------+
-+----------+        |        |                         |  Celery Worker    |
-                    v        v                         |  Training tasks   |
-             +------+--+ +---+--------+                |  Preprocessing    |
-             | Provider| | Provider   |                +-------------------+
-             | Registry| | Storage    |
-             | (9 TTS) | | ./storage  |
-             +---------+ +------------+
-```
-
-### Training Pipeline
-
-```
-Upload audio --> Preprocess (noise reduction, normalize, resample 16kHz)
-             --> Analysis (pitch, energy, spectral via librosa)
-             --> Train (Celery task, provider-specific)
-             --> Model Version created
-             --> Profile status: ready --> Synthesis available
-```
-
----
-
-## TTS Providers
-
-9 providers ship out of the box. Each extends `TTSProvider` ABC and declares capabilities dynamically &mdash; the UI adapts automatically.
-
-| Provider | Type | Cloning | Stream | SSML | GPU | Languages | Notes |
-|----------|------|:-------:|:------:|:----:|-----|-----------|-------|
-| **Kokoro** | Local | | | | CPU | en | 82M params, 54 voices, ultra-fast |
-| **Piper** | Local | | | | CPU | 30+ | ONNX, Home Assistant compatible |
-| **ElevenLabs** | Cloud | :white_check_mark: | :white_check_mark: | | &mdash; | 29 | Premium quality, instant cloning |
-| **Azure Speech** | Cloud | :white_check_mark: | :white_check_mark: | :white_check_mark: | &mdash; | 140+ | Enterprise SSML, CNV |
-| **Coqui XTTS v2** | Local | :white_check_mark: | :white_check_mark: | | Cfg | 17 | Clone from 6s audio |
-| **StyleTTS2** | Local | :white_check_mark: | | | Cfg | en | Zero-shot, style diffusion |
-| **CosyVoice** | Local | :white_check_mark: | :white_check_mark: | | Cfg | 9 | 150ms streaming latency |
-| **Dia** | Local | :white_check_mark: | | | Cfg | en | 1.6B param dialogue model |
-| **Dia2** | Local | | :white_check_mark: | | Cfg | en | 2B param streaming dialogue |
-
-**GPU Modes** (`Cfg` = configurable per provider):
-
-| Mode | Variable Example | Description |
-|------|-----------------|-------------|
-| `host_cpu` | `COQUI_XTTS_GPU_MODE=host_cpu` | Run on host CPU (default) |
-| `docker_gpu` | `COQUI_XTTS_GPU_MODE=docker_gpu` | NVIDIA GPU in Docker |
-| `auto` | `COQUI_XTTS_GPU_MODE=auto` | Auto-detect, fallback CPU |
-
-> See [docs/PROVIDERS.md](docs/PROVIDERS.md) for per-provider setup guides.
-
----
-
-## Web UI
-
-8 pages accessible via sidebar navigation with full light/dark theme and mobile-responsive layout.
-
-| Page | Route | Purpose |
-|------|-------|---------|
-| **Dashboard** | `/` | Stats, provider health, active jobs, recent synthesis |
-| **Voice Profiles** | `/profiles` | Create, manage, delete voice identities |
-| **Training Studio** | `/training` | Upload audio, record, preprocess, train models |
-| **Synthesis Lab** | `/synthesis` | Text-to-speech with parameter controls + presets |
-| **Comparison** | `/compare` | Side-by-side multi-voice comparison |
-| **Providers** | `/providers` | View all 9 providers with capabilities and health |
-| **API Keys** | `/api-keys` | Create/revoke scoped API keys |
-| **Settings** | `/settings` | Theme toggle, default provider, audio format |
-
----
-
-## Database
-
-**Default**: SQLite (zero config, auto-created at `./atlas_vox.db`)
-**Production**: PostgreSQL via `DATABASE_URL=postgresql+asyncpg://...`
-
-### Schema (9 tables)
-
-```
-voice_profiles ──┬── audio_samples
-                 ├── model_versions
-                 └── training_jobs
-
-persona_presets     synthesis_history     api_keys
-webhooks            providers
-```
-
-> See [docs/DATABASE.md](docs/DATABASE.md) for full schema reference.
-
----
-
-## Configuration
-
-All settings via `.env` file or environment variables. See [`.env.example`](.env.example) for the complete template.
+All settings via environment variables or `.env` file.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -214,34 +191,15 @@ All settings via `.env` file or environment variables. See [`.env.example`](.env
 | `STORAGE_PATH` | `./storage` | Audio & model storage |
 | `ELEVENLABS_API_KEY` | *(empty)* | ElevenLabs cloud API |
 | `AZURE_SPEECH_KEY` | *(empty)* | Azure AI Speech key |
+| `AZURE_SPEECH_REGION` | `eastus` | Azure region |
+| `BACKEND_PORT` | `8100` | Docker host port for API |
+| `FRONTEND_PORT` | `3100` | Docker host port for UI |
 
-> See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all 25+ variables.
-
----
-
-## Deployment
-
-### Docker Compose (Recommended)
-
-```bash
-make docker-up        # Backend, frontend, Redis, Celery worker
-make docker-gpu-up    # Same + NVIDIA GPU passthrough
-```
-
-### Production Checklist
-
-- [ ] Set `APP_ENV=production` and `DEBUG=false`
-- [ ] Generate strong `JWT_SECRET_KEY`
-- [ ] Set `AUTH_DISABLED=false`
-- [ ] Switch to PostgreSQL
-- [ ] Run `alembic upgrade head`
-- [ ] Configure CORS for your domain
-- [ ] Set provider API keys
-- [ ] Configure Redis persistence
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the complete 25+ variable reference.
 
 ---
 
-## Development
+## 🧪 Development
 
 ```bash
 make dev          # Start backend + frontend dev servers
@@ -250,6 +208,7 @@ make test-cov     # Tests with coverage report
 make lint         # Ruff (Python) + ESLint (TypeScript)
 make format       # Auto-format all code
 make migrate      # Run Alembic migrations
+make seed         # Seed database with providers
 make clean        # Remove caches and build artifacts
 ```
 
@@ -259,48 +218,74 @@ make clean        # Remove caches and build artifacts
 atlas-vox/
   backend/
     app/
-      api/v1/endpoints/   # 11 API endpoint modules (60+ routes)
+      api/v1/endpoints/   # 12 API endpoint modules (60+ routes)
       core/               # Config, database, security, logging
       models/             # 9 SQLAlchemy async ORM models
       schemas/            # Pydantic v2 request/response schemas
       services/           # 7 business logic services
       providers/          # 9 TTS provider implementations
-      tasks/              # Celery background tasks (training, preprocessing)
+      tasks/              # Celery background tasks
       cli/                # Typer CLI with 7 command groups
       mcp/                # MCP server (JSONRPC 2.0 + SSE)
     tests/                # Pytest suite (43+ tests)
-    alembic/              # Database migrations
   frontend/
     src/
-      pages/              # 8 lazy-loaded React pages
+      pages/              # 11 lazy-loaded React pages
       components/         # 40+ UI, audio, layout components
-      stores/             # 5 Zustand state stores
+      stores/             # 5+ Zustand state stores
       services/           # Typed API client (30+ methods)
-      hooks/              # WebSocket, audio hooks
-      types/              # TypeScript interfaces
   docker/                 # Dockerfiles + compose configs
   docs/                   # Extended documentation
 ```
 
 ---
 
-## Documentation Index
+## 📚 Documentation
 
 | Document | Description |
 |----------|-------------|
-| [docs/API.md](docs/API.md) | Complete API reference with request/response examples |
-| [docs/DATABASE.md](docs/DATABASE.md) | Full schema, relationships, and migration guide |
-| [docs/PROVIDERS.md](docs/PROVIDERS.md) | Per-provider setup, capabilities, and GPU configuration |
-| [docs/CLI.md](docs/CLI.md) | CLI command reference |
-| [docs/MCP.md](docs/MCP.md) | MCP server tools, resources, and integration guide |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | All environment variables and settings |
-| [docs/FRONTEND.md](docs/FRONTEND.md) | Component architecture, stores, routing |
-| [docs/SECURITY.md](docs/SECURITY.md) | Authentication, API keys, CORS, webhook signing |
+| **[User Guide](docs/USER_GUIDE.md)** | Comprehensive end-user guide with walkthroughs for every feature |
+| **[API Reference](docs/API_REFERENCE.md)** | Complete REST API with request/response examples |
+| **[Architecture](docs/ARCHITECTURE.md)** | System design, data flows, provider abstraction pattern |
+| **[Deployment](docs/DEPLOYMENT.md)** | Docker, GPU setup, environment variables, production hardening |
+| **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Common issues with symptoms, causes, and fixes |
+| [Providers](docs/PROVIDERS.md) | Per-provider setup guides and capabilities |
+| [Database](docs/DATABASE.md) | Full schema, relationships, and migration guide |
+| [CLI](docs/CLI.md) | CLI command reference |
+| [MCP](docs/MCP.md) | MCP server tools, resources, and integration |
+| [Configuration](docs/CONFIGURATION.md) | All environment variables and settings |
+| [Frontend](docs/FRONTEND.md) | Component architecture, stores, routing |
+| [Security](docs/SECURITY.md) | Authentication, API keys, CORS, webhook signing |
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Make your changes and add tests
+4. Run `make lint` and `make test`
+5. Commit with a descriptive message
+6. Push and create a Pull Request
+
+### Code Style
+
+- **Backend**: Ruff for linting/formatting, type hints on all functions
+- **Frontend**: ESLint + Prettier, TypeScript strict mode
+- **Commits**: Conventional commits preferred (`feat:`, `fix:`, `docs:`, etc.)
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
 Built with FastAPI, React, and 9 TTS engines
+
+**[User Guide](docs/USER_GUIDE.md)** &middot; **[API Reference](docs/API_REFERENCE.md)** &middot; **[Deployment](docs/DEPLOYMENT.md)**
 
 </div>
