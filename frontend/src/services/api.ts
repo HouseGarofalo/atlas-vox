@@ -1,3 +1,5 @@
+import type { ProviderConfigResponse, ProviderTestResponse, Voice } from "../types";
+
 const API_BASE = "/api/v1";
 
 class ApiClient {
@@ -41,7 +43,7 @@ class ApiClient {
   getProfile(id: string) {
     return this.request<any>(`/profiles/${id}`);
   }
-  createProfile(data: { name: string; description?: string; language?: string; provider_name: string; tags?: string[] }) {
+  createProfile(data: { name: string; description?: string; language?: string; provider_name: string; voice_id?: string; tags?: string[] }) {
     return this.request<any>("/profiles", { method: "POST", body: JSON.stringify(data) });
   }
   updateProfile(id: string, data: Record<string, any>) {
@@ -126,6 +128,23 @@ class ApiClient {
   }
   listProviderVoices(name: string) {
     return this.request<any>(`/providers/${name}/voices`);
+  }
+  listAllVoices() {
+    return this.request<{ voices: Voice[]; count: number }>("/voices");
+  }
+  previewVoice(data: { provider: string; voice_id: string; text?: string }) {
+    return this.request<{ audio_url: string }>("/voices/preview", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  // Provider Config (Admin)
+  getProviderConfig(name: string) {
+    return this.request<ProviderConfigResponse>(`/providers/${name}/config`);
+  }
+  updateProviderConfig(name: string, data: { enabled?: boolean; gpu_mode?: string; config?: Record<string, string> }) {
+    return this.request<ProviderConfigResponse>(`/providers/${name}/config`, { method: "PUT", body: JSON.stringify(data) });
+  }
+  testProvider(name: string, data?: { text?: string; voice_id?: string }) {
+    return this.request<ProviderTestResponse>(`/providers/${name}/test`, { method: "POST", body: JSON.stringify(data ?? {}) });
   }
 
   // Presets

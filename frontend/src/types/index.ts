@@ -4,6 +4,7 @@ export interface VoiceProfile {
   description: string | null;
   language: string;
   provider_name: string;
+  voice_id: string | null;
   status: "pending" | "training" | "ready" | "error" | "archived";
   tags: string[] | null;
   active_version_id: string | null;
@@ -67,4 +68,40 @@ export interface PersonaPreset {
   pitch: number;
   volume: number;
   is_system: boolean;
+}
+
+export interface ProviderFieldSchema {
+  name: string;
+  field_type: "text" | "password" | "select";
+  label: string;
+  required: boolean;
+  is_secret: boolean;
+  options?: string[];
+  default?: string;
+}
+
+export interface ProviderConfigResponse {
+  enabled: boolean;
+  gpu_mode: string;
+  config: Record<string, string>;
+  config_schema: ProviderFieldSchema[];
+}
+
+export interface ProviderTestResponse {
+  success: boolean;
+  audio_url: string | null;
+  duration_seconds: number | null;
+  latency_ms: number;
+  error: string | null;
+}
+
+export interface Voice {
+  voice_id: string;
+  name: string;
+  language: string;
+  provider: string;
+  provider_display: string;
+  gender?: string;
+  preview_url?: string;
+  tags?: string[];
 }

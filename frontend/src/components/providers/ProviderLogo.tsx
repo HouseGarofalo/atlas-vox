@@ -1,0 +1,261 @@
+interface ProviderLogoProps {
+  name: string;
+  size?: number;
+  className?: string;
+}
+
+export default function ProviderLogo({
+  name,
+  size = 32,
+  className = "",
+}: ProviderLogoProps) {
+  const logo = LOGOS[name] ?? LOGOS._default;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label={`${name} logo`}
+    >
+      {logo}
+    </svg>
+  );
+}
+
+/* ---------- per-provider SVG content ---------- */
+
+const LOGOS: Record<string, React.ReactNode> = {
+  /* Kokoro - Heart (kokoro = heart in Japanese) */
+  kokoro: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FDE8E8" />
+      <path
+        d="M16 26C16 26 6 20 6 13.5C6 10.46 8.46 8 11.5 8C13.24 8 14.79 8.81 16 10.09C17.21 8.81 18.76 8 20.5 8C23.54 8 26 10.46 26 13.5C26 20 16 26 16 26Z"
+        fill="#E53E3E"
+      />
+    </>
+  ),
+
+  /* Coqui XTTS - Frog silhouette */
+  coqui_xtts: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#E6FFED" />
+      <ellipse cx="11" cy="11" rx="3.5" ry="3.5" fill="#38A169" />
+      <ellipse cx="21" cy="11" rx="3.5" ry="3.5" fill="#38A169" />
+      <circle cx="11" cy="10.5" r="1.5" fill="white" />
+      <circle cx="21" cy="10.5" r="1.5" fill="white" />
+      <circle cx="11.5" cy="10.5" r="0.8" fill="#1A202C" />
+      <circle cx="21.5" cy="10.5" r="0.8" fill="#1A202C" />
+      <path
+        d="M9 18C9 18 12 22 16 22C20 22 23 18 23 18"
+        stroke="#38A169"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <ellipse cx="16" cy="17" rx="7" ry="5" fill="#48BB78" opacity="0.5" />
+    </>
+  ),
+
+  /* Piper - Pipe/flute icon */
+  piper: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FEFCBF" />
+      <rect x="6" y="13" width="18" height="6" rx="3" fill="#C05621" />
+      <circle cx="10" cy="16" r="1.2" fill="#FEFCBF" />
+      <circle cx="14" cy="16" r="1.2" fill="#FEFCBF" />
+      <circle cx="18" cy="16" r="1.2" fill="#FEFCBF" />
+      <path
+        d="M24 14.5C24 14.5 27 13 27 16C27 19 24 17.5 24 17.5"
+        fill="#C05621"
+      />
+    </>
+  ),
+
+  /* ElevenLabs - "XI" in a rounded square */
+  elevenlabs: (
+    <>
+      <rect x="2" y="2" width="28" height="28" rx="7" fill="#1A1A2E" />
+      <text
+        x="16"
+        y="22"
+        textAnchor="middle"
+        fontFamily="Arial, sans-serif"
+        fontWeight="bold"
+        fontSize="16"
+        fill="white"
+      >
+        XI
+      </text>
+    </>
+  ),
+
+  /* Azure Speech - Azure cloud icon */
+  azure_speech: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#E1F0FF" />
+      <path
+        d="M10 22H23C25.2 22 27 20.2 27 18C27 15.8 25.2 14 23 14H22.7C22.4 11.2 20 9 17 9C14.5 9 12.4 10.6 11.5 12.8C9 13.2 7 15.4 7 18C7 20.2 8.8 22 11 22H10Z"
+        fill="#0078D4"
+      />
+      <path
+        d="M14 16L16.5 19L20 14"
+        stroke="white"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+
+  /* StyleTTS2 - Stylized "S2" with sound wave */
+  styletts2: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#F3E8FF" />
+      <text
+        x="13"
+        y="22"
+        fontFamily="Arial, sans-serif"
+        fontWeight="bold"
+        fontSize="15"
+        fill="#7C3AED"
+      >
+        S2
+      </text>
+      <path
+        d="M26 11C27.5 13 27.5 19 26 21"
+        stroke="#7C3AED"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M28.5 9C30.5 12 30.5 20 28.5 23"
+        stroke="#7C3AED"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.5"
+      />
+    </>
+  ),
+
+  /* CosyVoice - Cozy speech bubble with warmth */
+  cosyvoice: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FFF5E6" />
+      <path
+        d="M8 12C8 9.79 9.79 8 12 8H20C22.21 8 24 9.79 24 12V17C24 19.21 22.21 21 20 21H14L10 25V21H12C9.79 21 8 19.21 8 17V12Z"
+        fill="#ED8936"
+      />
+      <path
+        d="M13 13.5C13 13.5 14.5 12 16 14C17.5 12 19 13.5 19 13.5C19 15.5 16 17.5 16 17.5C16 17.5 13 15.5 13 13.5Z"
+        fill="white"
+        opacity="0.9"
+      />
+    </>
+  ),
+
+  /* Dia - Dialogue split bubble (two speakers) */
+  dia: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#E6FFFA" />
+      <path
+        d="M6 10C6 8.34 7.34 7 9 7H16C17.66 7 19 8.34 19 10V14C19 15.66 17.66 17 16 17H12L9 20V17H9C7.34 17 6 15.66 6 14V10Z"
+        fill="#319795"
+      />
+      <path
+        d="M13 14C13 12.34 14.34 11 16 11H23C24.66 11 26 12.34 26 14V18C26 19.66 24.66 21 23 21H23V24L20 21H16C14.34 21 13 19.66 13 18V14Z"
+        fill="#4FD1C5"
+      />
+    </>
+  ),
+
+  /* Dia2 - Dialogue bubble with streaming lines */
+  dia2: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#E6FFFA" />
+      <path
+        d="M6 10C6 8.34 7.34 7 9 7H16C17.66 7 19 8.34 19 10V14C19 15.66 17.66 17 16 17H12L9 20V17H9C7.34 17 6 15.66 6 14V10Z"
+        fill="#2C7A7B"
+      />
+      <path
+        d="M13 14C13 12.34 14.34 11 16 11H23C24.66 11 26 12.34 26 14V18C26 19.66 24.66 21 23 21H23V24L20 21H16C14.34 21 13 19.66 13 18V14Z"
+        fill="#38B2AC"
+      />
+      {/* streaming lines */}
+      <line
+        x1="8.5"
+        y1="11"
+        x2="16.5"
+        y2="11"
+        stroke="white"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.8"
+      />
+      <line
+        x1="8.5"
+        y1="13.5"
+        x2="14"
+        y2="13.5"
+        stroke="white"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.6"
+      />
+      <line
+        x1="15.5"
+        y1="15"
+        x2="23.5"
+        y2="15"
+        stroke="white"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.8"
+      />
+      <line
+        x1="15.5"
+        y1="17.5"
+        x2="21"
+        y2="17.5"
+        stroke="white"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.6"
+      />
+    </>
+  ),
+
+  /* Default fallback - Speaker/microphone icon */
+  _default: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#EDF2F7" />
+      <rect x="12" y="8" width="8" height="11" rx="4" fill="#A0AEC0" />
+      <path
+        d="M10 16C10 19.31 12.69 22 16 22C19.31 22 22 19.31 22 16"
+        stroke="#A0AEC0"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="16"
+        y1="22"
+        x2="16"
+        y2="26"
+        stroke="#A0AEC0"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="12"
+        y1="26"
+        x2="20"
+        y2="26"
+        stroke="#A0AEC0"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+};

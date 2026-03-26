@@ -7,13 +7,13 @@ interface ProfileState {
   loading: boolean;
   error: string | null;
   fetchProfiles: () => Promise<void>;
-  createProfile: (data: { name: string; description?: string; language?: string; provider_name: string; tags?: string[] }) => Promise<VoiceProfile>;
+  createProfile: (data: { name: string; description?: string; language?: string; provider_name: string; voice_id?: string; tags?: string[] }) => Promise<VoiceProfile>;
   updateProfile: (id: string, data: Record<string, any>) => Promise<void>;
   deleteProfile: (id: string) => Promise<void>;
   activateVersion: (profileId: string, versionId: string) => Promise<void>;
 }
 
-export const useProfileStore = create<ProfileState>((set, get) => ({
+export const useProfileStore = create<ProfileState>((set) => ({
   profiles: [],
   loading: false,
   error: null,

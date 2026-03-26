@@ -7,17 +7,18 @@ import { useProfileStore } from "../stores/profileStore";
 import { useTrainingStore } from "../stores/trainingStore";
 import { useProviderStore } from "../stores/providerStore";
 import { useSynthesisStore } from "../stores/synthesisStore";
+import ProviderLogo from "../components/providers/ProviderLogo";
 
 export default function DashboardPage() {
   const { profiles, fetchProfiles } = useProfileStore();
   const { jobs, fetchJobs } = useTrainingStore();
-  const { providers, fetchProviders } = useProviderStore();
+  const { providers, fetchProviders, checkAllHealth } = useProviderStore();
   const { history, fetchHistory } = useSynthesisStore();
 
   useEffect(() => {
     fetchProfiles();
     fetchJobs();
-    fetchProviders();
+    fetchProviders().then(() => checkAllHealth());
     fetchHistory(10);
   }, []);
 
@@ -74,6 +75,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
           {providers.map((p) => (
             <div key={p.name} className="flex flex-col items-center gap-1 rounded-lg border border-[var(--color-border)] p-2 text-center">
+              <ProviderLogo name={p.name} size={22} />
               <span className="text-xs font-medium truncate w-full">{p.display_name}</span>
               <Badge status={p.health?.healthy ? "healthy" : p.enabled ? "unhealthy" : "pending"} />
             </div>

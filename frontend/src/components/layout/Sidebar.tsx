@@ -2,12 +2,15 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Mic,
+  Library,
   GraduationCap,
   AudioLines,
   GitCompareArrows,
   Settings2,
   Key,
   Settings,
+  HelpCircle,
+  BookOpen,
   Menu,
   X,
 } from "lucide-react";
@@ -17,12 +20,15 @@ import { useState } from "react";
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/profiles", icon: Mic, label: "Voice Profiles" },
+  { to: "/library", icon: Library, label: "Voice Library" },
   { to: "/training", icon: GraduationCap, label: "Training Studio" },
   { to: "/synthesis", icon: AudioLines, label: "Synthesis Lab" },
   { to: "/compare", icon: GitCompareArrows, label: "Comparison" },
   { to: "/providers", icon: Settings2, label: "Providers" },
   { to: "/api-keys", icon: Key, label: "API Keys" },
   { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/docs", icon: BookOpen, label: "Docs" },
+  { to: "/help", icon: HelpCircle, label: "Help" },
 ];
 
 export default function Sidebar() {

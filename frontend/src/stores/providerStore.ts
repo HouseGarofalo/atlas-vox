@@ -8,6 +8,7 @@ interface ProviderState {
   error: string | null;
   fetchProviders: () => Promise<void>;
   checkHealth: (name: string) => Promise<void>;
+  checkAllHealth: () => Promise<void>;
 }
 
 export const useProviderStore = create<ProviderState>((set) => ({
@@ -38,5 +39,10 @@ export const useProviderStore = create<ProviderState>((set) => ({
         ),
       }));
     }
+  },
+
+  checkAllHealth: async () => {
+    const { providers, checkHealth } = useProviderStore.getState();
+    await Promise.allSettled(providers.map((p) => checkHealth(p.name)));
   },
 }));

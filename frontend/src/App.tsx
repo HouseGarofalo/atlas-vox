@@ -11,6 +11,9 @@ const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
 const ProvidersPage = lazy(() => import("./pages/ProvidersPage"));
 const ApiKeysPage = lazy(() => import("./pages/ApiKeysPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const VoiceLibraryPage = lazy(() => import("./pages/VoiceLibraryPage"));
+const HelpPage = lazy(() => import("./pages/HelpPage"));
+const DocsPage = lazy(() => import("./pages/DocsPage"));
 
 function App() {
   return (
@@ -31,6 +34,14 @@ function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <ProfilesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="library"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <VoiceLibraryPage />
               </Suspense>
             }
           />
@@ -79,6 +90,22 @@ function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <SettingsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="help"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <HelpPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="docs"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <DocsPage />
               </Suspense>
             }
           />
