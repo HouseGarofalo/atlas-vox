@@ -57,6 +57,16 @@ async def _execute_training(job_id: str, task) -> dict:
                 "percent": 10, "status": "Loading provider...", "job_id": job_id,
             })
 
+            # Load provider config from DB (worker doesn't run lifespan)
+            from app.models.provider import Provider as ProviderModel
+            import json as _json
+            prov_result = await db.execute(
+                select(ProviderModel).where(ProviderModel.name == job.provider_name)
+            )
+            prov_row = prov_result.scalar_one_or_none()
+            if prov_row and prov_row.config_json:
+                provider_registry.apply_config(job.provider_name, _json.loads(prov_row.config_json))
+
             # Get provider
             provider = provider_registry.get_provider(job.provider_name)
             capabilities = await provider.get_capabilities()
