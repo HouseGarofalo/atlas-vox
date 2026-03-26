@@ -21,7 +21,10 @@ export default function TrainingStudioPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const { progress } = useTrainingProgress(activeJobId);
 
-  useEffect(() => { fetchProfiles(); fetchJobs(); }, []);
+  useEffect(() => {
+    fetchProfiles().catch(() => toast.error("Failed to load profiles"));
+    fetchJobs().catch(() => toast.error("Failed to load training jobs"));
+  }, []);
   useEffect(() => { if (selectedProfile) loadSamples(); }, [selectedProfile]);
 
   const loadSamples = async () => {

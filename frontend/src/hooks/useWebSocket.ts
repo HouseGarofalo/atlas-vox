@@ -29,7 +29,9 @@ export function useTrainingProgress(jobId: string | null) {
         if (["DONE", "FAILURE", "REVOKED"].includes(data.state)) {
           ws.close();
         }
-      } catch { /* ignore parse errors */ }
+      } catch (err) {
+        console.warn("[WebSocket] Failed to parse message:", e.data, err);
+      }
     };
     ws.onclose = () => setConnected(false);
     ws.onerror = () => setConnected(false);

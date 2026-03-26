@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import uuid
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audio_sample import AudioSample
 from app.models.model_version import ModelVersion
+from app.models.training_job import TrainingJob
 from app.models.voice_profile import VoiceProfile
 from app.schemas.profile import ProfileCreate, ProfileResponse, ProfileUpdate
+
+logger = structlog.get_logger(__name__)
 
 
 async def create_profile(db: AsyncSession, data: ProfileCreate) -> VoiceProfile:
@@ -61,10 +65,30 @@ async def update_profile(
 
 
 async def delete_profile(db: AsyncSession, profile_id: str) -> bool:
-    """Delete a profile and all related data."""
+    """Delete a profile and all related data, revoking any active training jobs."""
     profile = await get_profile(db, profile_id)
     if profile is None:
         return False
+
+    # Revoke any active Celery training tasks before cascade-deleting
+    result = await db.execute(
+        select(TrainingJob).where(
+            TrainingJob.profile_id == profile_id,
+            TrainingJob.status.in_(("queued", "preprocessing", "training")),
+        )
+    )
+    active_jobs = result.scalars().all()
+    if active_jobs:
+        try:
+            from app.tasks.celery_app import celery_app
+
+            for job in active_jobs:
+                if job.celery_task_id:
+                    celery_app.control.revoke(job.celery_task_id, terminate=True)
+                    logger.info("revoked_training_task", job_id=job.id, celery_task_id=job.celery_task_id)
+        except Exception:
+            logger.warning("celery_revoke_failed", profile_id=profile_id, exc_info=True)
+
     await db.delete(profile)
     await db.flush()
     return True

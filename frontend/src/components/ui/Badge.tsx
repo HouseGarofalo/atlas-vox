@@ -12,6 +12,7 @@ const colorMap: Record<string, string> = {
   cancelled: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
   healthy: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
   unhealthy: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  revoked: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
   cloud: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
   local: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
 };

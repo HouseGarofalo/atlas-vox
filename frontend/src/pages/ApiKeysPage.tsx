@@ -59,7 +59,7 @@ export default function ApiKeysPage() {
                   <td className="py-2 font-medium">{k.name}</td>
                   <td className="py-2 font-mono text-xs">{k.key_prefix}...</td>
                   <td className="py-2 text-xs">{k.scopes}</td>
-                  <td className="py-2"><Badge status={k.active ? "healthy" : "error"} /></td>
+                  <td className="py-2"><Badge status={k.active ? "healthy" : "revoked"} /></td>
                   <td className="py-2 text-xs text-[var(--color-text-secondary)]">{new Date(k.created_at).toLocaleDateString()}</td>
                   <td className="py-2"><Button size="sm" variant="ghost" onClick={() => handleRevoke(k.id)}><Trash2 className="h-3 w-3" /></Button></td>
                 </tr>

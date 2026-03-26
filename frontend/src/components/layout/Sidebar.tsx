@@ -8,8 +8,11 @@ import {
   Settings2,
   Key,
   Settings,
+  Menu,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { useState } from "react";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -23,32 +26,58 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const [open, setOpen] = useState(false);
+
   return (
-    <aside className="flex w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)]">
-      <div className="flex h-16 items-center gap-2 px-6">
-        <AudioLines className="h-7 w-7 text-primary-500" />
-        <span className="text-lg font-bold">Atlas Vox</span>
-      </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === "/"}
-            className={({ isActive }) =>
-              clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary-500/10 text-primary-600 dark:text-primary-400"
-                  : "text-[var(--color-text-secondary)] hover:bg-gray-100 dark:hover:bg-gray-800"
-              )
-            }
-          >
-            <Icon className="h-5 w-5" />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+    <>
+      {/* Mobile menu button */}
+      <button
+        className="fixed top-4 left-4 z-50 rounded-lg bg-[var(--color-bg)] p-2 shadow-md md:hidden"
+        onClick={() => setOpen(!open)}
+        aria-label="Toggle menu"
+      >
+        {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
+
+      {/* Overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className="sidebar fixed z-40 flex h-full w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)] transition-[left] duration-200"
+        style={{ left: open ? 0 : -256 }}
+      >
+        <div className="flex h-16 items-center gap-2 px-6">
+          <AudioLines className="h-7 w-7 text-primary-500" />
+          <span className="text-lg font-bold">Atlas Vox</span>
+        </div>
+        <nav className="flex-1 space-y-1 px-3 py-4">
+          {navItems.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              onClick={() => setOpen(false)}
+              className={({ isActive }) =>
+                clsx(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-primary-500/10 text-primary-600 dark:text-primary-400"
+                    : "text-[var(--color-text-secondary)] hover:bg-gray-100 dark:hover:bg-gray-800"
+                )
+              }
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }

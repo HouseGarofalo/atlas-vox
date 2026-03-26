@@ -121,3 +121,4 @@ async def delete_preset(
     if preset.is_system:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete system presets")
     await db.delete(preset)
+    await db.flush()

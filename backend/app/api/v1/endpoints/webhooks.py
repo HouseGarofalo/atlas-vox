@@ -86,6 +86,7 @@ async def delete_webhook(
     if webhook is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
     await db.delete(webhook)
+    await db.flush()
 
 
 @router.post("/{webhook_id}/test")

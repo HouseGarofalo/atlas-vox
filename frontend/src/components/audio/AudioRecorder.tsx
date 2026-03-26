@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { Mic, Square, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "../ui/Button";
 
 interface AudioRecorderProps {
@@ -36,7 +37,7 @@ export function AudioRecorder({ onRecorded }: AudioRecorderProps) {
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
     } catch {
-      alert("Microphone access denied");
+      toast.error("Microphone access denied. Please allow microphone permissions and try again.");
     }
   }, [onRecorded]);
 

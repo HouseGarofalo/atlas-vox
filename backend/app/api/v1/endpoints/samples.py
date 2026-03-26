@@ -143,6 +143,7 @@ async def delete_sample(
             pp.unlink()
 
     await db.delete(sample)
+    await db.flush()
     logger.info("sample_deleted", sample_id=sample_id, profile_id=profile_id)
 
 

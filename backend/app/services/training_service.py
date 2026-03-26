@@ -75,14 +75,15 @@ async def start_training(
     # Update profile status
     profile.status = "training"
 
-    # Commit BEFORE dispatching Celery task so the worker can find the job
-    await db.commit()
+    # Flush to generate the job ID, then dispatch Celery and commit atomically
+    await db.flush()
 
-    # Queue Celery task (after commit so job exists in DB)
     from app.tasks.training import train_model
 
     celery_task = train_model.delay(job.id)
     job.celery_task_id = celery_task.id
+
+    # Single commit ensures celery_task_id is set before the worker reads the job
     await db.commit()
 
     logger.info(
