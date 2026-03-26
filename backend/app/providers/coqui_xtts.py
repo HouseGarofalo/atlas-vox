@@ -46,8 +46,38 @@ class CoquiXTTSProvider(TTSProvider):
 
                 gpu_mode = self.get_config_value('gpu_mode', settings.coqui_xtts_gpu_mode)
                 gpu = gpu_mode != "host_cpu"
-                self._tts = TTS(model_name=self._model_name, gpu=gpu)
-                logger.info("coqui_xtts_loaded", gpu=gpu)
+
+                # Try loading from local storage first (avoids CDN download issues)
+                local_model = Path(settings.storage_path) / "models" / "xtts_v2"
+                if (local_model / "model.pth").exists() and (local_model / "config.json").exists():
+                    import torch
+                    import torchaudio
+
+                    # Patch torch.load for PyTorch 2.6+ compatibility with TTS checkpoints
+                    _orig_torch_load = torch.load
+                    def _safe_load(*a, **kw):
+                        kw.setdefault("weights_only", False)
+                        return _orig_torch_load(*a, **kw)
+                    torch.load = _safe_load
+
+                    # Patch torchaudio.load to use librosa (avoids torchcodec/CUDA dep)
+                    _orig_ta_load = torchaudio.load
+                    def _librosa_load(filepath, *a, **kw):
+                        try:
+                            return _orig_ta_load(filepath, *a, **kw)
+                        except (ImportError, OSError):
+                            import librosa
+                            import numpy as np
+                            audio_np, sr = librosa.load(str(filepath), sr=22050, mono=True)
+                            return torch.FloatTensor(audio_np).unsqueeze(0), sr
+                    torchaudio.load = _librosa_load
+
+                    self._tts = TTS(model_path=str(local_model), config_path=str(local_model / "config.json"), gpu=gpu)
+                    torch.load = _orig_torch_load
+                    logger.info("coqui_xtts_loaded_local", model_dir=str(local_model), gpu=gpu)
+                else:
+                    self._tts = TTS(model_name=self._model_name, gpu=gpu)
+                    logger.info("coqui_xtts_loaded", gpu=gpu)
             except ImportError:
                 logger.error("coqui_tts_not_installed", hint="pip install TTS")
                 raise
@@ -268,10 +298,15 @@ class CoquiXTTSProvider(TTSProvider):
                 can_fine_tune = True
             else:
                 import os
-                model_dir = os.path.expanduser("~/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2")
-                if os.path.isdir(model_dir) and os.path.exists(os.path.join(model_dir, "model.pth")):
-                    can_clone = True
-                    can_fine_tune = True
+                # Check both the TTS cache and the persistent storage volume
+                for model_dir in [
+                    os.path.expanduser("~/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2"),
+                    os.path.join(settings.storage_path, "models", "xtts_v2"),
+                ]:
+                    if os.path.isdir(model_dir) and os.path.exists(os.path.join(model_dir, "model.pth")):
+                        can_clone = True
+                        can_fine_tune = True
+                        break
         except ImportError:
             pass
 
