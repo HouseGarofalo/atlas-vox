@@ -370,8 +370,13 @@ class AzureSpeechProvider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # Azure Custom Neural Voice (CNV) requires setup through the Azure Speech
+        # Studio portal (https://speech.microsoft.com) and cannot be initiated
+        # programmatically via the Speech SDK.  supports_cloning is therefore
+        # always False here; the clone_voice() method raises NotImplementedError
+        # with instructions for the portal workflow.
         return ProviderCapabilities(
-            supports_cloning=True,
+            supports_cloning=False,
             supports_fine_tuning=False,
             supports_streaming=True,
             supports_ssml=True,

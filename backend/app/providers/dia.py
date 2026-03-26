@@ -91,7 +91,16 @@ class DiaProvider(TTSProvider):
         if not samples:
             raise ValueError("Audio sample required for voice conditioning")
 
-        # Dia uses audio conditioning with 5-10s reference
+        # Verify the library is present before claiming a voice was conditioned.
+        try:
+            from dia.model import Dia  # noqa: F401
+        except ImportError as exc:
+            raise NotImplementedError(
+                "Dia is not installed. "
+                "Install it with: pip install git+https://github.com/nari-labs/dia.git"
+            ) from exc
+
+        # Dia uses audio conditioning with 5-10s reference.
         total_dur = sum(s.duration_seconds or 0 for s in samples)
         if total_dur < 5.0:
             raise ValueError(f"Dia requires 5-10s of reference audio, got {total_dur:.1f}s")
@@ -118,8 +127,16 @@ class DiaProvider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # Only advertise cloning when the Dia library is actually importable.
+        can_clone = False
+        try:
+            from dia.model import Dia  # noqa: F401
+            can_clone = True
+        except ImportError:
+            pass
+
         return ProviderCapabilities(
-            supports_cloning=True,
+            supports_cloning=can_clone,
             supports_fine_tuning=False,
             supports_streaming=False,
             supports_ssml=False,

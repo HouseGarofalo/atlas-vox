@@ -98,6 +98,15 @@ class CosyVoiceProvider(TTSProvider):
         if not samples:
             raise ValueError("At least one audio sample is required")
 
+        # Ensure the library is available before claiming a clone was registered.
+        try:
+            from cosyvoice.cli.cosyvoice import CosyVoice  # noqa: F401
+        except ImportError as exc:
+            raise NotImplementedError(
+                "CosyVoice is not installed. "
+                "See https://github.com/FunAudioLLM/CosyVoice for installation instructions."
+            ) from exc
+
         model_id = uuid.uuid4().hex[:12]
         return VoiceModel(
             model_id=model_id,
@@ -124,12 +133,21 @@ class CosyVoiceProvider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # CosyVoice is not pip-installable in the standard backend image.
+        # Only claim cloning support if the library is actually importable.
+        can_clone = False
+        try:
+            from cosyvoice.cli.cosyvoice import CosyVoice  # noqa: F401
+            can_clone = True
+        except ImportError:
+            pass
+
         return ProviderCapabilities(
-            supports_cloning=True,
+            supports_cloning=can_clone,
             supports_fine_tuning=False,
             supports_streaming=True,
             supports_ssml=False,
-            supports_zero_shot=True,
+            supports_zero_shot=can_clone,
             supports_batch=True,
             requires_gpu=False,
             gpu_mode=settings.cosyvoice_gpu_mode,

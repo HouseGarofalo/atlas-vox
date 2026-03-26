@@ -185,32 +185,15 @@ class PiperTTSProvider(TTSProvider):
     async def fine_tune(
         self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
     ) -> VoiceModel:
-        """Fine-tune a Piper voice (via external training pipeline).
+        """Piper fine-tuning is not supported through this provider.
 
-        NOTE: Piper fine-tuning uses a separate training pipeline
-        (piper-recording-studio + piper-train). This method creates
-        the necessary metadata for tracking but actual training
-        happens externally.
+        Piper custom voices require the external piper-recording-studio and
+        piper-train toolchain.  See https://github.com/rhasspy/piper/blob/master/TRAINING.md
+        for instructions on training a custom voice offline.
         """
-        model_dir = Path(settings.storage_path) / "models" / "piper" / f"ft_{uuid.uuid4().hex[:8]}"
-        model_dir.mkdir(parents=True, exist_ok=True)
-
-        ft_model_id = uuid.uuid4().hex[:12]
-        logger.info(
-            "piper_fine_tune_prepared",
-            model_id=ft_model_id,
-            samples=len(samples),
-        )
-
-        return VoiceModel(
-            model_id=ft_model_id,
-            model_path=model_dir,
-            provider_model_id=str(model_dir),
-            metrics={
-                "method": "piper_train",
-                "samples_count": len(samples),
-                "note": "Training via external piper-train pipeline",
-            },
+        raise NotImplementedError(
+            "Piper fine-tuning requires the external piper-train toolchain and is not "
+            "available through this API. See https://github.com/rhasspy/piper/blob/master/TRAINING.md"
         )
 
     async def list_voices(self) -> list[VoiceInfo]:
@@ -240,9 +223,13 @@ class PiperTTSProvider(TTSProvider):
         return voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # Piper fine-tuning requires the external piper-recording-studio + piper-train
+        # toolchain which is not integrated into this provider.  Reporting
+        # supports_fine_tuning=True would mislead the UI into showing a training
+        # workflow that cannot complete through this API.
         return ProviderCapabilities(
             supports_cloning=False,
-            supports_fine_tuning=True,
+            supports_fine_tuning=False,
             supports_streaming=False,
             supports_ssml=False,
             supports_zero_shot=False,

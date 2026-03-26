@@ -86,7 +86,17 @@ class StyleTTS2Provider(TTSProvider):
         if not samples:
             raise ValueError("At least one audio sample is required")
 
-        # StyleTTS2 zero-shot cloning uses reference audio at inference time
+        # Verify the library is present before claiming a clone was created.
+        try:
+            from styletts2 import tts as _styletts2_tts  # noqa: F401
+        except ImportError as exc:
+            raise NotImplementedError(
+                "StyleTTS2 is not installed. "
+                "Install it following https://github.com/yl4579/StyleTTS2 "
+                "and ensure model weights are downloaded before cloning."
+            ) from exc
+
+        # StyleTTS2 zero-shot cloning uses reference audio at inference time.
         model_id = uuid.uuid4().hex[:12]
         return VoiceModel(
             model_id=model_id,
@@ -98,16 +108,9 @@ class StyleTTS2Provider(TTSProvider):
     async def fine_tune(
         self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
     ) -> VoiceModel:
-        model_dir = Path(settings.storage_path) / "models" / "styletts2" / f"ft_{uuid.uuid4().hex[:8]}"
-        model_dir.mkdir(parents=True, exist_ok=True)
-
-        ft_id = uuid.uuid4().hex[:12]
-        logger.info("styletts2_fine_tune_prepared", samples=len(samples))
-        return VoiceModel(
-            model_id=ft_id,
-            model_path=model_dir,
-            provider_model_id=str(model_dir),
-            metrics={"method": "fine_tune", "samples_count": len(samples)},
+        raise NotImplementedError(
+            "StyleTTS2 fine-tuning is not supported via this provider. "
+            "See https://github.com/yl4579/StyleTTS2 for the upstream training scripts."
         )
 
     async def list_voices(self) -> list[VoiceInfo]:
@@ -121,12 +124,27 @@ class StyleTTS2Provider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # StyleTTS2 zero-shot cloning requires both the library AND a downloaded model.
+        # Without both in place the "clone" silently produces default-voice audio, which
+        # is misleading.  Report can_clone=False unless the library is importable; even
+        # then the caller is responsible for ensuring the model weights are present.
+        # Fine-tuning is not supported via this provider at all.
+        can_clone = False
+        try:
+            from styletts2 import tts as _styletts2_tts  # noqa: F401
+            # Only claim cloning if the model is loaded or weights are available.
+            # StyleTTS2 downloads multi-hundred-MB weights on first use which may fail.
+            if self._model is not None:
+                can_clone = True
+        except ImportError:
+            pass
+
         return ProviderCapabilities(
-            supports_cloning=True,
-            supports_fine_tuning=True,
+            supports_cloning=can_clone,
+            supports_fine_tuning=False,
             supports_streaming=False,
             supports_ssml=False,
-            supports_zero_shot=True,
+            supports_zero_shot=can_clone,
             supports_batch=True,
             requires_gpu=False,
             gpu_mode=settings.styletts2_gpu_mode,

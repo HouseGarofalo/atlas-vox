@@ -255,12 +255,32 @@ class CoquiXTTSProvider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
+        # Only claim cloning/fine-tuning if the TTS package is installed AND the
+        # XTTS model is downloaded. Without the model, training "succeeds" but
+        # synthesis fails with a download error.
+        can_clone = False
+        can_fine_tune = False
+        try:
+            from TTS.api import TTS  # noqa: F401
+            # Check if model is actually available (not just the library)
+            if self._tts is not None:
+                can_clone = True
+                can_fine_tune = True
+            else:
+                import os
+                model_dir = os.path.expanduser("~/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2")
+                if os.path.isdir(model_dir) and os.path.exists(os.path.join(model_dir, "model.pth")):
+                    can_clone = True
+                    can_fine_tune = True
+        except ImportError:
+            pass
+
         return ProviderCapabilities(
-            supports_cloning=True,
-            supports_fine_tuning=True,
+            supports_cloning=can_clone,
+            supports_fine_tuning=can_fine_tune,
             supports_streaming=True,
             supports_ssml=False,
-            supports_zero_shot=True,
+            supports_zero_shot=can_clone,
             supports_batch=True,
             requires_gpu=False,
             gpu_mode=settings.coqui_xtts_gpu_mode,
