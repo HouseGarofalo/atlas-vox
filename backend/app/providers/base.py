@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -62,6 +63,7 @@ class VoiceInfo:
     voice_id: str
     name: str
     language: str = "en"
+    gender: str | None = None
     description: str | None = None
     preview_url: str | None = None
 
@@ -116,6 +118,18 @@ async def run_sync(func, *args, **kwargs):
 
 class TTSProvider(ABC):
     """Abstract base for all TTS providers."""
+
+    _runtime_config: dict | None = None
+
+    def configure(self, config: dict) -> None:
+        """Apply runtime configuration overrides."""
+        self._runtime_config = config
+
+    def get_config_value(self, key: str, default: Any = None) -> Any:
+        """Get config value, checking runtime overrides first, then fallback."""
+        if hasattr(self, '_runtime_config') and self._runtime_config and key in self._runtime_config:
+            return self._runtime_config[key]
+        return default
 
     @abstractmethod
     async def synthesize(

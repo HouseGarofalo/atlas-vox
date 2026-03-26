@@ -32,18 +32,23 @@ class StyleTTS2Provider(TTSProvider):
     def __init__(self) -> None:
         self._model = None
 
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+        self._model = None
+
     def _get_model(self):
         if self._model is None:
             try:
                 import torch
                 from styletts2 import tts as styletts2_tts
 
+                gpu_mode = self.get_config_value('gpu_mode', settings.styletts2_gpu_mode)
                 device = "cuda" if (
-                    settings.styletts2_gpu_mode != "host_cpu"
+                    gpu_mode != "host_cpu"
                     and torch.cuda.is_available()
                 ) else "cpu"
 
-                self._model = styletts2_tts.StyleTTS2(device=device)
+                self._model = styletts2_tts.StyleTTS2()
                 logger.info("styletts2_loaded", device=device)
             except ImportError:
                 raise ImportError(
@@ -134,9 +139,13 @@ class StyleTTS2Provider(TTSProvider):
     async def health_check(self) -> ProviderHealth:
         start = time.perf_counter()
         try:
-            self._get_model()
+            if self._model is not None:
+                latency = int((time.perf_counter() - start) * 1000)
+                return ProviderHealth(name="styletts2", healthy=True, latency_ms=latency)
+            from styletts2 import tts as styletts2_tts  # noqa: F401
             latency = int((time.perf_counter() - start) * 1000)
-            return ProviderHealth(name="styletts2", healthy=True, latency_ms=latency)
+            return ProviderHealth(name="styletts2", healthy=True, latency_ms=latency,
+                                  error="Ready — model downloads on first synthesis")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
             return ProviderHealth(name="styletts2", healthy=False, latency_ms=latency, error=str(e))

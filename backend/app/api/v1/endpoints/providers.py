@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+import json
+import time
 from datetime import UTC
 
-from fastapi import APIRouter, HTTPException, status
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
+from app.models.provider import Provider
 from app.schemas.provider import (
+    PROVIDER_CONFIG_SCHEMAS,
+    PROVIDER_FIELD_DEFINITIONS,
     ProviderCapabilitiesSchema,
+    ProviderConfigResponse,
     ProviderHealthSchema,
     ProviderListResponse,
     ProviderResponse,
+    ProviderTestRequest,
+    ProviderTestResponse,
+    mask_secret,
 )
-from app.services.provider_registry import provider_registry
+from app.services.provider_registry import PROVIDER_DISPLAY_NAMES, provider_registry
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -109,3 +125,195 @@ async def list_provider_voices(name: str) -> dict:
         "voices": [{"voice_id": v.voice_id, "name": v.name, "language": v.language} for v in voices],
         "count": len(voices),
     }
+
+
+# --- Admin Provider Configuration Endpoints ---
+
+
+@router.get("/{name}/config", response_model=ProviderConfigResponse)
+async def get_provider_config(
+    name: str, db: AsyncSession = Depends(get_db)
+) -> ProviderConfigResponse:
+    """Get the configuration for a provider, including its schema for UI rendering."""
+    if name not in PROVIDER_DISPLAY_NAMES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Provider '{name}' not found",
+        )
+
+    # Get DB row
+    result = await db.execute(select(Provider).where(Provider.name == name))
+    db_provider = result.scalar_one_or_none()
+
+    # Build config dict starting from schema defaults
+    schema_cls = PROVIDER_CONFIG_SCHEMAS.get(name)
+    if schema_cls:
+        defaults = schema_cls().model_dump()
+    else:
+        defaults = {}
+
+    # Overlay DB-stored config
+    db_config: dict = {}
+    if db_provider and db_provider.config_json:
+        try:
+            db_config = json.loads(db_provider.config_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    merged = {**defaults, **db_config}
+
+    # Overlay registry runtime overrides
+    runtime = provider_registry.get_provider_config(name)
+    merged.update(runtime)
+
+    # Mask secret fields
+    field_defs = PROVIDER_FIELD_DEFINITIONS.get(name, [])
+    secret_fields = {f.name for f in field_defs if f.is_secret}
+    masked = {}
+    for key, val in merged.items():
+        if key in secret_fields and isinstance(val, str) and val:
+            masked[key] = mask_secret(val)
+        else:
+            masked[key] = val
+
+    return ProviderConfigResponse(
+        enabled=db_provider.enabled if db_provider else False,
+        gpu_mode=db_provider.gpu_mode if db_provider else "none",
+        config=masked,
+        config_schema=field_defs,
+    )
+
+
+class ProviderConfigUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    gpu_mode: str | None = None
+    config: dict | None = None
+
+
+@router.put("/{name}/config", response_model=ProviderConfigResponse)
+async def update_provider_config(
+    name: str,
+    body: ProviderConfigUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ProviderConfigResponse:
+    """Update the configuration for a provider."""
+    if name not in PROVIDER_DISPLAY_NAMES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Provider '{name}' not found",
+        )
+
+    # Get or create DB row
+    result = await db.execute(select(Provider).where(Provider.name == name))
+    db_provider = result.scalar_one_or_none()
+    if db_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Provider '{name}' not found in database. Run seed_providers first.",
+        )
+
+    # Load existing config from DB
+    existing_config: dict = {}
+    if db_provider.config_json:
+        try:
+            existing_config = json.loads(db_provider.config_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Handle incoming config — preserve secrets that are masked
+    if body.config is not None:
+        field_defs = PROVIDER_FIELD_DEFINITIONS.get(name, [])
+        secret_fields = {f.name for f in field_defs if f.is_secret}
+        new_config = dict(body.config)
+        for key in secret_fields:
+            if key in new_config:
+                val = new_config[key]
+                if isinstance(val, str) and val.startswith("****"):
+                    # Keep existing value — user sent back the masked version
+                    if key in existing_config:
+                        new_config[key] = existing_config[key]
+                    else:
+                        del new_config[key]
+        merged_config = {**existing_config, **new_config}
+    else:
+        merged_config = existing_config
+
+    # Update DB row
+    if body.enabled is not None:
+        db_provider.enabled = body.enabled
+    if body.gpu_mode is not None:
+        db_provider.gpu_mode = body.gpu_mode
+    db_provider.config_json = json.dumps(merged_config)
+    await db.flush()
+
+    # Apply to runtime registry
+    provider_registry.apply_config(name, merged_config)
+
+    logger.info("provider_config_updated", provider=name)
+
+    # Return masked config
+    field_defs = PROVIDER_FIELD_DEFINITIONS.get(name, [])
+    secret_fields = {f.name for f in field_defs if f.is_secret}
+    masked = {}
+    for key, val in merged_config.items():
+        if key in secret_fields and isinstance(val, str) and val:
+            masked[key] = mask_secret(val)
+        else:
+            masked[key] = val
+
+    return ProviderConfigResponse(
+        enabled=db_provider.enabled,
+        gpu_mode=db_provider.gpu_mode,
+        config=masked,
+        config_schema=field_defs,
+    )
+
+
+@router.post("/{name}/test", response_model=ProviderTestResponse)
+async def test_provider(name: str, body: ProviderTestRequest) -> ProviderTestResponse:
+    """Test a provider by running a quick synthesis."""
+    available = provider_registry.list_available()
+    if name not in available:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Provider '{name}' not available",
+        )
+
+    from app.providers.base import SynthesisSettings
+
+    provider = provider_registry.get_provider(name)
+    synth_settings = SynthesisSettings()
+
+    # Determine voice_id: use provided or pick first available
+    voice_id = body.voice_id
+    if not voice_id:
+        try:
+            voices = await provider.list_voices()
+            if voices:
+                voice_id = voices[0].voice_id
+            else:
+                voice_id = "default"
+        except Exception:
+            voice_id = "default"
+
+    start = time.perf_counter()
+    try:
+        result = await provider.synthesize(body.text, voice_id, synth_settings)
+        latency = int((time.perf_counter() - start) * 1000)
+
+        # Build a URL-friendly audio path
+        audio_url = f"/storage/output/{result.audio_path.name}"
+
+        return ProviderTestResponse(
+            success=True,
+            audio_url=audio_url,
+            duration_seconds=result.duration_seconds,
+            latency_ms=latency,
+        )
+    except Exception as e:
+        latency = int((time.perf_counter() - start) * 1000)
+        logger.warning("provider_test_failed", provider=name, error=str(e))
+        return ProviderTestResponse(
+            success=False,
+            latency_ms=latency,
+            error=str(e),
+        )

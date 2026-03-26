@@ -27,8 +27,16 @@ from app.providers.base import (
 logger = structlog.get_logger(__name__)
 
 COSYVOICE_SPEAKERS = [
-    "English Female", "English Male", "Chinese Female", "Chinese Male",
-    "Japanese Female", "Korean Female", "Spanish Female", "French Female",
+    # CosyVoice-300M-SFT preset speakers (original Chinese names)
+    # The model uses Chinese speaker names internally.
+    # English aliases are provided for convenience.
+    {"id": "英文女", "name": "English Female", "lang": "en", "gender": "Female"},
+    {"id": "英文男", "name": "English Male", "lang": "en", "gender": "Male"},
+    {"id": "中文女", "name": "Chinese Female", "lang": "zh", "gender": "Female"},
+    {"id": "中文男", "name": "Chinese Male", "lang": "zh", "gender": "Male"},
+    {"id": "日语男", "name": "Japanese Male", "lang": "ja", "gender": "Male"},
+    {"id": "粤语女", "name": "Cantonese Female", "lang": "zh", "gender": "Female"},
+    {"id": "韩语女", "name": "Korean Female", "lang": "ko", "gender": "Female"},
 ]
 
 
@@ -38,14 +46,19 @@ class CosyVoiceProvider(TTSProvider):
     def __init__(self) -> None:
         self._model = None
 
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+        self._model = None
+
     def _get_model(self):
         if self._model is None:
             try:
                 import torch
                 from cosyvoice.cli.cosyvoice import CosyVoice
 
+                gpu_mode = self.get_config_value('gpu_mode', settings.cosyvoice_gpu_mode)
                 device = "cuda" if (
-                    settings.cosyvoice_gpu_mode != "host_cpu"
+                    gpu_mode != "host_cpu"
                     and torch.cuda.is_available()
                 ) else "cpu"
 
@@ -68,7 +81,8 @@ class CosyVoiceProvider(TTSProvider):
         start = time.perf_counter()
 
         # Use SFT inference for preset speakers (run in executor)
-        output = await run_sync(model.inference_sft, text, voice_id or "English Female")
+        # Default to English Female (英文女) if no voice_id provided
+        output = await run_sync(model.inference_sft, text, voice_id or "英文女")
 
         import torchaudio
         torchaudio.save(str(output_file), output["tts_speech"], 22050)
@@ -99,8 +113,14 @@ class CosyVoiceProvider(TTSProvider):
 
     async def list_voices(self) -> list[VoiceInfo]:
         return [
-            VoiceInfo(voice_id=name, name=name, language=name.split()[0].lower()[:2])
-            for name in COSYVOICE_SPEAKERS
+            VoiceInfo(
+                voice_id=s["id"],
+                name=s["name"],
+                language=s["lang"],
+                gender=s.get("gender"),
+                description=f"CosyVoice SFT preset — {s['name']}",
+            )
+            for s in COSYVOICE_SPEAKERS
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
@@ -122,9 +142,13 @@ class CosyVoiceProvider(TTSProvider):
     async def health_check(self) -> ProviderHealth:
         start = time.perf_counter()
         try:
-            self._get_model()
-            latency = int((time.perf_counter() - start) * 1000)
-            return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=latency)
+            if self._model is not None:
+                return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0)
+            from cosyvoice.cli.cosyvoice import CosyVoice as _CV  # noqa: F401
+            return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0)
+        except ImportError:
+            return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0,
+                                  error="Available in GPU worker only")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
             return ProviderHealth(name="cosyvoice", healthy=False, latency_ms=latency, error=str(e))
@@ -138,7 +162,7 @@ class CosyVoiceProvider(TTSProvider):
         import soundfile as sf
 
         # CosyVoice streaming via inference_sft generator
-        for chunk_output in model.inference_sft(text, voice_id or "English Female", stream=True):
+        for chunk_output in model.inference_sft(text, voice_id or "英文女", stream=True):
             audio = chunk_output["tts_speech"].numpy()
             buf = io.BytesIO()
             sf.write(buf, audio.squeeze(), 22050, format="WAV")

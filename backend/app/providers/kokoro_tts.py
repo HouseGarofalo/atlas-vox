@@ -32,6 +32,9 @@ class KokoroTTSProvider(TTSProvider):
         self._pipeline = None
         self._voices: list[VoiceInfo] | None = None
 
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+
     def _get_pipeline(self):
         """Lazy-load the Kokoro pipeline."""
         if self._pipeline is None:
@@ -95,22 +98,81 @@ class KokoroTTSProvider(TTSProvider):
         raise NotImplementedError("Kokoro does not support fine-tuning")
 
     async def list_voices(self) -> list[VoiceInfo]:
-        """List Kokoro's 54 built-in voices."""
+        """List all 54 Kokoro built-in voices across 9 languages."""
         if self._voices is not None:
             return self._voices
 
-        # Kokoro voice naming: af_heart, af_bella, am_adam, bf_emma, etc.
-        # a=American, b=British; f=female, m=male
+        # Kokoro voice naming convention:
+        #   First letter: language (a=American, b=British, j=Japanese, z=Chinese,
+        #                           e=Spanish, f=French, h=Hindi, i=Italian, p=Portuguese)
+        #   Second letter: gender (f=female, m=male)
+        #   Underscore + name
         default_voices = [
-            VoiceInfo(voice_id="af_heart", name="Heart (American Female)", language="en"),
-            VoiceInfo(voice_id="af_bella", name="Bella (American Female)", language="en"),
-            VoiceInfo(voice_id="af_sarah", name="Sarah (American Female)", language="en"),
-            VoiceInfo(voice_id="af_nicole", name="Nicole (American Female)", language="en"),
-            VoiceInfo(voice_id="am_adam", name="Adam (American Male)", language="en"),
-            VoiceInfo(voice_id="am_michael", name="Michael (American Male)", language="en"),
-            VoiceInfo(voice_id="bf_emma", name="Emma (British Female)", language="en"),
-            VoiceInfo(voice_id="bm_george", name="George (British Male)", language="en"),
-            VoiceInfo(voice_id="bm_lewis", name="Lewis (British Male)", language="en"),
+            # --- American English Female (af_) --- 14 voices
+            VoiceInfo(voice_id="af_heart", name="Heart (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_alloy", name="Alloy (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_aoede", name="Aoede (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_bella", name="Bella (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_jessica", name="Jessica (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_kore", name="Kore (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_nicole", name="Nicole (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_nova", name="Nova (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_river", name="River (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_sarah", name="Sarah (American Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="af_sky", name="Sky (American Female)", language="en", gender="Female"),
+            # --- American English Male (am_) --- 9 voices
+            VoiceInfo(voice_id="am_adam", name="Adam (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_echo", name="Echo (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_eric", name="Eric (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_fenrir", name="Fenrir (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_liam", name="Liam (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_michael", name="Michael (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_onyx", name="Onyx (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_puck", name="Puck (American Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="am_santa", name="Santa (American Male)", language="en", gender="Male"),
+            # --- British English Female (bf_) --- 4 voices
+            VoiceInfo(voice_id="bf_alice", name="Alice (British Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="bf_emma", name="Emma (British Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="bf_isabella", name="Isabella (British Female)", language="en", gender="Female"),
+            VoiceInfo(voice_id="bf_lily", name="Lily (British Female)", language="en", gender="Female"),
+            # --- British English Male (bm_) --- 4 voices
+            VoiceInfo(voice_id="bm_daniel", name="Daniel (British Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="bm_fable", name="Fable (British Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="bm_george", name="George (British Male)", language="en", gender="Male"),
+            VoiceInfo(voice_id="bm_lewis", name="Lewis (British Male)", language="en", gender="Male"),
+            # --- Japanese (jf_/jm_) --- 5 voices
+            VoiceInfo(voice_id="jf_alpha", name="Alpha (Japanese Female)", language="ja", gender="Female"),
+            VoiceInfo(voice_id="jf_gongitsune", name="Gongitsune (Japanese Female)", language="ja", gender="Female"),
+            VoiceInfo(voice_id="jf_nezumi", name="Nezumi (Japanese Female)", language="ja", gender="Female"),
+            VoiceInfo(voice_id="jf_tebukuro", name="Tebukuro (Japanese Female)", language="ja", gender="Female"),
+            VoiceInfo(voice_id="jm_kumo", name="Kumo (Japanese Male)", language="ja", gender="Male"),
+            # --- Mandarin Chinese (zf_/zm_) --- 8 voices
+            VoiceInfo(voice_id="zf_xiaobei", name="Xiaobei (Chinese Female)", language="zh", gender="Female"),
+            VoiceInfo(voice_id="zf_xiaoni", name="Xiaoni (Chinese Female)", language="zh", gender="Female"),
+            VoiceInfo(voice_id="zf_xiaoxiao", name="Xiaoxiao (Chinese Female)", language="zh", gender="Female"),
+            VoiceInfo(voice_id="zf_xiaoyi", name="Xiaoyi (Chinese Female)", language="zh", gender="Female"),
+            VoiceInfo(voice_id="zm_yunjian", name="Yunjian (Chinese Male)", language="zh", gender="Male"),
+            VoiceInfo(voice_id="zm_yunxi", name="Yunxi (Chinese Male)", language="zh", gender="Male"),
+            VoiceInfo(voice_id="zm_yunxia", name="Yunxia (Chinese Male)", language="zh", gender="Male"),
+            VoiceInfo(voice_id="zm_yunyang", name="Yunyang (Chinese Male)", language="zh", gender="Male"),
+            # --- Spanish (ef_/em_) --- 3 voices
+            VoiceInfo(voice_id="ef_dora", name="Dora (Spanish Female)", language="es", gender="Female"),
+            VoiceInfo(voice_id="em_alex", name="Alex (Spanish Male)", language="es", gender="Male"),
+            VoiceInfo(voice_id="em_santa", name="Santa (Spanish Male)", language="es", gender="Male"),
+            # --- French (ff_) --- 1 voice
+            VoiceInfo(voice_id="ff_siwis", name="Siwis (French Female)", language="fr", gender="Female"),
+            # --- Hindi (hf_/hm_) --- 4 voices
+            VoiceInfo(voice_id="hf_alpha", name="Alpha (Hindi Female)", language="hi", gender="Female"),
+            VoiceInfo(voice_id="hf_beta", name="Beta (Hindi Female)", language="hi", gender="Female"),
+            VoiceInfo(voice_id="hm_omega", name="Omega (Hindi Male)", language="hi", gender="Male"),
+            VoiceInfo(voice_id="hm_psi", name="Psi (Hindi Male)", language="hi", gender="Male"),
+            # --- Italian (if_/im_) --- 2 voices
+            VoiceInfo(voice_id="if_sara", name="Sara (Italian Female)", language="it", gender="Female"),
+            VoiceInfo(voice_id="im_nicola", name="Nicola (Italian Male)", language="it", gender="Male"),
+            # --- Brazilian Portuguese (pf_/pm_) --- 3 voices
+            VoiceInfo(voice_id="pf_dora", name="Dora (Portuguese Female)", language="pt", gender="Female"),
+            VoiceInfo(voice_id="pm_alex", name="Alex (Portuguese Male)", language="pt", gender="Male"),
+            VoiceInfo(voice_id="pm_santa", name="Santa (Portuguese Male)", language="pt", gender="Male"),
         ]
         self._voices = default_voices
         return self._voices
@@ -128,7 +190,7 @@ class KokoroTTSProvider(TTSProvider):
             gpu_mode="none",
             min_samples_for_cloning=0,
             max_text_length=5000,
-            supported_languages=["en"],
+            supported_languages=["en", "ja", "zh", "es", "fr", "hi", "it", "pt"],
             supported_output_formats=["wav"],
         )
 

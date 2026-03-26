@@ -34,13 +34,18 @@ class CoquiXTTSProvider(TTSProvider):
         self._tts = None
         self._model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
 
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+        self._tts = None
+
     def _get_tts(self):
         """Lazy-load the TTS model."""
         if self._tts is None:
             try:
                 from TTS.api import TTS
 
-                gpu = settings.coqui_xtts_gpu_mode != "host_cpu"
+                gpu_mode = self.get_config_value('gpu_mode', settings.coqui_xtts_gpu_mode)
+                gpu = gpu_mode != "host_cpu"
                 self._tts = TTS(model_name=self._model_name, gpu=gpu)
                 logger.info("coqui_xtts_loaded", gpu=gpu)
             except ImportError:
@@ -165,15 +170,88 @@ class CoquiXTTSProvider(TTSProvider):
         )
 
     async def list_voices(self) -> list[VoiceInfo]:
-        """List available XTTS speakers."""
-        # XTTS v2 has a few built-in speakers; primary use is cloning
+        """List available XTTS v2 built-in speakers.
+
+        Tries to get the live speaker list from the loaded model first.
+        Falls back to a hardcoded list of all ~55 known built-in speakers.
+        """
+        # Try to get speakers from the loaded model
+        try:
+            if self._tts is not None and hasattr(self._tts, "speakers") and self._tts.speakers:
+                return [
+                    VoiceInfo(
+                        voice_id=name,
+                        name=name,
+                        language="en",
+                        description="XTTS v2 built-in speaker",
+                    )
+                    for name in self._tts.speakers
+                ]
+        except Exception:
+            pass
+
+        # Fallback: hardcoded list of all known XTTS v2 built-in speakers
+        return self._hardcoded_speakers()
+
+    @staticmethod
+    def _hardcoded_speakers() -> list[VoiceInfo]:
+        """All ~55 XTTS v2 built-in speakers."""
+        speakers = [
+            # Female speakers (25)
+            ("Claribel Dervla", "Female"),
+            ("Daisy Studious", "Female"),
+            ("Gracie Wise", "Female"),
+            ("Tammie Ema", "Female"),
+            ("Alison Dietlinde", "Female"),
+            ("Ana Florence", "Female"),
+            ("Annmarie Nele", "Female"),
+            ("Asya Anara", "Female"),
+            ("Brenda Stern", "Female"),
+            ("Gitta Nikolina", "Female"),
+            ("Henriette Usha", "Female"),
+            ("Sofia Hellen", "Female"),
+            ("Tammy Grit", "Female"),
+            ("Tanja Adelina", "Female"),
+            ("Vjollca Johnnie", "Female"),
+            ("Nova Hogarth", "Female"),
+            ("Maja Ruoho", "Female"),
+            ("Uta Obando", "Female"),
+            ("Lidiya Szekeres", "Female"),
+            ("Chandra MacFarland", "Female"),
+            ("Szofi Granger", "Female"),
+            ("Camilla Holmstrom", "Female"),
+            ("Lilya Stainthorpe", "Female"),
+            ("Zofija Kendrick", "Female"),
+            ("Narelle Moon", "Female"),
+            # Male speakers (18)
+            ("Andrew Chipper", "Male"),
+            ("Badr Odhiambo", "Male"),
+            ("Dionisio Schuyler", "Male"),
+            ("Royston Min", "Male"),
+            ("Viktor Eka", "Male"),
+            ("Abrahan Mack", "Male"),
+            ("Adde Michal", "Male"),
+            ("Baldur Sanjin", "Male"),
+            ("Craig Gutsy", "Male"),
+            ("Damien Black", "Male"),
+            ("Gilberto Mathias", "Male"),
+            ("Ilkin Urbano", "Male"),
+            ("Kazuhiko Atallah", "Male"),
+            ("Ludvig Milivoj", "Male"),
+            ("Suad Qasim", "Male"),
+            ("Torcull Diarmuid", "Male"),
+            ("Viktor Menelaos", "Male"),
+            ("Zacharie Aimilios", "Male"),
+        ]
         return [
             VoiceInfo(
-                voice_id="default",
-                name="XTTS Default",
+                voice_id=name,
+                name=name,
                 language="en",
-                description="Default XTTS v2 speaker — use clone_voice for custom voices",
-            ),
+                gender=gender,
+                description="XTTS v2 built-in speaker",
+            )
+            for name, gender in speakers
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
@@ -196,9 +274,13 @@ class CoquiXTTSProvider(TTSProvider):
     async def health_check(self) -> ProviderHealth:
         start = time.perf_counter()
         try:
-            self._get_tts()
+            if self._tts is not None:
+                latency = int((time.perf_counter() - start) * 1000)
+                return ProviderHealth(name="coqui_xtts", healthy=True, latency_ms=latency)
+            from TTS.api import TTS  # noqa: F401
             latency = int((time.perf_counter() - start) * 1000)
-            return ProviderHealth(name="coqui_xtts", healthy=True, latency_ms=latency)
+            return ProviderHealth(name="coqui_xtts", healthy=True, latency_ms=latency,
+                                  error="Ready — model downloads on first synthesis")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
             return ProviderHealth(

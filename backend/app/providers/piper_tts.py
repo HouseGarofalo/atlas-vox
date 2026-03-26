@@ -26,17 +26,51 @@ from app.providers.base import (
 
 logger = structlog.get_logger(__name__)
 
-# Well-known Piper voices for bootstrapping
+# Well-known Piper voices for bootstrapping — all English voice models
 DEFAULT_PIPER_VOICES = [
-    {"id": "en_US-lessac-medium", "name": "Lessac (US Medium)", "lang": "en"},
-    {"id": "en_US-amy-medium", "name": "Amy (US Medium)", "lang": "en"},
-    {"id": "en_US-ryan-medium", "name": "Ryan (US Medium)", "lang": "en"},
-    {"id": "en_US-arctic-medium", "name": "Arctic (US Medium)", "lang": "en"},
-    {"id": "en_GB-alan-medium", "name": "Alan (GB Medium)", "lang": "en"},
-    {"id": "en_GB-cori-medium", "name": "Cori (GB Medium)", "lang": "en"},
-    {"id": "de_DE-thorsten-medium", "name": "Thorsten (DE Medium)", "lang": "de"},
-    {"id": "fr_FR-siwis-medium", "name": "Siwis (FR Medium)", "lang": "fr"},
-    {"id": "es_ES-davefx-medium", "name": "Davefx (ES Medium)", "lang": "es"},
+    # en_US (American English) — 20 voices
+    {"id": "en_US-amy-low", "name": "Amy (US Low)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-amy-medium", "name": "Amy (US Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-arctic-medium", "name": "Arctic (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-bryce-medium", "name": "Bryce (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-danny-low", "name": "Danny (US Low)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-hfc_female-medium", "name": "HFC Female (US Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-hfc_male-medium", "name": "HFC Male (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-joe-medium", "name": "Joe (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-john-medium", "name": "John (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-kathleen-low", "name": "Kathleen (US Low)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-kristin-medium", "name": "Kristin (US Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-kusal-medium", "name": "Kusal (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-l2arctic-medium", "name": "L2Arctic (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-lessac-low", "name": "Lessac (US Low)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-lessac-medium", "name": "Lessac (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-lessac-high", "name": "Lessac (US High)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-libritts-high", "name": "LibriTTS (US High)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-libritts_r-medium", "name": "LibriTTS-R (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-ljspeech-medium", "name": "LJSpeech (US Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-ljspeech-high", "name": "LJSpeech (US High)", "lang": "en", "gender": "Female"},
+    {"id": "en_US-norman-medium", "name": "Norman (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-reza_ibrahim-medium", "name": "Reza Ibrahim (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-ryan-low", "name": "Ryan (US Low)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-ryan-medium", "name": "Ryan (US Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-ryan-high", "name": "Ryan (US High)", "lang": "en", "gender": "Male"},
+    {"id": "en_US-sam-medium", "name": "Sam (US Medium)", "lang": "en", "gender": "Male"},
+    # en_GB (British English) — 9 voices
+    {"id": "en_GB-alan-low", "name": "Alan (GB Low)", "lang": "en", "gender": "Male"},
+    {"id": "en_GB-alan-medium", "name": "Alan (GB Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_GB-alba-medium", "name": "Alba (GB Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_GB-aru-medium", "name": "Aru (GB Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_GB-cori-medium", "name": "Cori (GB Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_GB-cori-high", "name": "Cori (GB High)", "lang": "en", "gender": "Female"},
+    {"id": "en_GB-jenny_dioco-medium", "name": "Jenny Dioco (GB Medium)", "lang": "en", "gender": "Female"},
+    {"id": "en_GB-northern_english_male-medium", "name": "Northern English Male (GB Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_GB-semaine-medium", "name": "Semaine (GB Medium)", "lang": "en", "gender": "Male"},
+    {"id": "en_GB-southern_english_female-low", "name": "Southern English Female (GB Low)", "lang": "en", "gender": "Female"},
+    {"id": "en_GB-vctk-medium", "name": "VCTK (GB Medium)", "lang": "en", "gender": "Male"},
+    # Popular non-English voices
+    {"id": "de_DE-thorsten-medium", "name": "Thorsten (DE Medium)", "lang": "de", "gender": "Male"},
+    {"id": "fr_FR-siwis-medium", "name": "Siwis (FR Medium)", "lang": "fr", "gender": "Female"},
+    {"id": "es_ES-davefx-medium", "name": "Davefx (ES Medium)", "lang": "es", "gender": "Male"},
 ]
 
 
@@ -46,6 +80,12 @@ class PiperTTSProvider(TTSProvider):
     def __init__(self) -> None:
         self._piper = None
         self._model_dir = Path(settings.piper_model_path)
+
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+        self._piper = None
+        model_path = self.get_config_value('model_path', str(settings.piper_model_path))
+        self._model_dir = Path(model_path)
 
     def _get_piper(self, model_path: str | None = None):
         """Lazy-load the Piper voice."""
@@ -115,6 +155,9 @@ class PiperTTSProvider(TTSProvider):
             import wave
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(voice.config.sample_rate if hasattr(voice, 'config') and hasattr(voice.config, 'sample_rate') else 22050)
                 voice.synthesize(text, wav)
             buf.seek(0)
             output_file.write_bytes(buf.read())
@@ -190,6 +233,7 @@ class PiperTTSProvider(TTSProvider):
                     voice_id=v["id"],
                     name=v["name"],
                     language=v["lang"],
+                    gender=v.get("gender"),
                     description="Download from https://github.com/rhasspy/piper/releases",
                 ))
 

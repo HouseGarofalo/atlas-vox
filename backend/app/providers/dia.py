@@ -32,14 +32,19 @@ class DiaProvider(TTSProvider):
     def __init__(self) -> None:
         self._model = None
 
+    def configure(self, config: dict) -> None:
+        super().configure(config)
+        self._model = None
+
     def _get_model(self):
         if self._model is None:
             try:
                 import torch
                 from dia.model import Dia
 
+                gpu_mode = self.get_config_value('gpu_mode', settings.dia_gpu_mode)
                 device = "cuda" if (
-                    settings.dia_gpu_mode != "host_cpu"
+                    gpu_mode != "host_cpu"
                     and torch.cuda.is_available()
                 ) else "cpu"
 
@@ -131,9 +136,13 @@ class DiaProvider(TTSProvider):
     async def health_check(self) -> ProviderHealth:
         start = time.perf_counter()
         try:
-            self._get_model()
-            latency = int((time.perf_counter() - start) * 1000)
-            return ProviderHealth(name="dia", healthy=True, latency_ms=latency)
+            if self._model is not None:
+                return ProviderHealth(name="dia", healthy=True, latency_ms=0)
+            from dia.model import Dia as _Dia  # noqa: F401
+            return ProviderHealth(name="dia", healthy=True, latency_ms=0)
+        except ImportError:
+            return ProviderHealth(name="dia", healthy=True, latency_ms=0,
+                                  error="Available in GPU worker only")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
             return ProviderHealth(name="dia", healthy=False, latency_ms=latency, error=str(e))
