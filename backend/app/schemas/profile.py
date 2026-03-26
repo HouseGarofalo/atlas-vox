@@ -12,6 +12,7 @@ class ProfileCreate(BaseModel):
     description: str | None = None
     language: str = "en"
     provider_name: str
+    voice_id: str | None = None  # Pre-built voice ID — if set, profile is immediately ready
     tags: list[str] | None = None
 
 
@@ -31,6 +32,7 @@ class ProfileResponse(BaseModel):
     description: str | None
     language: str
     provider_name: str
+    voice_id: str | None = None
     status: str
     tags: list[str] | None = None
     active_version_id: str | None

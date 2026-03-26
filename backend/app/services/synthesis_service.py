@@ -112,9 +112,14 @@ async def synthesize(
 
     provider = provider_registry.get_provider(profile.provider_name)
 
-    # Determine voice_id: active version's provider_model_id, or default
+    # Determine voice_id:
+    #   1. profile.voice_id (pre-built voice from library)
+    #   2. active version's provider_model_id (trained/cloned voice)
+    #   3. fallback to "default"
     voice_id = "default"
-    if profile.active_version_id:
+    if profile.voice_id:
+        voice_id = profile.voice_id
+    elif profile.active_version_id:
         from app.models.model_version import ModelVersion
         ver_result = await db.execute(
             select(ModelVersion).where(ModelVersion.id == profile.active_version_id)
@@ -211,7 +216,9 @@ async def stream_synthesize(
         raise ValueError(f"Provider '{profile.provider_name}' does not support streaming")
 
     voice_id = "default"
-    if profile.active_version_id:
+    if profile.voice_id:
+        voice_id = profile.voice_id
+    elif profile.active_version_id:
         from app.models.model_version import ModelVersion
         ver_result = await db.execute(
             select(ModelVersion).where(ModelVersion.id == profile.active_version_id)

@@ -19,6 +19,7 @@ class VoiceProfile(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     language: Mapped[str] = mapped_column(String(10), default="en")
     provider_name: Mapped[str] = mapped_column(String(50), ForeignKey("providers.name"), nullable=False)
+    voice_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Pre-built voice ID (e.g., "af_heart", "en-US-JennyNeural")
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, training, ready, error, archived
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of strings
     active_version_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("model_versions.id"), nullable=True)

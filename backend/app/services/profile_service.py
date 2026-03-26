@@ -19,13 +19,19 @@ logger = structlog.get_logger(__name__)
 
 
 async def create_profile(db: AsyncSession, data: ProfileCreate) -> VoiceProfile:
-    """Create a new voice profile."""
+    """Create a new voice profile.
+
+    If ``voice_id`` is provided the profile uses a pre-built voice and is
+    immediately ready for synthesis (no training required).
+    """
     profile = VoiceProfile(
         id=str(uuid.uuid4()),
         name=data.name,
         description=data.description,
         language=data.language,
         provider_name=data.provider_name,
+        voice_id=data.voice_id,
+        status="ready" if data.voice_id else "pending",
         tags=json.dumps(data.tags) if data.tags else None,
     )
     db.add(profile)
@@ -118,6 +124,7 @@ async def profile_to_response(db: AsyncSession, profile: VoiceProfile) -> Profil
         description=profile.description,
         language=profile.language,
         provider_name=profile.provider_name,
+        voice_id=profile.voice_id,
         status=profile.status,
         tags=tags,
         active_version_id=profile.active_version_id,

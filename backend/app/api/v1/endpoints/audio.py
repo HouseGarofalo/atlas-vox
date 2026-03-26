@@ -20,6 +20,25 @@ MIME_TYPES = {
 }
 
 
+@router.get("/audio/previews/{filename}")
+async def serve_preview_audio(filename: str, user: CurrentUser) -> FileResponse:
+    """Serve cached voice preview files."""
+    safe_name = Path(filename).name
+    file_path = Path(settings.storage_path) / "output" / "previews" / safe_name
+
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview audio file not found")
+
+    ext = file_path.suffix.lstrip(".")
+    media_type = MIME_TYPES.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=safe_name,
+    )
+
+
 @router.get("/audio/{filename}")
 async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
     """Serve generated audio files from the output storage directory."""

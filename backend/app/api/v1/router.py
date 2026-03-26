@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     samples,
     synthesis,
     training,
+    voices,
     webhooks,
 )
 
@@ -30,4 +31,5 @@ api_router.include_router(compare.router)
 api_router.include_router(audio.router)
 api_router.include_router(presets.router)
 api_router.include_router(api_keys.router)
+api_router.include_router(voices.router)
 api_router.include_router(webhooks.router)
