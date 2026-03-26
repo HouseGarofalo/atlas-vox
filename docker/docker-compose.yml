@@ -1,4 +1,4 @@
-version: "3.9"
+name: atlas-vox
 
 services:
   backend:
@@ -6,15 +6,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./atlas_vox.db
+      - DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
       - REDIS_URL=redis://redis:6379/0
       - AUTH_DISABLED=true
       - STORAGE_PATH=/app/storage
     volumes:
       - storage_data:/app/storage
-      - db_data:/app
+      - db_data:/app/data
     depends_on:
       - redis
     restart: unless-stopped
@@ -24,15 +24,13 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.frontend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -43,12 +41,12 @@ services:
       dockerfile: docker/Dockerfile.backend
     command: celery -A app.tasks.celery_app worker --loglevel=info --queues=default,preprocessing,training --concurrency=2
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./atlas_vox.db
+      - DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_PATH=/app/storage
     volumes:
       - storage_data:/app/storage
-      - db_data:/app
+      - db_data:/app/data
     depends_on:
       - redis
     restart: unless-stopped

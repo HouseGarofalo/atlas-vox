@@ -21,10 +21,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     logger.info("atlas_vox_starting", env=settings.app_env, debug=settings.debug)
 
-    # Create tables on startup (use Alembic in production)
-    if not settings.is_production:
-        await init_db()
-        logger.info("database_initialized")
+    # Create tables on startup (idempotent — safe for all environments)
+    await init_db()
+    logger.info("database_initialized")
+
+    from app.services.provider_registry import load_provider_configs, seed_providers
+
+    await seed_providers()
+    await load_provider_configs()
+    logger.info("providers_configured")
 
     yield
 

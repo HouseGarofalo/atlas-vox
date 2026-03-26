@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend test lint format migrate docker-up docker-gpu-up seed clean
+.PHONY: dev dev-backend dev-frontend test lint format migrate docker-up docker-gpu-up docker-down docker-reset seed clean
 
 # Development
 dev:
@@ -43,6 +43,9 @@ docker-gpu-up:
 
 docker-down:
 	docker compose -f docker/docker-compose.yml down
+
+docker-reset:
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml down -v
 
 # Utilities
 seed:

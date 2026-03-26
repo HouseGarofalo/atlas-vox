@@ -1,5 +1,3 @@
-version: "3.9"
-
 # GPU override — extends docker-compose.yml
 # Usage: docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up
 
@@ -9,7 +7,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.gpu-worker
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./atlas_vox.db
+      - DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_PATH=/app/storage
       - COQUI_XTTS_GPU_MODE=docker_gpu
@@ -19,7 +17,7 @@ services:
       - DIA2_GPU_MODE=docker_gpu
     volumes:
       - storage_data:/app/storage
-      - db_data:/app
+      - db_data:/app/data
     depends_on:
       - redis
     deploy:
@@ -30,8 +28,3 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
-
-volumes:
-  storage_data:
-  redis_data:
-  db_data:
