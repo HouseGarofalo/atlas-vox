@@ -87,6 +87,39 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "atlas_vox_speak",
+        "description": "Speak text using any available voice. No profile needed. Just provide the text and optionally a voice name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to speak"},
+                "voice": {
+                    "type": "string",
+                    "description": "Voice name or ID (e.g., 'af_heart', 'en-US-JennyNeural', 'Rachel'). Defaults to Kokoro Heart.",
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Provider name (e.g., 'kokoro', 'azure_speech', 'elevenlabs'). Auto-detected from voice if omitted.",
+                },
+                "speed": {"type": "number", "description": "Speech speed (0.5-2.0)", "default": 1.0},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "atlas_vox_list_available_voices",
+        "description": "List all available voices from all TTS providers (not profiles — actual provider voices).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "description": "Filter to a specific provider (optional, omit for all providers).",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -175,6 +208,107 @@ async def _compare_voices(args: dict) -> dict:
         return {"text": args["text"], "results": results}
 
 
+def _detect_provider(voice: str) -> str:
+    """Auto-detect provider from voice ID patterns."""
+    import re
+
+    # Kokoro voices: af_*, am_*, bf_*, bm_* (language prefix + gender prefix + name)
+    if re.match(r"^[a-z]{1,2}[fm]_", voice):
+        return "kokoro"
+
+    # Azure Neural voices: en-US-JennyNeural, en-GB-RyanNeural, etc.
+    if re.match(r"^[a-z]{2}-[A-Z]{2}-\w+Neural$", voice):
+        return "azure_speech"
+
+    # Piper voices: en_US-*, en_GB-*, etc.
+    if re.match(r"^[a-z]{2}_[A-Z]{2}-", voice):
+        return "piper"
+
+    # Known ElevenLabs voice IDs (24-char hex-ish IDs)
+    known_elevenlabs = {
+        "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        "AZnzlk1XvdvUeBnXmlld",  # Domi
+        "EXAVITQu4vr4xnSDxMaL",  # Bella
+        "ErXwobaYiN019PkySvjV",  # Antoni
+        "MF3mGyEYCl7XYWbV9V6O",  # Elli
+        "TxGEqnHWrfWFTfGW9XjX",  # Josh
+        "VR6AewLTigWG4xSOukaG",  # Arnold
+        "pNInz6obpgDQGcFmaJgB",  # Adam
+        "yoZ06aMxZJJ28mfd3POQ",  # Sam
+    }
+    if voice in known_elevenlabs:
+        return "elevenlabs"
+
+    # Coqui XTTS: names with spaces (e.g. "Claribel Dervla")
+    if " " in voice:
+        return "coqui_xtts"
+
+    # Default to kokoro
+    return "kokoro"
+
+
+async def _speak(args: dict) -> dict:
+    """Quick text-to-speech without profiles."""
+    from app.providers.base import SynthesisSettings
+    from app.services.provider_registry import provider_registry
+
+    text = args["text"]
+    voice = args.get("voice", "af_heart")
+    provider_name = args.get("provider")
+    speed = args.get("speed", 1.0)
+
+    # Auto-detect provider from voice if not specified
+    if not provider_name:
+        provider_name = _detect_provider(voice)
+
+    try:
+        provider = provider_registry.get_provider(provider_name)
+    except ValueError as e:
+        return {"error": str(e), "available_providers": provider_registry.list_available()}
+
+    settings = SynthesisSettings(speed=speed)
+    result = await provider.synthesize(text, voice, settings)
+
+    return {
+        "audio_url": f"/api/v1/audio/{result.audio_path.name}",
+        "provider": provider_name,
+        "voice": voice,
+        "format": result.format,
+        "duration_seconds": result.duration_seconds,
+    }
+
+
+async def _list_available_voices(args: dict) -> dict:
+    """List voices from all providers (or a specific one)."""
+    from app.services.provider_registry import PROVIDER_DISPLAY_NAMES, provider_registry
+
+    filter_provider = args.get("provider")
+    voices: list[dict] = []
+    providers_to_query = (
+        [filter_provider] if filter_provider else provider_registry.list_available()
+    )
+
+    for name in providers_to_query:
+        display_name = PROVIDER_DISPLAY_NAMES.get(name, name)
+        try:
+            provider = provider_registry.get_provider(name)
+            provider_voices = await provider.list_voices()
+            for v in provider_voices:
+                voices.append({
+                    "voice_id": v.voice_id,
+                    "name": v.name,
+                    "language": v.language,
+                    "gender": v.gender,
+                    "provider": name,
+                    "provider_display": display_name,
+                })
+        except Exception as exc:
+            logger.warning("voice_list_failed", provider=name, error=str(exc))
+            continue
+
+    return {"voices": voices, "count": len(voices)}
+
+
 async def _provider_status(args: dict) -> Any:
     from app.services.provider_registry import provider_registry
 
@@ -202,4 +336,6 @@ _HANDLERS = {
     "atlas_vox_manage_profile": _manage_profile,
     "atlas_vox_compare_voices": _compare_voices,
     "atlas_vox_provider_status": _provider_status,
+    "atlas_vox_speak": _speak,
+    "atlas_vox_list_available_voices": _list_available_voices,
 }

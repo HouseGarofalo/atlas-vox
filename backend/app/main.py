@@ -63,5 +63,9 @@ app.add_middleware(
 from app.api.v1.router import api_router  # noqa: E402
 from app.mcp.transport import router as mcp_router  # noqa: E402
 
+# OpenAI-compatible TTS endpoint (mounted at /v1/audio/speech, not /api/v1)
+from app.api.v1.endpoints.openai_compat import router as openai_compat_router  # noqa: E402
+
 app.include_router(api_router)
 app.include_router(mcp_router)
+app.include_router(openai_compat_router)
