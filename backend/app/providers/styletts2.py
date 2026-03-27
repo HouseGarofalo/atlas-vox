@@ -42,14 +42,28 @@ class StyleTTS2Provider(TTSProvider):
                 import torch
                 from styletts2 import tts as styletts2_tts
 
-                gpu_mode = self.get_config_value('gpu_mode', settings.styletts2_gpu_mode)
-                device = "cuda" if (
-                    gpu_mode != "host_cpu"
-                    and torch.cuda.is_available()
-                ) else "cpu"
+                # Patch torch.load for PyTorch 2.6+ compatibility
+                _orig = torch.load
+                def _safe(*a, **kw):
+                    kw.setdefault("weights_only", False)
+                    return _orig(*a, **kw)
+                torch.load = _safe
 
-                self._model = styletts2_tts.StyleTTS2()
-                logger.info("styletts2_loaded", device=device)
+                # Try local model path first
+                local_model = Path(settings.storage_path) / "models" / "styletts2"
+                ckpt = local_model / "epochs_2nd_00020.pth"
+                cfg = local_model / "config.yml"
+                if ckpt.exists() and cfg.exists():
+                    self._model = styletts2_tts.StyleTTS2(
+                        model_checkpoint_path=str(ckpt),
+                        config_path=str(cfg),
+                    )
+                    logger.info("styletts2_loaded_local", model_dir=str(local_model))
+                else:
+                    self._model = styletts2_tts.StyleTTS2()
+                    logger.info("styletts2_loaded")
+
+                torch.load = _orig
             except ImportError:
                 raise ImportError(
                     "StyleTTS2 not installed. See https://github.com/yl4579/StyleTTS2"
@@ -132,10 +146,14 @@ class StyleTTS2Provider(TTSProvider):
         can_clone = False
         try:
             from styletts2 import tts as _styletts2_tts  # noqa: F401
-            # Only claim cloning if the model is loaded or weights are available.
-            # StyleTTS2 downloads multi-hundred-MB weights on first use which may fail.
             if self._model is not None:
                 can_clone = True
+            else:
+                # Check if model weights exist locally
+                import os
+                local_ckpt = os.path.join(settings.storage_path, "models", "styletts2", "epochs_2nd_00020.pth")
+                if os.path.exists(local_ckpt):
+                    can_clone = True
         except ImportError:
             pass
 
