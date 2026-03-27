@@ -41,6 +41,11 @@ COPY backend/app ./app
 COPY backend/alembic.ini .
 COPY backend/migrations ./migrations
 
+# Fix numpy ABI compatibility (must run AFTER all packages are in place)
+# The builder stage may have numpy downgraded by transitive deps; this ensures
+# numpy 2.x is the final installed version in the runtime image.
+RUN pip install --no-cache-dir --force-reinstall "numpy>=2.0,<3.0" "pandas>=2.2"
+
 # Storage and data directories
 RUN mkdir -p /app/storage/samples /app/storage/preprocessed /app/storage/output /app/storage/models /app/data
 
