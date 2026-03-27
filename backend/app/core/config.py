@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     # Provider: Dia2
     dia2_gpu_mode: str = "host_cpu"
 
+    # GPU Service (remote provider bridge)
+    gpu_service_url: str = ""  # e.g., "http://host.docker.internal:8200"
+    gpu_service_timeout: int = 120
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:

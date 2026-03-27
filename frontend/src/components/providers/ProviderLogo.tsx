@@ -227,6 +227,205 @@ const LOGOS: Record<string, React.ReactNode> = {
     </>
   ),
 
+  /* Fish Speech - Fish icon, blue/teal */
+  fish_speech: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#E6FFFA" />
+      <ellipse cx="14" cy="16" rx="9" ry="5.5" fill="#0D9488" />
+      <polygon points="24,16 28,12 28,20" fill="#0D9488" />
+      <circle cx="10" cy="14.5" r="1.2" fill="white" />
+      <circle cx="10.4" cy="14.5" r="0.6" fill="#1A202C" />
+      <path
+        d="M13 11C14.5 9.5 17 9.5 18.5 11"
+        stroke="#0D9488"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M13 21C14.5 22.5 17 22.5 18.5 21"
+        stroke="#0D9488"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </>
+  ),
+
+  /* Chatterbox - Chat bubble with sound waves, orange */
+  chatterbox: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FFF7ED" />
+      <path
+        d="M7 10C7 8.34 8.34 7 10 7H22C23.66 7 25 8.34 25 10V18C25 19.66 23.66 21 22 21H14L10 25V21H10C8.34 21 7 19.66 7 18V10Z"
+        fill="#EA580C"
+      />
+      <path
+        d="M12 12.5H20"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 15.5H18"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.7"
+      />
+      <path
+        d="M27 12C28.2 13.5 28.2 17.5 27 19"
+        stroke="#EA580C"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M29 10.5C30.5 13 30.5 18 29 20.5"
+        stroke="#EA580C"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.5"
+      />
+    </>
+  ),
+
+  /* F5-TTS - "F5" text in a rounded square, purple */
+  f5_tts: (
+    <>
+      <rect x="2" y="2" width="28" height="28" rx="7" fill="#7C3AED" />
+      <text
+        x="16"
+        y="22"
+        textAnchor="middle"
+        fontFamily="Arial, sans-serif"
+        fontWeight="bold"
+        fontSize="16"
+        fill="white"
+      >
+        F5
+      </text>
+    </>
+  ),
+
+  /* OpenVoice v2 - Open microphone icon, green */
+  openvoice_v2: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#ECFDF5" />
+      <rect x="12" y="6" width="8" height="12" rx="4" fill="#16A34A" />
+      <path
+        d="M9 15C9 19.42 12.13 23 16 23C19.87 23 23 19.42 23 15"
+        stroke="#16A34A"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <line
+        x1="16"
+        y1="23"
+        x2="16"
+        y2="27"
+        stroke="#16A34A"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="12"
+        y1="27"
+        x2="20"
+        y2="27"
+        stroke="#16A34A"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      {/* "open" indicator arcs */}
+      <path
+        d="M7 12C6 14 6 18 7 20"
+        stroke="#16A34A"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.5"
+      />
+      <path
+        d="M25 12C26 14 26 18 25 20"
+        stroke="#16A34A"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.5"
+      />
+    </>
+  ),
+
+  /* Orpheus - Lyre/harp icon, gold/amber */
+  orpheus: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FFFBEB" />
+      <path
+        d="M10 8C10 8 8 14 8 20C8 22.2 9.8 24 12 24H20C22.2 24 24 22.2 24 20C24 14 22 8 22 8"
+        stroke="#D97706"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <line
+        x1="10"
+        y1="8"
+        x2="22"
+        y2="8"
+        stroke="#D97706"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <line
+        x1="13"
+        y1="10"
+        x2="13"
+        y2="22"
+        stroke="#D97706"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="16"
+        y1="9"
+        x2="16"
+        y2="23"
+        stroke="#D97706"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="19"
+        y1="10"
+        x2="19"
+        y2="22"
+        stroke="#D97706"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+
+  /* Piper Training - Pipe with a gear, brown/copper */
+  piper_training: (
+    <>
+      <circle cx="16" cy="16" r="15" fill="#FEF3C7" />
+      <rect x="5" y="13" width="14" height="6" rx="3" fill="#92400E" />
+      <circle cx="9" cy="16" r="1" fill="#FEF3C7" />
+      <circle cx="13" cy="16" r="1" fill="#FEF3C7" />
+      <path
+        d="M19 14.5C19 14.5 22 13 22 16C22 19 19 17.5 19 17.5"
+        fill="#92400E"
+      />
+      {/* gear */}
+      <circle cx="25" cy="22" r="4" fill="#B45309" />
+      <circle cx="25" cy="22" r="1.8" fill="#FEF3C7" />
+      <rect x="24.2" y="17" width="1.6" height="2.5" rx="0.5" fill="#B45309" />
+      <rect x="24.2" y="24.5" width="1.6" height="2.5" rx="0.5" fill="#B45309" />
+      <rect x="20" y="21.2" width="2.5" height="1.6" rx="0.5" fill="#B45309" />
+      <rect x="27.5" y="21.2" width="2.5" height="1.6" rx="0.5" fill="#B45309" />
+    </>
+  ),
+
   /* Default fallback - Speaker/microphone icon */
   _default: (
     <>

@@ -7,6 +7,7 @@ import json
 import structlog
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.provider import Provider
 from app.providers.azure_speech import AzureSpeechProvider
@@ -45,6 +46,12 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "cosyvoice": "CosyVoice",
     "dia": "Nari-labs Dia",
     "dia2": "Nari-labs Dia2",
+    "fish_speech": "Fish Speech",
+    "chatterbox": "Chatterbox",
+    "f5_tts": "F5-TTS",
+    "openvoice_v2": "OpenVoice v2",
+    "orpheus": "Orpheus TTS",
+    "piper_training": "Piper Training (GPU)",
 }
 
 PROVIDER_TYPES: dict[str, str] = {
@@ -57,6 +64,12 @@ PROVIDER_TYPES: dict[str, str] = {
     "cosyvoice": "local",
     "dia": "local",
     "dia2": "local",
+    "fish_speech": "gpu",
+    "chatterbox": "gpu",
+    "f5_tts": "gpu",
+    "openvoice_v2": "gpu",
+    "orpheus": "gpu",
+    "piper_training": "gpu",
 }
 
 
@@ -66,9 +79,14 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._instances: dict[str, TTSProvider] = {}
         self._config_overrides: dict[str, dict] = {}
+        self._gpu_providers: dict[str, TTSProvider] = {}
 
     def get_provider(self, name: str) -> TTSProvider:
         """Get or create a provider instance by name."""
+        # Check GPU providers first (they are pre-instantiated)
+        if name in self._gpu_providers:
+            return self._gpu_providers[name]
+
         if name not in PROVIDER_CLASSES:
             raise ValueError(f"Unknown provider: {name}")
 
@@ -92,18 +110,22 @@ class ProviderRegistry:
         return self._config_overrides.get(name, {})
 
     def list_available(self) -> list[str]:
-        """List all registered provider names."""
-        return list(PROVIDER_CLASSES.keys())
+        """List all registered provider names (local + GPU)."""
+        names = list(PROVIDER_CLASSES.keys())
+        for name in self._gpu_providers:
+            if name not in names:
+                names.append(name)
+        return names
 
     def list_all_known(self) -> list[dict]:
-        """List all known providers (even those not yet implemented)."""
+        """List all known providers (local, cloud, and GPU)."""
         result = []
         for name in PROVIDER_DISPLAY_NAMES:
             result.append({
                 "name": name,
                 "display_name": PROVIDER_DISPLAY_NAMES[name],
                 "provider_type": PROVIDER_TYPES.get(name, "local"),
-                "implemented": name in PROVIDER_CLASSES,
+                "implemented": name in PROVIDER_CLASSES or name in self._gpu_providers,
             })
         return result
 
@@ -174,3 +196,63 @@ async def load_provider_configs() -> None:
         )
     else:
         logger.info("provider_configs_none_persisted")
+
+
+async def discover_gpu_providers() -> None:
+    """Auto-discover providers from the GPU service and register RemoteProviders.
+
+    Queries the GPU service's ``/providers`` endpoint to learn which providers
+    are available, then creates a ``RemoteProvider`` instance for each one and
+    registers it in the global ``provider_registry``.
+
+    Silently returns if ``gpu_service_url`` is not configured or if the GPU
+    service is unreachable.
+    """
+    if not settings.gpu_service_url:
+        return
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{settings.gpu_service_url}/providers")
+            if resp.status_code == 200:
+                data = resp.json()
+                discovered: list[str] = []
+                for p in data.get("providers", []):
+                    name = p["name"]
+                    display = p.get("display_name", name)
+                    # Update display-name dicts so list_all_known includes them
+                    if name not in PROVIDER_DISPLAY_NAMES:
+                        PROVIDER_DISPLAY_NAMES[name] = display
+                    if name not in PROVIDER_TYPES:
+                        PROVIDER_TYPES[name] = "gpu"
+
+                    from app.providers.remote_provider import RemoteProvider
+
+                    provider_registry._gpu_providers[name] = RemoteProvider(
+                        name=name,
+                        display_name=display,
+                        gpu_service_url=settings.gpu_service_url,
+                        timeout=settings.gpu_service_timeout,
+                    )
+                    discovered.append(name)
+                    logger.info(
+                        "gpu_provider_discovered",
+                        provider=name,
+                        display=display,
+                    )
+
+                if discovered:
+                    logger.info(
+                        "gpu_providers_discovery_complete",
+                        count=len(discovered),
+                        providers=discovered,
+                    )
+            else:
+                logger.warning(
+                    "gpu_service_discovery_http_error",
+                    status=resp.status_code,
+                )
+    except Exception as exc:
+        logger.warning("gpu_service_discovery_failed", error=str(exc))

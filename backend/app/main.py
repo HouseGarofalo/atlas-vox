@@ -25,10 +25,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("database_initialized")
 
-    from app.services.provider_registry import load_provider_configs, seed_providers
+    from app.services.provider_registry import (
+        discover_gpu_providers,
+        load_provider_configs,
+        seed_providers,
+    )
 
     await seed_providers()
     await load_provider_configs()
+    await discover_gpu_providers()
     logger.info("providers_configured")
 
     yield

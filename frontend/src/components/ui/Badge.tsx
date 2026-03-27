@@ -15,6 +15,7 @@ const colorMap: Record<string, string> = {
   revoked: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
   cloud: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
   local: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
+  gpu: "bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300",
 };
 
 interface BadgeProps {

@@ -18,7 +18,7 @@ export interface Provider {
   id: string;
   name: string;
   display_name: string;
-  provider_type: "cloud" | "local";
+  provider_type: "cloud" | "local" | "gpu";
   enabled: boolean;
   gpu_mode: string;
   capabilities: ProviderCapabilities | null;

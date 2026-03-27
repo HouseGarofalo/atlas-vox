@@ -122,4 +122,78 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       "Real-time generation",
     ],
   },
+  fish_speech: {
+    description:
+      "SOTA open-source TTS with voice cloning from 10-30 seconds of reference audio. Supports 8 languages.",
+    website: "https://github.com/fishaudio/fish-speech",
+    modelInfo: "Fish Speech S2, ~4GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: [
+      "10-30s voice cloning",
+      "8 languages",
+      "Streaming support",
+    ],
+  },
+  chatterbox: {
+    description:
+      "Ultra-realistic voice cloning from just a few seconds of audio. Built-in watermarking. By Resemble AI.",
+    website: "https://github.com/resemble-ai/chatterbox",
+    modelInfo: "Chatterbox Turbo, ~3GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: [
+      "Few-second cloning",
+      "Emotion tags",
+      "Built-in watermark",
+    ],
+  },
+  f5_tts: {
+    description:
+      "Flow-matching TTS with zero-shot voice cloning. High quality, efficient inference.",
+    website: "https://github.com/SWivid/F5-TTS",
+    modelInfo: "F5-TTS v1, ~3GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: ["Flow matching", "Zero-shot cloning", "Efficient"],
+  },
+  openvoice_v2: {
+    description:
+      "Instant voice tone cloning by MIT and MyShell. Captures style from short audio.",
+    website: "https://github.com/myshell-ai/OpenVoice",
+    modelInfo: "OpenVoice v2, ~2GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: [
+      "Instant tone cloning",
+      "MIT license",
+      "Lightweight",
+    ],
+  },
+  orpheus: {
+    description:
+      "SOTA TTS built on Llama-3B. Zero-shot voice cloning with emotion control tags like [laugh], [sigh].",
+    website: "https://github.com/canopyai/Orpheus-TTS",
+    modelInfo: "Orpheus 3B, ~8GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: [
+      "Emotion control",
+      "Llama-3B backbone",
+      "Zero-shot cloning",
+    ],
+  },
+  piper_training: {
+    description:
+      "Fine-tune Piper TTS models on your own GPU. Creates fast ONNX models for CPU inference.",
+    website: "https://github.com/rhasspy/piper",
+    modelInfo: "piper-train, ~2-4GB VRAM",
+    pricingTier: "open-source",
+    category: "local-gpu",
+    highlights: [
+      "Fine-tune existing models",
+      "ONNX output",
+      "CPU inference after training",
+    ],
+  },
 };
