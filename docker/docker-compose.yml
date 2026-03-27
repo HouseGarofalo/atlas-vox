@@ -12,6 +12,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - AUTH_DISABLED=true
       - STORAGE_PATH=/app/storage
+      - GPU_SERVICE_URL=http://host.docker.internal:8200
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - storage_data:/app/storage
       - db_data:/app/data

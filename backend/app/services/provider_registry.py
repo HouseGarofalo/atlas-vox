@@ -219,7 +219,8 @@ async def discover_gpu_providers() -> None:
             if resp.status_code == 200:
                 data = resp.json()
                 discovered: list[str] = []
-                for p in data.get("providers", []):
+                providers_list = data if isinstance(data, list) else data.get("providers", [])
+                for p in providers_list:
                     name = p["name"]
                     display = p.get("display_name", name)
                     # Update display-name dicts so list_all_known includes them
