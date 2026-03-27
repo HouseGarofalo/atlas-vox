@@ -5,6 +5,10 @@ audio samples and transcripts.  The output is an ONNX model compatible with the
 lightweight Piper runtime already integrated into Atlas Vox's main backend.
 
 This provider does **not** perform real-time synthesis — it runs training jobs.
+
+NOTE: ``piper-train`` is only available on Linux.  On Windows, the provider
+will report ``installed: false``.  The ``piper-tts`` runtime (for inference)
+*is* available on Windows via ``pip install piper-tts``.
 """
 
 from __future__ import annotations

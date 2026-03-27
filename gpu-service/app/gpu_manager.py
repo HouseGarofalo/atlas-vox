@@ -52,7 +52,7 @@ class GPUManager:
         devices: list[DeviceInfo] = []
         for i in range(torch.cuda.device_count()):
             props = torch.cuda.get_device_properties(i)
-            total_mb = props.total_mem // (1024 * 1024)
+            total_mb = getattr(props, "total_memory", getattr(props, "total_mem", 0)) // (1024 * 1024)
             reserved = torch.cuda.memory_reserved(i) // (1024 * 1024)
             allocated = torch.cuda.memory_allocated(i) // (1024 * 1024)
             used_mb = max(reserved, allocated)
