@@ -1,6 +1,6 @@
 # 📖 Atlas Vox User Guide
 
-> **Atlas Vox** is a self-hosted, intelligent voice training and customization platform that unifies 9 TTS engines behind a single interface.
+> **Atlas Vox** is a self-hosted, intelligent voice training and customization platform that unifies **15 TTS engines** (9 local/cloud + 6 GPU) behind a single interface.
 
 ---
 
@@ -23,6 +23,14 @@
   - [CosyVoice](#cosyvoice)
   - [Dia](#dia)
   - [Dia2](#dia2)
+- [GPU Providers](#-gpu-providers)
+  - [Fish Speech](#fish-speech)
+  - [Chatterbox](#chatterbox)
+  - [F5-TTS](#f5-tts)
+  - [OpenVoice v2](#openvoice-v2)
+  - [Orpheus TTS](#orpheus-tts)
+  - [Piper Training](#piper-training)
+- [GPU Service Setup](#-gpu-service-setup)
 - [Training Studio](#-training-studio)
 - [Synthesis Lab](#-synthesis-lab)
 - [Comparison](#-comparison)
@@ -36,13 +44,14 @@
 
 Atlas Vox brings together cloud-based and locally-hosted text-to-speech engines into one unified platform. Whether you are building a podcast, creating an AI assistant, localizing content, or experimenting with voice cloning, Atlas Vox gives you:
 
-- **9 TTS providers** out of the box (2 cloud, 7 local)
+- **15 TTS providers** — 2 cloud, 7 local (Docker), and 6 GPU providers via a dedicated host service
+- **290+ voices** browsable in the Voice Library with preview playback
 - **4 interfaces**: Web UI, REST API, CLI, and MCP server
 - **Voice cloning** from as little as 6 seconds of audio
 - **Training pipeline** with audio preprocessing, noise reduction, and normalization
 - **Side-by-side comparison** of voices across providers
 - **Persona presets** for consistent voice output (Friendly, Professional, Energetic, etc.)
-- **GPU flexibility** — run models on CPU or GPU per provider
+- **GPU flexibility** — run models on CPU or GPU per provider, plus a standalone GPU service for heavyweight models
 
 All data stays on your machine. No audio is sent to third parties unless you explicitly configure a cloud provider.
 
@@ -203,17 +212,21 @@ A table of the most recent synthesis operations showing the text snippet, provid
 
 ## 📚 Voice Library
 
-The Voice Library aggregates voices from all available providers into a single, searchable catalog.
+The Voice Library aggregates **290+ voices** from all available providers into a single, searchable catalog with preview playback.
 
 ### Browsing Voices
 
-Navigate to **Voice Library** in the sidebar. The page loads all voices from every healthy provider and displays them in a card grid.
+Navigate to **Voice Library** in the sidebar. The page loads all voices from every healthy provider (including GPU providers when the GPU service is running) and displays them in a card grid.
 
 Each voice card shows:
 - Voice name
 - Provider name and logo
 - Language code (e.g., `en`, `zh`, `ja`)
-- Provider badge (cloud / local)
+- Provider badge (cloud / local / GPU)
+
+### Preview Playback
+
+Click the **Preview** button on any voice card to hear a short sample. Previews are synthesized on demand and cached for instant replay on subsequent plays. The preview uses a default phrase: "Hello, this is a preview of my voice." — you can also specify custom text via the API (`POST /api/v1/voices/preview`).
 
 ### Filtering
 
@@ -221,7 +234,7 @@ Use the dropdown filters at the top to narrow results:
 
 | Filter | Options |
 |--------|---------|
-| **Provider** | All Providers, Kokoro, Piper, ElevenLabs, Azure Speech, etc. |
+| **Provider** | All Providers, Kokoro, Piper, ElevenLabs, Azure Speech, GPU providers, etc. |
 | **Language** | All Languages, en, zh, ja, de, fr, etc. |
 | **Search** | Free-text search by voice name |
 
@@ -256,6 +269,14 @@ pending ──> training ──> ready
 
 ### Creating a New Profile
 
+There are two ways to create a profile:
+
+**Mode 1: Library Voice (recommended for beginners)**
+1. Go to **Voice Library** and browse the 290+ available voices
+2. Find a voice you like and click **Create Profile** on its card
+3. The profile is created with that voice pre-selected and ready for synthesis
+
+**Mode 2: Custom Training**
 1. Go to **Voice Profiles** in the sidebar
 2. Click **Create Profile**
 3. Fill in the form:
@@ -265,8 +286,11 @@ pending ──> training ──> ready
    - **Provider** — Select which TTS provider to use
    - **Tags** — Optional tags for organization
 4. Click **Create**
+5. Upload audio samples and train a custom voice model
 
 The profile starts in `pending` status. You can immediately use it for synthesis with the provider's built-in voices, or upload audio samples and train a custom voice.
+
+> **Note on Training:** Only **ElevenLabs**, **Coqui XTTS v2**, and **StyleTTS2** currently support voice training/cloning. Other providers use their built-in voices for synthesis.
 
 ### Managing Profiles
 
@@ -294,7 +318,7 @@ The active version is used when synthesizing with that profile.
 
 ## 🔧 Providers
 
-Atlas Vox ships with 9 TTS providers. Each provider extends a common `TTSProvider` interface and declares its capabilities dynamically. The UI adapts automatically based on what each provider supports.
+Atlas Vox supports **15 TTS providers**: 9 built-in providers (running inside Docker or locally) and 6 GPU providers (running via the standalone GPU service on the host). Each provider extends a common `TTSProvider` interface and declares its capabilities dynamically. The UI adapts automatically based on what each provider supports.
 
 ### Provider Types
 
@@ -671,9 +695,176 @@ Dia2 is the next-generation dialogue model from Nari Labs with streaming support
 
 ---
 
+## 🖥️ GPU Providers
+
+Atlas Vox includes 6 additional TTS providers that run on the host machine via a standalone **GPU Service**. These providers require an NVIDIA GPU with CUDA support and are accessed by the Docker-based backend over HTTP.
+
+The GPU providers are automatically discovered when the GPU service is running. They appear in the Providers page, Voice Library, and Synthesis Lab alongside the built-in providers.
+
+| Provider | Model | VRAM | Key Feature |
+|----------|-------|------|-------------|
+| **Fish Speech** | Fish Speech 1.5 | ~4 GB | High-quality multilingual, voice cloning |
+| **Chatterbox** | Resemble AI | ~4 GB | Expressive voice cloning |
+| **F5-TTS** | F5-TTS | ~4 GB | Fast flow-matching TTS |
+| **OpenVoice v2** | MyShell | ~2 GB | Instant voice cloning, style control |
+| **Orpheus TTS** | Orpheus | ~6 GB | High-quality speech synthesis |
+| **Piper Training** | Piper VITS | ~2 GB | Train custom Piper ONNX models |
+
+### Fish Speech
+
+**Type:** GPU | **Model:** Fish Speech 1.5 | **Cloning:** Yes
+
+Fish Speech provides high-quality multilingual speech synthesis with voice cloning capabilities.
+
+**Best For:** Multilingual TTS with natural prosody, voice cloning from reference audio.
+
+---
+
+### Chatterbox
+
+**Type:** GPU | **Model:** Resemble AI Chatterbox | **Cloning:** Yes
+
+Chatterbox from Resemble AI generates expressive speech with voice cloning.
+
+**Best For:** Expressive voice cloning with emotional control.
+
+---
+
+### F5-TTS
+
+**Type:** GPU | **Model:** F5-TTS | **Cloning:** Yes
+
+F5-TTS uses flow-matching for fast, high-quality speech synthesis.
+
+**Best For:** Fast synthesis with good quality on GPU.
+
+---
+
+### OpenVoice v2
+
+**Type:** GPU | **Model:** MyShell OpenVoice v2 | **Cloning:** Yes
+
+OpenVoice enables instant voice cloning with flexible style control (emotion, accent, rhythm, pauses, intonation).
+
+**Best For:** Zero-shot voice cloning with style transfer.
+
+---
+
+### Orpheus TTS
+
+**Type:** GPU | **Model:** Orpheus | **VRAM:** ~6 GB
+
+Orpheus provides high-quality speech synthesis.
+
+**Best For:** High-quality general-purpose TTS on GPU.
+
+---
+
+### Piper Training
+
+**Type:** GPU | **Special:** Training only
+
+Piper Training uses the GPU service to train custom Piper ONNX voice models. Once trained, the resulting models can be used by the CPU-based Piper provider inside Docker.
+
+**Best For:** Creating custom Piper voices from your own audio data.
+
+---
+
+## 🔧 GPU Service Setup
+
+The GPU service is a standalone FastAPI application that runs natively on your host machine (outside Docker) to provide GPU-accelerated TTS. The Dockerized Atlas Vox backend communicates with it over HTTP.
+
+### Why a Separate Service?
+
+Docker GPU passthrough has limitations — particularly on Windows with WSL2 and when multiple GPU models need different CUDA environments. The GPU service runs directly on the host where it has native GPU access, and the Atlas Vox backend connects to it via HTTP using the `RemoteProvider` pattern.
+
+### Prerequisites
+
+- **Python 3.11+**
+- **NVIDIA GPU** with CUDA support (CUDA 12.x recommended)
+- **PyTorch** with CUDA — install from https://pytorch.org/get-started/locally/
+
+### Starting the GPU Service
+
+```bash
+# 1. Navigate to the GPU service directory
+cd gpu-service
+
+# 2. Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate       # Windows
+# source .venv/bin/activate  # Linux/macOS
+
+# 3. Install PyTorch with CUDA first
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# 4. Install the GPU service
+pip install -e .
+
+# 5. (Optional) Download model weights ahead of time
+python scripts/download_models.py --all
+
+# 6. Start the service
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8200 --reload
+```
+
+### Connecting Atlas Vox to the GPU Service
+
+Set the `GPU_SERVICE_URL` environment variable in your Atlas Vox configuration:
+
+```env
+# In docker/.env or your .env file
+GPU_SERVICE_URL=http://host.docker.internal:8200
+```
+
+When running Atlas Vox in Docker on Windows, `host.docker.internal` resolves to the Windows host where the GPU service runs. On Linux, you may need to use the host's IP address or Docker's `--add-host` flag.
+
+Once configured, restart the Atlas Vox backend. The GPU providers will be automatically discovered and registered.
+
+### Multi-GPU Configuration
+
+If you have multiple GPUs, assign specific providers to specific devices:
+
+```env
+GPU_DEVICE_MAP={"fish_speech": "cuda:0", "orpheus": "cuda:1", "openvoice_v2": "cuda:0"}
+```
+
+### GPU Service Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GPU_HOST` | `0.0.0.0` | Bind address |
+| `GPU_PORT` | `8200` | Port number |
+| `GPU_STORAGE_PATH` | `./storage` | Storage for cloned voices and temp files |
+| `GPU_DEFAULT_DEVICE` | `cuda:0` | Default CUDA device |
+| `GPU_DEVICE_MAP` | `{}` | JSON mapping provider name to device |
+| `GPU_AUTO_LOAD_PROVIDERS` | `[]` | JSON list of providers to load on startup |
+| `GPU_LOG_LEVEL` | `INFO` | Log level |
+
+### Loading and Unloading Models
+
+GPU providers must be explicitly loaded before use. Models are loaded into VRAM on demand:
+
+```bash
+# Load a provider
+curl -X POST http://localhost:8200/providers/fish_speech/load
+
+# Unload when done (frees VRAM)
+curl -X POST http://localhost:8200/providers/fish_speech/unload
+
+# Check GPU status
+curl http://localhost:8200/gpu/status
+```
+
+The Atlas Vox backend handles loading automatically when you synthesize through the Web UI or API.
+
+---
+
 ## 🎓 Training Studio
 
 The Training Studio is where you upload audio samples and train custom voice models.
+
+> **Important:** Only **ElevenLabs**, **Coqui XTTS v2**, and **StyleTTS2** currently support voice training. Other providers use their built-in or cloned voices for synthesis.
 
 ### Workflow
 
@@ -906,7 +1097,7 @@ The Settings page controls application-wide preferences.
 
 Shows version information:
 - Atlas Vox v0.1.0
-- 9 TTS providers
+- 15 TTS providers (9 built-in + 6 GPU)
 - 4 interfaces (Web UI, REST API, CLI, MCP Server)
 
 ---
@@ -916,6 +1107,7 @@ Shows version information:
 ### Performance Tips
 
 - **Use GPU mode** for Coqui XTTS, StyleTTS2, CosyVoice, Dia, and Dia2 — CPU mode is 10-50x slower
+- **GPU providers** (Fish Speech, Chatterbox, F5-TTS, OpenVoice, Orpheus) require the GPU service running on the host
 - **Kokoro and Piper** are the fastest providers on CPU
 - **Batch synthesis** is more efficient than individual requests for multiple lines
 - **Streaming synthesis** gives faster time-to-first-audio for supported providers
@@ -942,6 +1134,7 @@ Shows version information:
 | Training stuck at "queued" | Ensure Redis is running, check Celery worker logs |
 | No audio output | Check browser audio permissions, try WAV format |
 | GPU not detected | Verify NVIDIA Container Toolkit, check GPU mode env var |
+| GPU providers not appearing | Check GPU service is running on port 8200, verify `GPU_SERVICE_URL` |
 
 For detailed troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

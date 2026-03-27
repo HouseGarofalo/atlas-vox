@@ -20,10 +20,11 @@
 
 ## 🎯 System Overview
 
-Atlas Vox is a modular, self-hosted platform with four entry points (Web UI, REST API, CLI, MCP Server) that all converge on a shared backend layer. The backend orchestrates 9 TTS providers through a unified abstraction, manages voice profiles and training jobs, and persists data in a relational database.
+Atlas Vox is a modular, self-hosted platform with four entry points (Web UI, REST API, CLI, MCP Server) that all converge on a shared backend layer. The backend orchestrates **15 TTS providers** (9 built-in + 6 GPU) through a unified abstraction, manages voice profiles and training jobs, and persists data in a relational database.
 
 **Key architectural decisions:**
 - **Provider abstraction**: Every TTS engine implements a common `TTSProvider` ABC. The UI adapts dynamically based on each provider's declared capabilities.
+- **RemoteProvider pattern**: GPU providers run on a separate host service and are accessed via HTTP. The `RemoteProvider` class bridges the Atlas Vox backend to the GPU service, handling connection failures gracefully.
 - **Async-first**: All backend services use `async def` with SQLAlchemy async and aiosqlite/asyncpg.
 - **Background workers**: CPU/GPU-intensive tasks (training, preprocessing) run in Celery workers, keeping the API server responsive.
 - **Config-driven**: All settings flow through Pydantic Settings, supporting `.env` files, environment variables, and runtime DB overrides.
@@ -41,28 +42,43 @@ graph TB
         MCP_Client["MCP Client - AI Agents"]
     end
 
-    subgraph Backend["FastAPI Backend :8000"]
-        Router["API Router - 12 endpoint modules"]
-        MCP["MCP Server - JSONRPC 2.0 + SSE"]
-        Services["Service Layer - 7 services"]
-        Registry["Provider Registry"]
+    subgraph Docker["Docker Containers"]
+        subgraph Backend["FastAPI Backend :8000"]
+            Router["API Router - 12 endpoint modules"]
+            MCP["MCP Server - JSONRPC 2.0 + SSE"]
+            Services["Service Layer - 7 services"]
+            Registry["Provider Registry"]
+        end
+
+        subgraph Providers["Built-in TTS Providers (9)"]
+            Cloud["Cloud - ElevenLabs, Azure Speech"]
+            LocalCPU["Local CPU - Kokoro, Piper"]
+            LocalGPU["Local GPU - Coqui XTTS, StyleTTS2, CosyVoice, Dia, Dia2"]
+        end
+
+        subgraph Storage
+            DB[("SQLite / PostgreSQL - 9 tables")]
+            FileStore["File Storage - ./storage/"]
+            Redis["Redis - Celery Broker"]
+        end
+
+        subgraph Workers
+            CeleryWorker["Celery Worker - Training + Preprocessing"]
+            GPUWorker["GPU Worker - CUDA 12.1"]
+        end
     end
 
-    subgraph Providers["TTS Providers"]
-        Cloud["Cloud - ElevenLabs, Azure Speech"]
-        LocalCPU["Local CPU - Kokoro, Piper"]
-        LocalGPU["Local GPU - Coqui XTTS, StyleTTS2, CosyVoice, Dia, Dia2"]
-    end
-
-    subgraph Storage
-        DB[("SQLite / PostgreSQL - 9 tables")]
-        FileStore["File Storage - ./storage/"]
-        Redis["Redis - Celery Broker"]
-    end
-
-    subgraph Workers
-        CeleryWorker["Celery Worker - Training + Preprocessing"]
-        GPUWorker["GPU Worker - CUDA 12.1"]
+    subgraph Host["Host Machine (Native)"]
+        GPUService["GPU Service :8200 - FastAPI"]
+        subgraph GPUProviders["GPU Providers (6)"]
+            FishSpeech["Fish Speech"]
+            Chatterbox["Chatterbox"]
+            F5TTS["F5-TTS"]
+            OpenVoice["OpenVoice v2"]
+            Orpheus["Orpheus TTS"]
+            PiperTraining["Piper Training"]
+        end
+        NVGPU["NVIDIA GPU (CUDA)"]
     end
 
     WebUI -->|HTTP/WS| Router
@@ -80,6 +96,10 @@ graph TB
     Registry --> Cloud
     Registry --> LocalCPU
     Registry --> LocalGPU
+    Registry -->|"RemoteProvider (HTTP)"| GPUService
+
+    GPUService --> GPUProviders
+    GPUProviders --> NVGPU
 
     Redis --> CeleryWorker
     Redis --> GPUWorker
@@ -87,6 +107,41 @@ graph TB
     CeleryWorker --> FileStore
     GPUWorker --> DB
     GPUWorker --> FileStore
+```
+
+### ASCII Architecture Diagram
+
+```
++------ Docker Containers -----------------------------------------+
+|                                                                   |
+|  Web UI :3100   ----+                                            |
+|  CLI (Typer)    ----+---> FastAPI Backend :8000                  |
+|  API Client     ----+      |                                     |
+|  MCP Client     ----+      +---> Provider Registry               |
+|                             |      |                              |
+|                             |      +---> Cloud (ElevenLabs, Azure)|
+|                             |      +---> CPU (Kokoro, Piper)      |
+|                             |      +---> GPU (Coqui, StyleTTS2...)|
+|                             |      +---> RemoteProvider -----+    |
+|                             |                                |    |
+|  Redis :6379 <-- Celery --> Worker                           |    |
+|  SQLite / PG                                                 |    |
++------------------------------------------------------------------+
+                                                               |
+                           HTTP (host.docker.internal:8200)    |
+                                                               v
++------ Host Machine (Native) -------------------------------------+
+|                                                                   |
+|  GPU Service :8200 (FastAPI)                                     |
+|    +-- Fish Speech                                               |
+|    +-- Chatterbox                                                |
+|    +-- F5-TTS                                                    |
+|    +-- OpenVoice v2                                              |
+|    +-- Orpheus TTS                                               |
+|    +-- Piper Training                                            |
+|         |                                                        |
+|    NVIDIA GPU (CUDA 12.x)                                        |
++------------------------------------------------------------------+
 ```
 
 ---
@@ -109,7 +164,7 @@ graph TB
 |-------|---------|
 | **API Endpoints** (12 modules) | REST routes organized by resource: health, profiles, providers, voices, samples, training, synthesis, compare, audio, presets, api_keys, webhooks |
 | **Services** (7) | Business logic: `profile_service`, `synthesis_service`, `training_service`, `comparison_service`, `audio_processor`, `provider_registry`, `webhook_dispatcher` |
-| **Providers** (9) | TTS engine implementations, each extending `TTSProvider` ABC |
+| **Providers** (9 built-in + 6 remote) | TTS engine implementations extending `TTSProvider` ABC; GPU providers use `RemoteProvider` to bridge to the GPU service |
 | **Models** (9) | SQLAlchemy async ORM: VoiceProfile, AudioSample, TrainingJob, ModelVersion, PersonaPreset, SynthesisHistory, ApiKey, Webhook, Provider |
 | **Schemas** | Pydantic v2 request/response schemas with validation |
 | **Tasks** | Celery background tasks: `training.py`, `preprocessing.py` |
@@ -210,6 +265,51 @@ Provider configuration merges from three sources (later overrides earlier):
 ```
 
 Secret fields (API keys) are masked with `****` in API responses and preserved when the masked value is sent back.
+
+### RemoteProvider Pattern
+
+GPU providers that run on the standalone GPU service are accessed via the `RemoteProvider` class (`backend/app/providers/remote_provider.py`). This class implements the same `TTSProvider` ABC but delegates all operations to the GPU service over HTTP:
+
+```mermaid
+sequenceDiagram
+    participant Backend as Atlas Vox Backend
+    participant Remote as RemoteProvider
+    participant GPU as GPU Service :8200
+    participant Model as GPU TTS Model
+
+    Backend->>Remote: synthesize(text, voice_id, settings)
+    Remote->>GPU: POST /providers/{name}/synthesize
+    GPU->>Model: Forward to loaded model
+    Model-->>GPU: Audio array + sample rate
+    GPU-->>Remote: WAV bytes (audio/wav)
+    Remote-->>Backend: AudioResult(path, duration)
+```
+
+Key design points:
+- `RemoteProvider` creates a fresh `httpx.AsyncClient` for each request with configurable timeout (default 120s)
+- Connection failures are handled gracefully — the provider reports as unhealthy but the system continues operating
+- Provider capabilities are cached after the first query to the GPU service
+- GPU providers are auto-discovered at startup via `discover_gpu_providers()` in the provider registry
+
+### All 15 Providers
+
+| # | Provider | Type | Module | Runtime |
+|---|----------|------|--------|---------|
+| 1 | Kokoro | Local CPU | `kokoro_tts.py` | Docker |
+| 2 | Piper | Local CPU | `piper_tts.py` | Docker |
+| 3 | ElevenLabs | Cloud | `elevenlabs.py` | Docker |
+| 4 | Azure Speech | Cloud | `azure_speech.py` | Docker |
+| 5 | Coqui XTTS v2 | Local GPU | `coqui_xtts.py` | Docker |
+| 6 | StyleTTS2 | Local GPU | `styletts2.py` | Docker |
+| 7 | CosyVoice | Local GPU | `cosyvoice.py` | Docker |
+| 8 | Dia | Local GPU | `dia.py` | Docker |
+| 9 | Dia2 | Local GPU | `dia2.py` | Docker |
+| 10 | Fish Speech | GPU | `remote_provider.py` | GPU Service |
+| 11 | Chatterbox | GPU | `remote_provider.py` | GPU Service |
+| 12 | F5-TTS | GPU | `remote_provider.py` | GPU Service |
+| 13 | OpenVoice v2 | GPU | `remote_provider.py` | GPU Service |
+| 14 | Orpheus TTS | GPU | `remote_provider.py` | GPU Service |
+| 15 | Piper Training | GPU | `remote_provider.py` | GPU Service |
 
 ---
 

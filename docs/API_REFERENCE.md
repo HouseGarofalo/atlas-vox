@@ -391,11 +391,11 @@ Run a quick test synthesis.
 
 ## Voices
 
-Aggregated voice library across all providers.
+Aggregated voice library across all providers (290+ voices when all providers are active).
 
 ### GET /api/v1/voices
 
-List all voices from all available providers.
+List all voices from all available providers, including GPU providers when the GPU service is running.
 
 **Response:**
 ```json
@@ -405,6 +405,7 @@ List all voices from all available providers.
       "voice_id": "af_heart",
       "name": "Heart",
       "language": "en",
+      "gender": null,
       "provider": "kokoro",
       "provider_display": "Kokoro"
     },
@@ -412,13 +413,46 @@ List all voices from all available providers.
       "voice_id": "en-US-JennyNeural",
       "name": "Jenny",
       "language": "en-US",
+      "gender": null,
       "provider": "azure_speech",
       "provider_display": "Azure Speech"
     }
   ],
-  "count": 458
+  "count": 290
 }
 ```
+
+### POST /api/v1/voices/preview
+
+Synthesize a short preview for a voice. Results are cached — subsequent requests for the same voice return the cached audio instantly.
+
+**Request Body:**
+```json
+{
+  "provider": "kokoro",
+  "voice_id": "af_heart",
+  "text": "Hello, this is a preview of my voice."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | string | Yes | Provider name |
+| `voice_id` | string | Yes | Voice ID from the provider |
+| `text` | string | No | Custom preview text (default: "Hello, this is a preview of my voice.") |
+
+**Response:**
+```json
+{
+  "audio_url": "/api/v1/audio/previews/kokoro_af_heart_a1b2c3d4.wav"
+}
+```
+
+### GET /api/v1/audio/previews/{filename}
+
+Serve a cached voice preview audio file.
+
+**Response:** Audio file with `audio/wav` MIME type.
 
 ---
 
