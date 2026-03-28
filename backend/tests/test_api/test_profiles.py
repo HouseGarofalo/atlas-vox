@@ -68,3 +68,30 @@ async def test_delete_profile(client: AsyncClient):
 
     get_response = await client.get(f"/api/v1/profiles/{pid}")
     assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_profile_with_voice_id(client: AsyncClient):
+    """Creating a profile with voice_id sets status to ready."""
+    resp = await client.post("/api/v1/profiles", json={
+        "name": "Test Library Voice",
+        "provider_name": "kokoro",
+        "voice_id": "af_heart",
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["voice_id"] == "af_heart"
+
+
+@pytest.mark.asyncio
+async def test_create_profile_without_voice_id_is_pending(client: AsyncClient):
+    """Creating a profile without voice_id sets status to pending."""
+    resp = await client.post("/api/v1/profiles", json={
+        "name": "Custom Voice",
+        "provider_name": "kokoro",
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "pending"
+    assert data["voice_id"] is None
