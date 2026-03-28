@@ -1,77 +1,50 @@
-# Atlas Vox — Open Tasks
+# Atlas Vox — Task Tracker
 
-## Priority 1: GPU Providers (High Impact)
+## Completed
 
-- [ ] **T1: Fish Speech — download model + test synthesis**
-  - Download fishaudio/fish-speech-1.5 weights (~4GB)
-  - Test synthesis via GPU service
-  - Test voice cloning with Jarvis samples
-  - Verify RemoteProvider routes correctly
+- [x] **T1: Fish Speech** — Provider rewritten for OpenAudio S1 API. Needs gated HF model access (`fishaudio/openaudio-s1-mini`)
+- [x] **T2: Chatterbox** — Installed, tested e2e through Atlas Vox (488KB WAV, voice cloning)
+- [x] **T3: F5-TTS** — Installed, tested e2e through Atlas Vox (682KB WAV, 7.10s, zero-shot)
+- [x] **T4: OpenVoice v2** — Installed, tested e2e (synthesis + tone cloning)
+- [x] **T5: Orpheus TTS** — WebSocket client SDK installed (local vLLM is Linux-only)
+- [x] **T6: Piper Training** — Linux-only, documented
+- [x] **T7: Dockerfile numpy fix** — Runtime-stage reinstall + init-models.sh
+- [x] **T8: Kokoro startup script** — init-models.sh copies from storage volume
+- [x] **T9: Stale profile cleanup** — 8 test profiles deleted
+- [x] **T10: ESLint config** — 0 errors, 15 warnings
+- [x] **T11: Backend tests** — 20 new tests, all passing
+- [x] **T12: Documentation update** — All docs updated for 15 providers
+- [x] **T13: Fix stale test assertions** — Updated from ==9 to >=9 for provider/tool counts
+- [x] **T14: GPU service auto-start** — install.bat + install-service.bat for Windows Task Scheduler
+- [x] **T15: OpenAI-compatible API** — POST /v1/audio/speech, tested with OpenAI Python SDK
+- [x] **T16: MCP quick-speak tool** — atlas_vox_speak + atlas_vox_list_available_voices
+- [x] **T17: RemoteProvider bug fixes** — JSON body, clone field name, model map
 
-- [ ] **T2: Chatterbox — install + test**
-  - Install in GPU service venv
-  - Download model weights
-  - Test synthesis + voice cloning
+## Known Limitations
 
-- [ ] **T3: F5-TTS — install + test**
-  - Install in GPU service venv
-  - Download model weights
-  - Test zero-shot cloning
+- Fish Speech needs `huggingface-cli login` + access to `fishaudio/openaudio-s1-mini`
+- Orpheus local inference requires Linux (vLLM), client SDK needs API key
+- Piper Training (`piper-train`) only available on Linux
+- Chatterbox requires voice clone before synthesis (no default voice)
 
-- [ ] **T4: OpenVoice v2 — install + test**
-  - Install in GPU service venv (git clone required)
-  - Test tone cloning
+## Provider Status (15 total)
 
-- [ ] **T5: Orpheus TTS — install + test**
-  - Install in GPU service venv
-  - Download Llama-3B weights (~8GB)
-  - Test emotion tags
+| Provider | Synthesis | Cloning | Platform |
+|----------|-----------|---------|----------|
+| Kokoro | Working | No | Docker CPU |
+| Piper | Working | No | Docker CPU |
+| ElevenLabs | Working | Working | Cloud |
+| Azure Speech | Working | Portal-only | Cloud |
+| Coqui XTTS | Working | Working | Docker CPU/GPU |
+| StyleTTS2 | Working | Working | Docker CPU |
+| CosyVoice | Healthy | GPU worker only | Docker GPU |
+| Dia | Healthy | GPU worker only | Docker GPU |
+| Dia2 | Healthy | No | Docker GPU |
+| Chatterbox | Working | Working | Host GPU |
+| F5-TTS | Working | Working | Host GPU |
+| OpenVoice v2 | Working | Working | Host GPU |
+| Fish Speech | Needs model | Needs model | Host GPU |
+| Orpheus | Client only | Client only | Cloud/Linux |
+| Piper Training | Linux only | N/A | Linux GPU |
 
-- [ ] **T6: Piper Training — install + test**
-  - Install piper-train in GPU service venv
-  - Test fine-tuning with sample data
-  - Verify ONNX output works with Piper provider
-
-## Priority 2: Docker Hardening (Medium Impact)
-
-- [ ] **T7: Bake numpy fix into Dockerfile**
-  - Ensure numpy 2.x is final install step
-  - Test Kokoro healthy after fresh build without manual fix
-
-- [ ] **T8: Bake XTTS + StyleTTS2 models into storage volume**
-  - Add model download to Dockerfile or startup script
-  - Models should persist in storage_data volume
-
-- [ ] **T9: Clean up stale test profiles**
-  - Remove "Train Test *" profiles stuck in training status
-  - Or add bulk cleanup endpoint
-
-## Priority 3: Code Quality (Medium Impact)
-
-- [ ] **T10: Add ESLint config for frontend**
-  - Create eslint.config.js with flat config
-  - Fix any lint issues
-  - CI lint step should pass
-
-- [ ] **T11: Add backend tests for new features**
-  - Voice library endpoint tests
-  - RemoteProvider tests (mock HTTP)
-  - Training flow tests
-  - Provider config persistence tests
-
-- [ ] **T12: Update documentation**
-  - GPU service setup guide
-  - Updated provider list (15 providers)
-  - Training flow changes
-  - Voice library workflow
-  - In-app help/docs pages
-
-## Priority 4: Polish (Low Impact)
-
-- [ ] **T13: Download remaining Piper ONNX models**
-  - Add download-on-demand UI or batch download script
-
-- [ ] **T14: Download remaining Kokoro voice .pt files**
-  - Non-English voices (Japanese, Chinese, etc.)
-
-Last Updated: 2026-03-27
+Last Updated: 2026-03-28

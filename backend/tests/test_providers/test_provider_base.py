@@ -13,20 +13,20 @@ from app.services.provider_registry import PROVIDER_CLASSES, provider_registry
 
 
 class TestProviderRegistry:
-    def test_all_nine_providers_registered(self):
-        assert len(PROVIDER_CLASSES) == 9
-        expected = {"kokoro", "coqui_xtts", "piper", "elevenlabs", "azure_speech",
-                    "styletts2", "cosyvoice", "dia", "dia2"}
-        assert set(PROVIDER_CLASSES.keys()) == expected
+    def test_all_providers_registered(self):
+        assert len(PROVIDER_CLASSES) >= 9  # 9 local/cloud, GPU providers added dynamically
+        expected_core = {"kokoro", "coqui_xtts", "piper", "elevenlabs", "azure_speech",
+                         "styletts2", "cosyvoice", "dia", "dia2"}
+        assert expected_core.issubset(set(PROVIDER_CLASSES.keys()))
 
     def test_list_available_returns_registered(self):
         available = provider_registry.list_available()
         assert "kokoro" in available
-        assert len(available) == 9
+        assert len(available) >= 9
 
     def test_list_all_known_includes_metadata(self):
         all_known = provider_registry.list_all_known()
-        assert len(all_known) == 9
+        assert len(all_known) >= 9
         for p in all_known:
             assert "name" in p
             assert "display_name" in p

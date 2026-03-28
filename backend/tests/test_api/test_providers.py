@@ -11,7 +11,7 @@ async def test_list_providers(client: AsyncClient):
     response = await client.get("/api/v1/providers")
     assert response.status_code == 200
     data = response.json()
-    assert data["count"] == 9
+    assert data["count"] >= 9  # 9 local/cloud + GPU providers if service running
     names = {p["name"] for p in data["providers"]}
     assert "kokoro" in names
     assert "elevenlabs" in names

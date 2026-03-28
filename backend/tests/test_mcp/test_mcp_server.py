@@ -40,7 +40,7 @@ async def test_tools_list(mcp: MCPServer):
     }))
     data = json.loads(response)
     tools = data["result"]["tools"]
-    assert len(tools) == 7
+    assert len(tools) == 9  # 7 original + atlas_vox_speak + atlas_vox_list_available_voices
     names = {t["name"] for t in tools}
     assert "atlas_vox_synthesize" in names
     assert "atlas_vox_list_voices" in names
