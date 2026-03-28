@@ -13,7 +13,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-**9 TTS providers** &middot; **4 interfaces** &middot; **Full training pipeline** &middot; **Self-hosted**
+**15 TTS providers** &middot; **4 interfaces** &middot; **OpenAI-compatible API** &middot; **Self-hosted**
 
 [Quick Start](#-quick-start) &middot; [Features](#-features) &middot; [Providers](#-tts-providers) &middot; [Documentation](#-documentation) &middot; [Architecture](#-architecture)
 
@@ -23,7 +23,7 @@
 
 ## Overview
 
-Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across **9 TTS engines**. It provides a unified interface to cloud providers (ElevenLabs, Azure) and local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2) with voice cloning, fine-tuning, and real-time streaming.
+Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across **15 TTS engines**. It provides a unified interface to cloud providers (ElevenLabs, Azure), local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2), and 6 GPU-accelerated providers via a standalone host service (Fish Speech, Chatterbox, F5-TTS, OpenVoice v2, Orpheus, Piper Training). Features include voice cloning from 6 providers, an OpenAI-compatible API (`/v1/audio/speech`), an MCP server with 9 tools for AI agent integration, and real-time streaming.
 
 All data stays on your machine. No audio is sent to third parties unless you explicitly configure a cloud provider.
 
@@ -37,9 +37,11 @@ All data stays on your machine. No audio is sent to third parties unless you exp
 | **Audio Training** | Upload samples, record in-browser, preprocess (noise reduction, normalization), train models via Celery |
 | **Real-time Synthesis** | Text-to-speech with speed / pitch / volume controls, SSML support (Azure), streaming |
 | **Voice Comparison** | Side-by-side synthesis across multiple profiles for A/B testing |
-| **Voice Library** | Browse and filter all available voices across all providers in one view |
+| **Voice Library** | Browse 290+ voices across all providers with preview playback |
+| **Voice Cloning** | 6 providers support cloning: ElevenLabs, Coqui XTTS, Chatterbox, F5-TTS, OpenVoice v2, StyleTTS2 |
+| **OpenAI-Compatible API** | Drop-in `POST /v1/audio/speech` endpoint works with OpenAI SDKs, LangChain, CrewAI |
 | **Persona Presets** | 6 built-in presets (Friendly, Professional, Energetic, Calm, Authoritative, Soothing) + custom |
-| **4 Interfaces** | Web UI, REST API (60+ endpoints), CLI (Typer + Rich), MCP Server (AI agents) |
+| **4 Interfaces** | Web UI, REST API (60+ endpoints), CLI (Typer + Rich), MCP Server (9 tools for AI agents) |
 | **GPU Flexibility** | Per-provider GPU mode: Docker GPU, host CPU, or auto-detect |
 | **API Key Management** | Scoped keys (read / write / synthesize / train / admin) with Argon2id hashing |
 | **Webhook Events** | HMAC-signed delivery for training.completed / training.failed |
@@ -93,7 +95,9 @@ You will need Redis running locally for training jobs.
 
 ## 🔌 TTS Providers
 
-9 providers ship out of the box. Each extends `TTSProvider` ABC and declares capabilities dynamically — the UI adapts automatically.
+15 providers total: 9 built-in (Docker) + 6 GPU providers (host service). Each extends `TTSProvider` ABC and declares capabilities dynamically — the UI adapts automatically.
+
+### Built-in Providers (Docker)
 
 | Provider | Type | Cloning | Stream | SSML | GPU | Languages | Key Feature |
 |----------|------|:-------:|:------:|:----:|-----|-----------|-------------|
@@ -107,7 +111,18 @@ You will need Redis running locally for training jobs.
 | **Dia** | Local | ✅ | | | Cfg | en | 1.6B param dialogue + non-verbals |
 | **Dia2** | Local | | ✅ | | Cfg | en | 2B param streaming dialogue |
 
-**GPU Modes** (Cfg = configurable per provider):
+### GPU Providers (Host Service on port 8200)
+
+| Provider | Cloning | VRAM | Key Feature |
+|----------|:-------:|------|-------------|
+| **Chatterbox** | ✅ | ~4 GB | Expressive voice cloning (Resemble AI) |
+| **F5-TTS** | ✅ | ~4 GB | Fast flow-matching, zero-shot cloning |
+| **OpenVoice v2** | ✅ | ~2 GB | Instant cloning + style transfer |
+| **Fish Speech** | ✅ | ~4 GB | Multilingual (needs gated HF model) |
+| **Orpheus** | | ~6 GB | High-quality (client SDK, Linux vLLM) |
+| **Piper Training** | | ~2 GB | Train custom Piper ONNX models |
+
+**GPU Modes** (Cfg = configurable per Docker provider):
 
 | Mode | Example | Description |
 |------|---------|-------------|
@@ -129,7 +144,7 @@ You will need Redis running locally for training jobs.
 | **Training Studio** | `/training` | Upload/record audio, preprocess, train models |
 | **Synthesis Lab** | `/synthesis` | Text-to-speech with parameter controls + presets |
 | **Comparison** | `/compare` | Side-by-side multi-voice comparison |
-| **Providers** | `/providers` | View all 9 providers with health, config, and test |
+| **Providers** | `/providers` | View all 15 providers with health, config, and test |
 | **API Keys** | `/api-keys` | Create/revoke scoped API keys |
 | **Settings** | `/settings` | Theme toggle, default provider, audio format |
 | **Docs** | `/docs` | Provider setup guides with step-by-step instructions |
