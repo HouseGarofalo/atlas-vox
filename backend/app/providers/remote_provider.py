@@ -67,11 +67,10 @@ class RemoteProvider(TTSProvider):
         async with self._client() as client:
             resp = await client.post(
                 url,
-                data={
+                json={
                     "text": text,
                     "voice_id": voice_id,
-                    "speed": str(settings_.speed),
-                    "output_format": settings_.output_format,
+                    "speed": settings_.speed,
                 },
             )
             resp.raise_for_status()
@@ -120,9 +119,7 @@ class RemoteProvider(TTSProvider):
 
         data: dict[str, str] = {}
         if config.name:
-            data["name"] = config.name
-        if config.description:
-            data["description"] = config.description
+            data["voice_name"] = config.name
         if config.language:
             data["language"] = config.language
 

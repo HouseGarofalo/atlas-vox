@@ -39,11 +39,54 @@ class F5TTSProvider(GPUProviderBase):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _patch_torchaudio_load() -> None:
+        """Monkey-patch torchaudio.load to use soundfile instead of torchcodec.
+
+        On Windows without the ffmpeg shared DLLs, torchcodec fails to load.
+        This replaces torchaudio.load with a soundfile-based implementation
+        that handles WAV files (which is all F5-TTS needs after pydub
+        preprocessing).  Also patches the load_with_torchcodec function to
+        prevent direct callers from bypassing the patch.
+        """
+        try:
+            import soundfile as sf
+            import torch
+            import torchaudio
+
+            def _soundfile_load(
+                filepath, frame_offset=0, num_frames=-1, normalize=True,
+                channels_first=True, format=None, buffer_size=4096, backend=None,
+            ):  # type: ignore[no-untyped-def]
+                data, sr = sf.read(str(filepath), dtype="float32")
+                if data.ndim == 1:
+                    tensor = torch.from_numpy(data).unsqueeze(0)
+                else:
+                    # (samples, channels) -> (channels, samples)
+                    tensor = torch.from_numpy(data.T)
+                if not channels_first:
+                    tensor = tensor.T
+                return tensor, sr
+
+            torchaudio.load = _soundfile_load
+            # Also patch the internal function that torchaudio.load delegates to
+            if hasattr(torchaudio, "load_with_torchcodec"):
+                torchaudio.load_with_torchcodec = _soundfile_load
+            if hasattr(torchaudio, "_torchcodec"):
+                torchaudio._torchcodec.load_with_torchcodec = _soundfile_load
+            logger.info("f5_tts.torchaudio_patched", backend="soundfile")
+        except ImportError:
+            pass
+
     def load(self, device: str = "cuda:0") -> None:
         if not _F5_TTS_AVAILABLE:
             raise RuntimeError("f5-tts is not installed. Run: pip install f5-tts")
         self._device = device
         logger.info("f5_tts.loading", device=device)
+
+        # Patch torchaudio before F5-TTS uses it (avoids torchcodec DLL issues)
+        self._patch_torchaudio_load()
+
         try:
             from f5_tts.api import F5TTS  # type: ignore[import-untyped]
 
@@ -89,12 +132,14 @@ class F5TTSProvider(GPUProviderBase):
         try:
             # F5-TTS expects reference audio + reference text for flow matching.
             # When reference text is unknown, pass empty string — the model infers it.
-            audio_array, sr = self._model.infer(
+            # infer() returns (wav, sample_rate, spectrogram) — we only need the first two.
+            result = self._model.infer(
                 ref_file=str(ref_path),
                 ref_text="",
                 gen_text=text,
                 speed=speed,
             )
+            audio_array, sr = result[0], result[1]
             return np.asarray(audio_array, dtype=np.float32), int(sr)
         except Exception as exc:
             logger.error("f5_tts.synthesize_failed", error=str(exc))

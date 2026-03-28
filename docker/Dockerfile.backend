@@ -102,6 +102,10 @@ ENV PYTHONUNBUFFERED=1
 ENV APP_ENV=production
 ENV DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
 
+# Model initialization script — restores models from persistent storage volume
+COPY docker/scripts/init-models.sh /app/init-models.sh
+RUN chmod +x /app/init-models.sh
+
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/bin/bash", "-c", "/app/init-models.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

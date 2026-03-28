@@ -51,6 +51,15 @@ MODEL_MAP: dict[str, str] = {
     "cosyvoice": "cosyvoice",
     "dia": "dia",
     "dia2": "dia2",
+    # GPU service providers (discovered via RemoteProvider)
+    "fish_speech": "fish_speech",
+    "chatterbox": "chatterbox",
+    "f5_tts": "f5_tts",
+    "f5-tts": "f5_tts",
+    "openvoice_v2": "openvoice_v2",
+    "openvoice": "openvoice_v2",
+    "orpheus": "orpheus",
+    "piper_training": "piper_training",
 }
 
 AUDIO_MEDIA_TYPES: dict[str, str] = {
