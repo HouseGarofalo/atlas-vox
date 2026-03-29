@@ -1,35 +1,82 @@
 """FastAPI endpoints for the self-healing subsystem."""
 
-from __future__ import annotations
+import structlog
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select, desc
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import APIRouter, Query
+from app.core.database import get_db
+from app.healing.engine import healing_engine
+from app.healing.models import Incident
 
-from app.healing.engine import SelfHealingEngine
+logger = structlog.get_logger("atlas_vox.healing.api")
 
 router = APIRouter(prefix="/healing", tags=["healing"])
-
-# Module-level engine instance — started/stopped by the application lifespan
-healing_engine = SelfHealingEngine()
 
 
 @router.get("/status")
 async def get_healing_status():
-    """Get the current status of the self-healing system."""
+    """Get current self-healing engine status."""
     return healing_engine.get_status()
 
 
-@router.post("/start")
-async def start_healing():
-    """Start the self-healing engine."""
-    await healing_engine.start()
-    return {"status": "started"}
+@router.get("/incidents")
+async def list_incidents(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    severity: str | None = Query(None),
+    category: str | None = Query(None),
+):
+    """List recent self-healing incidents."""
+    query = select(Incident).order_by(desc(Incident.created_at)).limit(limit)
+    if severity:
+        query = query.where(Incident.severity == severity)
+    if category:
+        query = query.where(Incident.category == category)
+    result = await db.execute(query)
+    incidents = result.scalars().all()
+    return {
+        "incidents": [
+            {
+                "id": i.id,
+                "severity": i.severity,
+                "category": i.category,
+                "title": i.title,
+                "description": i.description,
+                "detection_rule": i.detection_rule,
+                "action_taken": i.action_taken,
+                "action_detail": i.action_detail,
+                "outcome": i.outcome,
+                "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None,
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+            }
+            for i in incidents
+        ],
+        "count": len(incidents),
+    }
 
 
-@router.post("/stop")
-async def stop_healing():
-    """Stop the self-healing engine."""
-    await healing_engine.stop()
-    return {"status": "stopped"}
+@router.post("/check")
+async def force_health_check():
+    """Force an immediate health check."""
+    snap = await healing_engine.health.check_now()
+    return {
+        "healthy": snap.healthy,
+        "checks": snap.checks,
+        "consecutive_failures": healing_engine.health.consecutive_failures,
+    }
+
+
+@router.post("/toggle")
+async def toggle_healing(enable: bool = Query(...)):
+    """Enable or disable the self-healing engine."""
+    if enable and not healing_engine._running:
+        await healing_engine.start()
+    elif not enable and healing_engine._running:
+        await healing_engine.stop()
+    healing_engine.enabled = enable
+    logger.info("healing_toggled", enabled=enable)
+    return {"enabled": healing_engine.enabled, "running": healing_engine._running}
 
 
 @router.get("/mcp/status")
