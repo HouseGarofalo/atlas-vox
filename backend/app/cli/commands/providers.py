@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+import structlog
 import typer
 from rich.console import Console
 from rich.table import Table
+
+logger = structlog.get_logger("atlas_vox.cli.providers")
 
 app = typer.Typer()
 console = Console()
@@ -15,10 +18,14 @@ console = Console()
 @app.command("list")
 def list_providers() -> None:
     """List all TTS providers with health status."""
+    logger.info("providers_list_start")
+
     async def _list():
         from app.services.provider_registry import provider_registry
 
         providers = provider_registry.list_all_known()
+        logger.info("providers_list_fetched", provider_count=len(providers))
+
         table = Table(title="TTS Providers")
         table.add_column("Name", style="cyan")
         table.add_column("Type")
@@ -34,10 +41,26 @@ def list_providers() -> None:
             if p["implemented"]:
                 try:
                     health = await provider_registry.health_check(p["name"])
-                    health_str = f"[green]✓ {health.latency_ms}ms[/green]" if health.healthy else f"[red]✗ {health.error}[/red]"
+                    if health.healthy:
+                        logger.debug(
+                            "provider_health_check",
+                            provider=p["name"],
+                            healthy=True,
+                            latency_ms=health.latency_ms,
+                        )
+                        health_str = f"[green]✓ {health.latency_ms}ms[/green]"
+                    else:
+                        logger.warning(
+                            "provider_health_check",
+                            provider=p["name"],
+                            healthy=False,
+                            error=health.error,
+                        )
+                        health_str = f"[red]✗ {health.error}[/red]"
                     caps = await provider_registry.get_capabilities(p["name"])
                     gpu = caps.gpu_mode
                 except Exception as e:
+                    logger.error("provider_health_check_error", provider=p["name"], error=str(e))
                     health_str = f"[red]✗ {e}[/red]"
 
             table.add_row(

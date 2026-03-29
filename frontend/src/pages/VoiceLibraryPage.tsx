@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Pause, Play, RefreshCw, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -10,7 +10,10 @@ import ProviderLogo from "../components/providers/ProviderLogo";
 import { useVoiceLibraryStore } from "../stores/voiceLibraryStore";
 import { useProfileStore } from "../stores/profileStore";
 import { api } from "../services/api";
+import { createLogger } from "../utils/logger";
 import type { Voice } from "../types";
+
+const logger = createLogger("VoiceLibraryPage");
 
 export default function VoiceLibraryPage() {
   const {
@@ -25,11 +28,24 @@ export default function VoiceLibraryPage() {
   const { createProfile } = useProfileStore();
   const navigate = useNavigate();
 
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const [searchInput, setSearchInput] = useState(filters.search);
+
+  const handleSearch = (value: string) => {
+    setSearchInput(value);
+    clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      setFilter("search", value);
+    }, 300);
+  };
+
   useEffect(() => {
+    logger.info("page_mounted");
     fetchAllVoices();
+    return () => clearTimeout(searchTimeoutRef.current);
   }, []);
 
-  const displayed = filteredVoices();
+  const displayed = useMemo(() => filteredVoices(), [voices, filters]);
 
   // Derive unique providers for the filter dropdown
   const providerOptions = useMemo(() => {
@@ -74,6 +90,7 @@ export default function VoiceLibraryPage() {
   }, [voices]);
 
   const handleUseVoice = async (voice: Voice) => {
+    logger.info("use_voice", { provider: voice.provider, voice_id: voice.voice_id });
     try {
       const profile = await createProfile({
         name: voice.name,
@@ -83,9 +100,11 @@ export default function VoiceLibraryPage() {
         description: `Created from ${voice.provider_display} voice: ${voice.voice_id}`,
         tags: ["voice-library"],
       });
+      logger.info("use_voice_profile_created", { profile_id: profile.id });
       toast.success(`Profile "${profile.name}" created — ready for synthesis`);
       navigate("/profiles");
     } catch (e: any) {
+      logger.error("use_voice_error", { error: e.message });
       toast.error(e.message);
     }
   };
@@ -97,7 +116,7 @@ export default function VoiceLibraryPage() {
         <h1 className="text-2xl font-bold">Voice Library</h1>
         <Button
           variant="secondary"
-          onClick={() => fetchAllVoices()}
+          onClick={() => { logger.info("refresh"); fetchAllVoices(); }}
           disabled={loading}
         >
           <RefreshCw
@@ -108,38 +127,45 @@ export default function VoiceLibraryPage() {
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+      <div className="space-y-3">
+        {/* Search bar - full width */}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-secondary)]" />
           <input
             type="text"
             placeholder="Search voices..."
-            value={filters.search}
-            onChange={(e) => setFilter("search", e.target.value)}
+            value={searchInput}
+            onChange={(e) => handleSearch(e.target.value)}
             className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 text-sm text-[var(--color-text)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         </div>
-        <Select
-          value={filters.provider ?? ""}
-          onChange={(e) =>
-            setFilter("provider", e.target.value || null)
-          }
-          options={providerOptions}
-        />
-        <Select
-          value={filters.language ?? ""}
-          onChange={(e) =>
-            setFilter("language", e.target.value || null)
-          }
-          options={languageOptions}
-        />
-        <Select
-          value={filters.gender ?? ""}
-          onChange={(e) =>
-            setFilter("gender", e.target.value || null)
-          }
-          options={genderOptions}
-        />
+        {/* Filter dropdowns - 2 columns on mobile, 3 on desktop */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Select
+            value={filters.provider ?? ""}
+            onChange={(e) => {
+              logger.info("filter_change", { filter: "provider", value: e.target.value || "all" });
+              setFilter("provider", e.target.value || null);
+            }}
+            options={providerOptions}
+          />
+          <Select
+            value={filters.language ?? ""}
+            onChange={(e) => {
+              logger.info("filter_change", { filter: "language", value: e.target.value || "all" });
+              setFilter("language", e.target.value || null);
+            }}
+            options={languageOptions}
+          />
+          <Select
+            value={filters.gender ?? ""}
+            onChange={(e) => {
+              logger.info("filter_change", { filter: "gender", value: e.target.value || "all" });
+              setFilter("gender", e.target.value || null);
+            }}
+            options={genderOptions}
+          />
+        </div>
       </div>
 
       {/* Error */}
@@ -209,7 +235,7 @@ export default function VoiceLibraryPage() {
   );
 }
 
-function VoiceCard({
+const VoiceCard = React.memo(function VoiceCard({
   voice,
   onUse,
 }: {
@@ -238,15 +264,18 @@ function VoiceCard({
     }
 
     // Fetch preview
+    logger.info("voice_preview_start", { provider: voice.provider, voice_id: voice.voice_id });
     setPreviewLoading(true);
     try {
       const result = await api.previewVoice({
         provider: voice.provider,
         voice_id: voice.voice_id,
       });
+      logger.info("voice_preview_complete", { provider: voice.provider, voice_id: voice.voice_id });
       setPreviewUrl(result.audio_url);
       playAudio(result.audio_url);
     } catch (e: any) {
+      logger.error("voice_preview_error", { provider: voice.provider, voice_id: voice.voice_id, error: e.message });
       toast.error(`Preview failed: ${e.message}`);
     } finally {
       setPreviewLoading(false);
@@ -323,7 +352,7 @@ function VoiceCard({
       </div>
     </Card>
   );
-}
+});
 
 /** Try to infer gender from voice name or id patterns (fallback when backend doesn't provide it). */
 function inferGender(voice: Voice): string | null {

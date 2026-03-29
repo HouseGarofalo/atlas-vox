@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
 from pathlib import Path
 
 import structlog
@@ -12,9 +11,9 @@ import structlog
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -136,10 +135,9 @@ class PiperTTSProvider(TTSProvider):
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
         """Synthesize text with Piper."""
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"piper_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="piper")
 
+        logger.info("piper_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         # Check if voice_id is a path to a specific model
@@ -162,10 +160,15 @@ class PiperTTSProvider(TTSProvider):
             buf.seek(0)
             output_file.write_bytes(buf.read())
 
-        await run_sync(_synth)
+        try:
+            await run_sync(_synth)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("piper_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
 
         elapsed = time.perf_counter() - start
-        logger.info("piper_synthesis_complete", voice=voice_id, latency_ms=int(elapsed * 1000))
+        logger.info("piper_synthesize_completed", voice_id=voice_id, latency_ms=int(elapsed * 1000))
 
         return AudioResult(
             audio_path=output_file,
@@ -174,7 +177,7 @@ class PiperTTSProvider(TTSProvider):
         )
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         """Piper does not support zero-shot voice cloning."""
         raise NotImplementedError(
@@ -183,7 +186,7 @@ class PiperTTSProvider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         """Piper fine-tuning is not supported through this provider.
 
@@ -201,7 +204,8 @@ class PiperTTSProvider(TTSProvider):
         voices = []
 
         # Discover local ONNX models
-        for model in self._discover_models():
+        local_models = self._discover_models()
+        for model in local_models:
             voices.append(VoiceInfo(
                 voice_id=model["id"],
                 name=model["id"].replace("-", " ").replace("_", " ").title(),
@@ -220,6 +224,12 @@ class PiperTTSProvider(TTSProvider):
                     description="Download from https://github.com/rhasspy/piper/releases",
                 ))
 
+        logger.info(
+            "piper_voices_listed",
+            count=len(voices),
+            local_models=len(local_models),
+            source="local" if local_models else "defaults",
+        )
         return voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
@@ -254,6 +264,12 @@ class PiperTTSProvider(TTSProvider):
                 # Still healthy if piper is installed, just no models downloaded
                 from piper import PiperVoice  # noqa: F401
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info(
+                "piper_health_check",
+                healthy=True,
+                latency_ms=latency,
+                local_models=len(models),
+            )
             return ProviderHealth(
                 name="piper",
                 healthy=True,
@@ -262,4 +278,5 @@ class PiperTTSProvider(TTSProvider):
             )
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("piper_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="piper", healthy=False, latency_ms=latency, error=str(e))

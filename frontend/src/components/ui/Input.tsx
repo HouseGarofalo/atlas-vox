@@ -18,7 +18,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         ref={ref}
         id={id}
         className={clsx(
-          "h-10 w-full rounded-lg border bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)] transition-colors",
+          "h-10 w-full rounded-[var(--radius)] border bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)] transition-colors",
           "focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500",
           error ? "border-red-500" : "border-[var(--color-border)]",
           className

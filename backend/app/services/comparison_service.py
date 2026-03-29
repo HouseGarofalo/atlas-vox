@@ -22,22 +22,19 @@ async def compare_voices(
     """Synthesize the same text with multiple profiles sequentially.
 
     Sequential due to shared DB session; each synthesis is internally async.
+    Profile existence is validated inside synthesize(), so no pre-validation loop
+    is needed — it would only issue redundant queries.
     """
     if len(profile_ids) < 2:
         raise ValueError("At least 2 profiles required for comparison")
 
-    # Validate all profiles exist
-    for pid in profile_ids:
-        result = await db.execute(
-            select(VoiceProfile).where(VoiceProfile.id == pid)
-        )
-        profile = result.scalar_one_or_none()
-        if profile is None:
-            raise ValueError(f"Profile '{pid}' not found")
+    logger.info(
+        "comparison_started",
+        profile_count=len(profile_ids),
+        text_length=len(text),
+        profile_ids=profile_ids,
+    )
 
-    # Synthesize in parallel using asyncio.gather
-    # We need separate DB sessions for parallel work, so we serialize here
-    # but each individual synthesis is still async internally
     results = []
     for pid in profile_ids:
         try:
@@ -45,12 +42,18 @@ async def compare_voices(
                 db, text=text, profile_id=pid, speed=speed, pitch=pitch,
             )
 
-            # Enrich with profile info
+            # Fetch profile name for the response — synthesize() already validated it exists
             prof_result = await db.execute(
                 select(VoiceProfile).where(VoiceProfile.id == pid)
             )
             profile = prof_result.scalar_one_or_none()
 
+            logger.debug(
+                "comparison_profile_synthesized",
+                profile_id=pid,
+                provider=synth_result["provider_name"],
+                latency_ms=synth_result["latency_ms"],
+            )
             results.append({
                 "profile_id": pid,
                 "profile_name": profile.name if profile else pid,
@@ -71,4 +74,9 @@ async def compare_voices(
                 "error": str(e),
             })
 
+    logger.info(
+        "comparison_completed",
+        result_count=len(results),
+        error_count=sum(1 for r in results if "error" in r),
+    )
     return results

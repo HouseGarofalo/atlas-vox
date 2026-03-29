@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import time
-import uuid
-from pathlib import Path
 
 import structlog
 
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -63,15 +61,14 @@ class AzureSpeechProvider(TTSProvider):
         import azure.cognitiveservices.speech as speechsdk
 
         config = self._get_config()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"azure_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="azure")
 
         audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_file))
         synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=config, audio_config=audio_config
         )
 
+        logger.info("azure_synthesize_started", voice_id=voice_id, text_length=len(text), ssml=settings_.ssml)
         start = time.perf_counter()
 
         if settings_.ssml:
@@ -83,7 +80,11 @@ class AzureSpeechProvider(TTSProvider):
         elapsed = time.perf_counter() - start
 
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            logger.info("azure_synthesis_complete", latency_ms=int(elapsed * 1000))
+            logger.info(
+                "azure_synthesize_completed",
+                voice_id=voice_id,
+                latency_ms=int(elapsed * 1000),
+            )
             return AudioResult(
                 audio_path=output_file,
                 sample_rate=16000,
@@ -91,10 +92,16 @@ class AzureSpeechProvider(TTSProvider):
             )
         else:
             error = result.cancellation_details.error_details if result.cancellation_details else "Unknown error"
+            logger.error(
+                "azure_synthesize_failed",
+                voice_id=voice_id,
+                latency_ms=int(elapsed * 1000),
+                error=error,
+            )
             raise RuntimeError(f"Azure synthesis failed: {error}")
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         raise NotImplementedError(
             "Azure Custom Neural Voice requires portal setup. "
@@ -102,7 +109,7 @@ class AzureSpeechProvider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         raise NotImplementedError("Azure CNV fine-tuning is managed via Azure portal")
 
@@ -139,12 +146,15 @@ class AzureSpeechProvider(TTSProvider):
                             description=f"{v.voice_type.name} — {v.gender.name}" if hasattr(v, "gender") else None,
                         ))
                 if voices:
+                    logger.info("azure_voices_listed", count=len(voices), source="sdk")
                     return voices
         except Exception as exc:
             logger.debug("azure_sdk_list_voices_failed", error=str(exc))
 
         # Fallback: hardcoded English neural voices
-        return self._hardcoded_english_voices()
+        fallback = self._hardcoded_english_voices()
+        logger.info("azure_voices_listed", count=len(fallback), source="hardcoded")
+        return fallback
 
     @staticmethod
     def _hardcoded_english_voices() -> list[VoiceInfo]:
@@ -398,11 +408,14 @@ class AzureSpeechProvider(TTSProvider):
             if not subscription_key:
                 import azure.cognitiveservices.speech as _sdk  # noqa: F401
                 latency = int((time.perf_counter() - start) * 1000)
+                logger.info("azure_health_check", healthy=True, latency_ms=latency, note="no_subscription_key")
                 return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency,
                                       error="SDK ready — configure subscription key in Providers settings")
             self._get_config()
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("azure_health_check", healthy=True, latency_ms=latency)
             return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency)
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("azure_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="azure_speech", healthy=False, latency_ms=latency, error=str(e))

@@ -601,7 +601,7 @@ alembic upgrade head
 
 ### CORS Error in Browser Console
 
-**Symptom:** `Access to fetch at 'http://localhost:8000/api/v1/...' from origin 'http://localhost:3000' has been blocked by CORS policy`
+**Symptom:** `Access to fetch at 'http://localhost:8100/api/v1/...' from origin 'http://localhost:3000' has been blocked by CORS policy`
 
 **Cause:** The frontend origin is not in the CORS allowed list.
 
@@ -642,7 +642,7 @@ docker compose -f docker/docker-compose.yml exec backend python -c "import socke
 - If behind a reverse proxy (nginx), add WebSocket support:
   ```nginx
   location /api/v1/training/jobs/ {
-      proxy_pass http://backend:8000;
+      proxy_pass http://backend:8100;
       proxy_http_version 1.1;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection "upgrade";
@@ -779,6 +779,31 @@ redis-cli ping  # Should return PONG
 **Symptom:** Provider cards show placeholder instead of logos.
 
 **Cause:** This is expected — logos use a text-based fallback component.
+
+---
+
+## 🚦 Rate Limiting & Configuration Issues
+
+### Rate Limiting (429 Too Many Requests)
+
+**Symptom:** API returns 429 status code.
+
+**Cause:** Rate limits protect expensive endpoints: synthesis (10/min), training (5/min), compare (5/min), OpenAI-compat (20/min), default (60/min).
+
+**Fix:** Wait 60 seconds. For programmatic use, add retry logic with exponential backoff. Rate limits are per-IP.
+
+---
+
+### Redis Database Configuration
+
+**Symptom:** Redis key collision with ATLAS or other services.
+
+**Cause:** Atlas Vox defaults to Redis database 1. If another service uses db1, conflicts may occur.
+
+**Fix:** Change `REDIS_URL` in `.env` to use a different database number:
+```bash
+REDIS_URL=redis://localhost:6379/2
+```
 
 ---
 

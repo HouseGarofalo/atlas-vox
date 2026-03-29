@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import structlog
+
+from app.core.config import settings
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -48,12 +55,16 @@ class AudioResult:
 
 
 @dataclass
-class AudioSample:
+class ProviderAudioSample:
     """An audio sample for training/cloning."""
 
     file_path: Path
     duration_seconds: float | None = None
     sample_rate: int | None = None
+
+
+# Backward-compatible alias — prefer ProviderAudioSample in new code.
+AudioSample = ProviderAudioSample
 
 
 @dataclass
@@ -131,6 +142,14 @@ class TTSProvider(ABC):
             return self._runtime_config[key]
         return default
 
+    def prepare_output_path(self, prefix: str = "synth", ext: str = "wav") -> Path:
+        """Create the output directory and return a unique file path for synthesis output."""
+        output_dir = Path(settings.storage_path) / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{prefix}_{uuid.uuid4().hex[:12]}.{ext}"
+        logger.debug("output_path_prepared", path=str(output_path))
+        return output_path
+
     @abstractmethod
     async def synthesize(
         self, text: str, voice_id: str, settings: SynthesisSettings
@@ -139,13 +158,13 @@ class TTSProvider(ABC):
 
     @abstractmethod
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         """Clone a voice from audio samples (if supported)."""
 
     @abstractmethod
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         """Fine-tune an existing model (if supported)."""
 
@@ -165,5 +184,10 @@ class TTSProvider(ABC):
         self, text: str, voice_id: str, settings: SynthesisSettings
     ) -> AsyncIterator[bytes]:
         """Streaming synthesis (optional, raise NotImplementedError if unavailable)."""
+        logger.warning(
+            "stream_synthesize_not_supported",
+            provider=type(self).__name__,
+            voice_id=voice_id,
+        )
         raise NotImplementedError("Streaming not supported by this provider")
         yield  # Make it an async generator

@@ -15,7 +15,7 @@ class ModelVersion(Base):
     __tablename__ = "model_versions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     provider_model_id: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Provider-specific ID
     model_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # Local model file path

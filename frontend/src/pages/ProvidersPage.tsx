@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { RefreshCw, ExternalLink, Settings, Activity, Loader2, Eye, EyeOff, Check } from "lucide-react";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -7,7 +7,10 @@ import { useProviderStore } from "../stores/providerStore";
 import { useAdminStore } from "../stores/adminStore";
 import ProviderLogo from "../components/providers/ProviderLogo";
 import { PROVIDER_METADATA } from "../data/providerMetadata";
+import { createLogger } from "../utils/logger";
 import type { Provider, ProviderFieldSchema } from "../types";
+
+const logger = createLogger("ProvidersPage");
 
 /* ---------- constants ---------- */
 
@@ -25,11 +28,14 @@ export default function ProvidersPage() {
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProviders().then(() => checkAllHealth());
+    logger.info("page_mounted");
+    fetchProviders();
   }, []);
 
   const toggleEdit = (name: string) => {
-    setEditingProvider((prev) => (prev === name ? null : name));
+    const next = editingProvider === name ? null : name;
+    logger.info("edit_panel_toggle", { provider: name, opened: next !== null });
+    setEditingProvider(next);
   };
 
   return (
@@ -125,7 +131,7 @@ function ProviderGrid({
 
 /* ---------- single provider card ---------- */
 
-function ProviderCard({
+const ProviderCard = React.memo(function ProviderCard({
   provider,
   isEditing,
   onToggleEdit,
@@ -281,7 +287,7 @@ function ProviderCard({
       </div>
     </Card>
   );
-}
+});
 
 /* ---------- inline edit panel ---------- */
 

@@ -4,18 +4,16 @@ from __future__ import annotations
 
 import io
 import time
-import uuid
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import structlog
 
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -62,22 +60,31 @@ class Dia2Provider(TTSProvider):
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
         model = self._get_model()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"dia2_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="dia2")
 
+        logger.info("dia2_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         if "[S1]" not in text and "[S2]" not in text:
             text = f"[S1] {text}"
 
-        output = await run_sync(model.generate, text)
+        try:
+            output = await run_sync(model.generate, text)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("dia2_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
 
         import soundfile as sf
         sf.write(str(output_file), output, model.sample_rate)
 
         elapsed = time.perf_counter() - start
-        logger.info("dia2_synthesis_complete", latency_ms=int(elapsed * 1000))
+        logger.info(
+            "dia2_synthesize_completed",
+            voice_id=voice_id,
+            duration_seconds=len(output) / model.sample_rate if hasattr(model, "sample_rate") else None,
+            latency_ms=int(elapsed * 1000),
+        )
 
         return AudioResult(
             audio_path=output_file,
@@ -86,22 +93,24 @@ class Dia2Provider(TTSProvider):
         )
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         raise NotImplementedError("Dia2 does not support voice cloning directly")
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         raise NotImplementedError("Dia2 does not support fine-tuning")
 
     async def list_voices(self) -> list[VoiceInfo]:
-        return [
+        voices = [
             VoiceInfo(voice_id="S1", name="Speaker 1 (Dia2)", language="en",
                       description="Primary dialogue speaker"),
             VoiceInfo(voice_id="S2", name="Speaker 2 (Dia2)", language="en",
                       description="Secondary dialogue speaker"),
         ]
+        logger.info("dia2_voices_listed", count=len(voices))
+        return voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -123,26 +132,41 @@ class Dia2Provider(TTSProvider):
         start = time.perf_counter()
         try:
             if self._model is not None:
+                logger.info("dia2_health_check", healthy=True, latency_ms=0, model_loaded=True)
                 return ProviderHealth(name="dia2", healthy=True, latency_ms=0)
             from dia.model import Dia as _Dia  # noqa: F401
+            logger.info("dia2_health_check", healthy=True, latency_ms=0, model_loaded=False)
             return ProviderHealth(name="dia2", healthy=True, latency_ms=0)
         except ImportError:
+            logger.info("dia2_health_check", healthy=True, latency_ms=0, note="gpu_worker_only")
             return ProviderHealth(name="dia2", healthy=True, latency_ms=0,
                                   error="Available in GPU worker only")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("dia2_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="dia2", healthy=False, latency_ms=latency, error=str(e))
+
+    def _stream_sync(self, text: str) -> list[bytes]:
+        """Collect all streaming chunks synchronously (runs in a thread)."""
+        import soundfile as sf
+
+        model = self._get_model()
+        chunks = []
+        for chunk in model.generate(text, stream=True):
+            buf = io.BytesIO()
+            sf.write(buf, chunk, model.sample_rate, format="WAV")
+            chunks.append(buf.getvalue())
+        return chunks
 
     async def stream_synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AsyncIterator[bytes]:
-        model = self._get_model()
-        import soundfile as sf
+        """Stream synthesis without blocking the event loop."""
+        import asyncio
 
         if "[S1]" not in text and "[S2]" not in text:
             text = f"[S1] {text}"
 
-        for chunk in model.generate(text, stream=True):
-            buf = io.BytesIO()
-            sf.write(buf, chunk, model.sample_rate, format="WAV")
-            yield buf.getvalue()
+        chunks = await asyncio.to_thread(self._stream_sync, text)
+        for chunk in chunks:
+            yield chunk

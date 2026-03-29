@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 
+import structlog
 import typer
 from rich.console import Console
+
+logger = structlog.get_logger("atlas_vox.cli")
 
 app = typer.Typer()
 console = Console()
@@ -27,6 +30,13 @@ def synthesize_text(
         from app.core.database import async_session_factory
         from app.services.synthesis_service import synthesize
 
+        logger.info(
+            "cli_synthesize_started",
+            profile_id=profile_id,
+            text_length=len(text),
+            output=output,
+            format=format,
+        )
         async with async_session_factory() as db:
             try:
                 result = await synthesize(
@@ -42,6 +52,12 @@ def synthesize_text(
                 src_path = Path(settings.storage_path) / "output" / src
                 shutil.copy2(src_path, output)
 
+                logger.info(
+                    "cli_synthesize_completed",
+                    profile_id=profile_id,
+                    latency_ms=result["latency_ms"],
+                    output=output,
+                )
                 console.print(f"[green]✓[/green] Synthesized to: [bold]{output}[/bold]")
                 console.print(f"  Provider: {result['provider_name']}")
                 console.print(f"  Latency: {result['latency_ms']}ms")
@@ -52,6 +68,7 @@ def synthesize_text(
                     _play_audio(output)
 
             except ValueError as e:
+                logger.error("cli_synthesize_failed", profile_id=profile_id, error=str(e))
                 console.print(f"[red]✗[/red] {e}")
                 raise typer.Exit(1)
 

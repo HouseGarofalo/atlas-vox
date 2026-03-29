@@ -1,13 +1,13 @@
 """Aggregated voice library endpoint + preview."""
 
-from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
+from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.providers.base import SynthesisSettings
@@ -19,8 +19,12 @@ router = APIRouter(prefix="/voices", tags=["voices"])
 
 
 @router.get("")
-async def list_all_voices() -> dict:
+async def list_all_voices(
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> JSONResponse:
     """Aggregate voices from all available providers into a single list."""
+    logger.info("list_all_voices_called", limit=limit, offset=offset)
     voices: list[dict] = []
     for name in provider_registry.list_available():
         display_name = PROVIDER_DISPLAY_NAMES.get(name, name)
@@ -41,7 +45,12 @@ async def list_all_voices() -> dict:
         except Exception as exc:
             logger.warning("voice_list_failed", provider=name, error=str(exc))
             continue
-    return {"voices": voices, "count": len(voices)}
+    paginated = voices[offset : offset + limit]
+    logger.info("list_all_voices_returned", total=len(voices), count=len(paginated))
+    return JSONResponse(
+        content={"voices": paginated, "count": len(paginated)},
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 # ---------- Voice Preview ----------
@@ -63,6 +72,7 @@ async def preview_voice(data: VoicePreviewRequest) -> dict:
     Results are cached — if a preview file already exists it is returned
     immediately without re-synthesizing.
     """
+    logger.info("preview_voice_called", provider=data.provider, voice_id=data.voice_id)
     text = data.text or DEFAULT_PREVIEW_TEXT
 
     # Build a deterministic cache key
@@ -74,6 +84,7 @@ async def preview_voice(data: VoicePreviewRequest) -> dict:
     # Serve cached preview
     if preview_file.exists():
         filename = preview_file.name
+        logger.info("preview_voice_cache_hit", provider=data.provider, voice_id=data.voice_id)
         return {"audio_url": f"/api/v1/audio/previews/{filename}"}
 
     # Synthesize
@@ -94,10 +105,11 @@ async def preview_voice(data: VoicePreviewRequest) -> dict:
         shutil.copy2(str(result.audio_path), str(preview_file))
 
         filename = preview_file.name
+        logger.info("preview_voice_synthesized", provider=data.provider, voice_id=data.voice_id)
         return {"audio_url": f"/api/v1/audio/previews/{filename}"}
     except Exception as exc:
         logger.error("voice_preview_failed", provider=data.provider, voice_id=data.voice_id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Preview failed: {exc}",
+            detail="Preview failed. Check server logs for details.",
         )

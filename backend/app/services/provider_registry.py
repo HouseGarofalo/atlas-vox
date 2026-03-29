@@ -46,12 +46,6 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "cosyvoice": "CosyVoice",
     "dia": "Nari-labs Dia",
     "dia2": "Nari-labs Dia2",
-    "fish_speech": "Fish Speech",
-    "chatterbox": "Chatterbox",
-    "f5_tts": "F5-TTS",
-    "openvoice_v2": "OpenVoice v2",
-    "orpheus": "Orpheus TTS",
-    "piper_training": "Piper Training (GPU)",
 }
 
 PROVIDER_TYPES: dict[str, str] = {
@@ -64,12 +58,6 @@ PROVIDER_TYPES: dict[str, str] = {
     "cosyvoice": "local",
     "dia": "local",
     "dia2": "local",
-    "fish_speech": "gpu",
-    "chatterbox": "gpu",
-    "f5_tts": "gpu",
-    "openvoice_v2": "gpu",
-    "orpheus": "gpu",
-    "piper_training": "gpu",
 }
 
 

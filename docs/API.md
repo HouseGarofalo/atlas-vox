@@ -1,6 +1,6 @@
 # Atlas Vox API Reference
 
-> **Version:** 0.1.0 | **Base URL:** `http://localhost:8000/api/v1` | **Transport:** HTTP/1.1 + WebSocket
+> **Version:** 0.1.0 | **Base URL:** `http://localhost:8100/api/v1` | **Transport:** HTTP/1.1 + WebSocket
 
 ---
 
@@ -73,7 +73,7 @@
 All endpoints are prefixed with `/api/v1`. In local development the full base URL is:
 
 ```
-http://localhost:8000/api/v1
+http://localhost:8100/api/v1
 ```
 
 For production deployments, replace with your domain:
@@ -116,7 +116,7 @@ When `AUTH_DISABLED=false`, every request must include an `Authorization` header
 WebSocket endpoints use query-parameter authentication:
 
 ```
-ws://localhost:8000/api/v1/training/jobs/{job_id}/progress?token=<api_key>
+ws://localhost:8100/api/v1/training/jobs/{job_id}/progress?token=<api_key>
 ```
 
 When `AUTH_DISABLED=true`, the `token` parameter is not required.
@@ -865,7 +865,7 @@ WebSocket endpoint that streams real-time training progress for a specific job. 
 **Connection URL**
 
 ```
-ws://localhost:8000/api/v1/training/jobs/{job_id}/progress?token=<api_key>
+ws://localhost:8100/api/v1/training/jobs/{job_id}/progress?token=<api_key>
 ```
 
 **Query Parameters**
@@ -1912,7 +1912,7 @@ The response includes a `Content-Disposition` header with the filename.
 ### Create a Voice Profile
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/profiles \
+curl -X POST http://localhost:8100/api/v1/profiles \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Corporate Narrator",
@@ -1926,7 +1926,7 @@ curl -X POST http://localhost:8000/api/v1/profiles \
 ### Upload Audio Samples
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/profiles/prof_a1b2c3d4/samples \
+curl -X POST http://localhost:8100/api/v1/profiles/prof_a1b2c3d4/samples \
   -F "files=@recording_001.wav" \
   -F "files=@recording_002.wav" \
   -F "files=@recording_003.wav"
@@ -1935,13 +1935,13 @@ curl -X POST http://localhost:8000/api/v1/profiles/prof_a1b2c3d4/samples \
 ### Trigger Sample Preprocessing
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/profiles/prof_a1b2c3d4/samples/preprocess
+curl -X POST http://localhost:8100/api/v1/profiles/prof_a1b2c3d4/samples/preprocess
 ```
 
 ### Start a Training Job
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/profiles/prof_a1b2c3d4/train \
+curl -X POST http://localhost:8100/api/v1/profiles/prof_a1b2c3d4/train \
   -H "Content-Type: application/json" \
   -d '{
     "config": {
@@ -1955,16 +1955,16 @@ curl -X POST http://localhost:8000/api/v1/profiles/prof_a1b2c3d4/train \
 
 ```bash
 # Using websocat (https://github.com/vi/websocat)
-websocat ws://localhost:8000/api/v1/training/jobs/job_m1n2o3p4/progress
+websocat ws://localhost:8100/api/v1/training/jobs/job_m1n2o3p4/progress
 
 # With authentication:
-websocat "ws://localhost:8000/api/v1/training/jobs/job_m1n2o3p4/progress?token=avx_..."
+websocat "ws://localhost:8100/api/v1/training/jobs/job_m1n2o3p4/progress?token=avx_..."
 ```
 
 ### Synthesize Text to Speech
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/synthesize \
+curl -X POST http://localhost:8100/api/v1/synthesize \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Welcome to Atlas Vox, your intelligent voice platform.",
@@ -1977,7 +1977,7 @@ curl -X POST http://localhost:8000/api/v1/synthesize \
 ### Stream Synthesis
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/synthesize/stream \
+curl -X POST http://localhost:8100/api/v1/synthesize/stream \
   -H "Content-Type: application/json" \
   -d '{
     "text": "This audio will be streamed in chunks.",
@@ -1989,7 +1989,7 @@ curl -X POST http://localhost:8000/api/v1/synthesize/stream \
 ### Batch Synthesis
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/synthesize/batch \
+curl -X POST http://localhost:8100/api/v1/synthesize/batch \
   -H "Content-Type: application/json" \
   -d '{
     "lines": [
@@ -2005,7 +2005,7 @@ curl -X POST http://localhost:8000/api/v1/synthesize/batch \
 ### Compare Voices
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/compare \
+curl -X POST http://localhost:8100/api/v1/compare \
   -H "Content-Type: application/json" \
   -d '{
     "text": "The quick brown fox jumps over the lazy dog.",
@@ -2016,13 +2016,13 @@ curl -X POST http://localhost:8000/api/v1/compare \
 ### Download Generated Audio
 
 ```bash
-curl -O http://localhost:8000/api/v1/audio/synth_q1r2s3t4.wav
+curl -O http://localhost:8100/api/v1/audio/synth_q1r2s3t4.wav
 ```
 
 ### Create an API Key (when auth is enabled)
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/api-keys \
+curl -X POST http://localhost:8100/api/v1/api-keys \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your_jwt_token>" \
   -d '{
@@ -2034,14 +2034,14 @@ curl -X POST http://localhost:8000/api/v1/api-keys \
 ### Use an API Key for Authentication
 
 ```bash
-curl http://localhost:8000/api/v1/profiles \
+curl http://localhost:8100/api/v1/profiles \
   -H "Authorization: Bearer avx_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefgh"
 ```
 
 ### Register a Webhook
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/webhooks \
+curl -X POST http://localhost:8100/api/v1/webhooks \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://example.com/hooks/atlas-vox",
@@ -2053,13 +2053,13 @@ curl -X POST http://localhost:8000/api/v1/webhooks \
 ### Check Provider Health
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/providers/kokoro/health
+curl -X POST http://localhost:8100/api/v1/providers/kokoro/health
 ```
 
 ### List Provider Voices
 
 ```bash
-curl http://localhost:8000/api/v1/providers/kokoro/voices
+curl http://localhost:8100/api/v1/providers/kokoro/voices
 ```
 
 ---

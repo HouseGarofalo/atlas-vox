@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -30,10 +31,11 @@ def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
     if len(text) <= max_chars:
         return [text]
 
+    logger.debug("text_chunked", text_length=len(text), max_chars=max_chars)
+
     chunks: list[str] = []
     current = ""
     # Split on sentence-ending punctuation
-    import re
     sentences = re.split(r"(?<=[.!?])\s+", text)
 
     for sentence in sentences:
@@ -71,6 +73,36 @@ async def _resolve_profile(db: AsyncSession, profile_id: str) -> VoiceProfile:
     return profile
 
 
+async def _resolve_voice_id(db: AsyncSession, profile: VoiceProfile) -> str:
+    """Determine the voice_id to use for synthesis.
+
+    Priority:
+      1. profile.voice_id  — pre-built voice from provider library
+      2. active version's provider_model_id  — trained/cloned voice
+      3. "default"  — provider fallback
+    """
+    if profile.voice_id:
+        voice_id = profile.voice_id
+        source = "profile_voice_id"
+    elif profile.active_version_id:
+        from app.models.model_version import ModelVersion
+        ver_result = await db.execute(
+            select(ModelVersion).where(ModelVersion.id == profile.active_version_id)
+        )
+        version = ver_result.scalar_one_or_none()
+        if version and version.provider_model_id:
+            voice_id = version.provider_model_id
+            source = "active_version"
+        else:
+            voice_id = "default"
+            source = "default"
+    else:
+        voice_id = "default"
+        source = "default"
+    logger.debug("voice_id_resolved", profile_id=profile.id, voice_id=voice_id, source=source)
+    return voice_id
+
+
 async def _apply_preset(db: AsyncSession, preset_id: str, synth_settings: SynthesisSettings) -> SynthesisSettings:
     """Apply preset values to synthesis settings."""
     result = await db.execute(
@@ -103,6 +135,16 @@ async def synthesize(
     """
     profile = await _resolve_profile(db, profile_id)
 
+    logger.info(
+        "synthesis_started",
+        profile_id=profile_id,
+        text_length=len(text),
+        provider=profile.provider_name,
+        preset_id=preset_id,
+        output_format=output_format,
+        ssml=ssml,
+    )
+
     synth_settings = SynthesisSettings(
         speed=speed, pitch=pitch, volume=volume,
         output_format=output_format, ssml=ssml,
@@ -111,61 +153,68 @@ async def synthesize(
         synth_settings = await _apply_preset(db, preset_id, synth_settings)
 
     provider = provider_registry.get_provider(profile.provider_name)
-
-    # Determine voice_id:
-    #   1. profile.voice_id (pre-built voice from library)
-    #   2. active version's provider_model_id (trained/cloned voice)
-    #   3. fallback to "default"
-    voice_id = "default"
-    if profile.voice_id:
-        voice_id = profile.voice_id
-    elif profile.active_version_id:
-        from app.models.model_version import ModelVersion
-        ver_result = await db.execute(
-            select(ModelVersion).where(ModelVersion.id == profile.active_version_id)
-        )
-        version = ver_result.scalar_one_or_none()
-        if version and version.provider_model_id:
-            voice_id = version.provider_model_id
+    voice_id = await _resolve_voice_id(db, profile)
 
     start = time.perf_counter()
 
     # Split long text into chunks
     chunks = _split_text(text)
 
-    if len(chunks) == 1:
-        result = await provider.synthesize(chunks[0], voice_id, synth_settings)
-    else:
-        # Synthesize chunks and concatenate
-        import numpy as np
-        import soundfile as sf
+    try:
+        if len(chunks) == 1:
+            result = await provider.synthesize(chunks[0], voice_id, synth_settings)
+        else:
+            # Synthesize chunks and concatenate
+            import numpy as np
+            import soundfile as sf
 
-        all_audio = []
-        sample_rate = 22050
-        for chunk in chunks:
-            chunk_result = await provider.synthesize(chunk, voice_id, synth_settings)
-            audio, sr = sf.read(str(chunk_result.audio_path))
-            all_audio.append(audio)
-            sample_rate = sr
+            all_audio = []
+            sample_rate = 22050
+            for chunk in chunks:
+                chunk_result = await provider.synthesize(chunk, voice_id, synth_settings)
+                audio, sr = sf.read(str(chunk_result.audio_path))
+                all_audio.append(audio)
+                sample_rate = sr
 
-        combined = np.concatenate(all_audio)
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        combined_file = output_dir / f"synth_{uuid.uuid4().hex[:12]}.wav"
-        sf.write(str(combined_file), combined, sample_rate)
+            combined = np.concatenate(all_audio)
+            output_dir = Path(settings.storage_path) / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            combined_file = output_dir / f"synth_{uuid.uuid4().hex[:12]}.wav"
+            sf.write(str(combined_file), combined, sample_rate)
 
-        result = AudioResult(
-            audio_path=combined_file,
-            duration_seconds=len(combined) / sample_rate,
-            sample_rate=sample_rate,
-            format="wav",
+            result = AudioResult(
+                audio_path=combined_file,
+                duration_seconds=len(combined) / sample_rate,
+                sample_rate=sample_rate,
+                format="wav",
+            )
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        logger.error(
+            "synthesis_failed",
+            profile_id=profile_id,
+            provider=profile.provider_name,
+            text_length=len(text),
+            latency_ms=latency_ms,
+            error=str(exc),
         )
+        raise
 
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     # Format conversion if needed
     if output_format != "wav" and result.format == "wav":
         result = await _convert_format(result, output_format)
+
+    logger.info(
+        "synthesis_completed",
+        profile_id=profile_id,
+        provider=profile.provider_name,
+        latency_ms=latency_ms,
+        duration_seconds=result.duration_seconds,
+        output_format=result.format,
+        chunk_count=len(chunks),
+    )
 
     # Save to history
     history = SynthesisHistory(
@@ -211,24 +260,23 @@ async def stream_synthesize(
     profile = await _resolve_profile(db, profile_id)
     provider = provider_registry.get_provider(profile.provider_name)
 
+    logger.info(
+        "stream_synthesis_started",
+        profile_id=profile_id,
+        text_length=len(text),
+        provider=profile.provider_name,
+    )
+
     capabilities = await provider.get_capabilities()
     if not capabilities.supports_streaming:
         raise ValueError(f"Provider '{profile.provider_name}' does not support streaming")
 
-    voice_id = "default"
-    if profile.voice_id:
-        voice_id = profile.voice_id
-    elif profile.active_version_id:
-        from app.models.model_version import ModelVersion
-        ver_result = await db.execute(
-            select(ModelVersion).where(ModelVersion.id == profile.active_version_id)
-        )
-        version = ver_result.scalar_one_or_none()
-        if version and version.provider_model_id:
-            voice_id = version.provider_model_id
-
+    voice_id = await _resolve_voice_id(db, profile)
     synth_settings = SynthesisSettings(speed=speed, pitch=pitch)
+    chunk_index = 0
     async for chunk in provider.stream_synthesize(text, voice_id, synth_settings):
+        logger.debug("stream_chunk_sent", profile_id=profile_id, chunk_index=chunk_index, chunk_bytes=len(chunk))
+        chunk_index += 1
         yield chunk
 
 
@@ -241,6 +289,13 @@ async def batch_synthesize(
     output_format: str = "wav",
 ) -> list[dict]:
     """Batch synthesize multiple lines, returning results for each."""
+    logger.info(
+        "batch_synthesis_started",
+        profile_id=profile_id,
+        line_count=len(lines),
+        preset_id=preset_id,
+        output_format=output_format,
+    )
     results = []
     for line in lines:
         if not line.strip():
@@ -254,10 +309,18 @@ async def batch_synthesize(
 
 
 async def get_history(
-    db: AsyncSession, limit: int = 50, profile_id: str | None = None
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+    profile_id: str | None = None,
 ) -> list[SynthesisHistory]:
-    """Get synthesis history."""
-    query = select(SynthesisHistory).order_by(SynthesisHistory.created_at.desc()).limit(limit)
+    """Get synthesis history with pagination."""
+    query = (
+        select(SynthesisHistory)
+        .order_by(SynthesisHistory.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if profile_id:
         query = query.where(SynthesisHistory.profile_id == profile_id)
     result = await db.execute(query)
@@ -266,6 +329,12 @@ async def get_history(
 
 async def _convert_format(result: AudioResult, target_format: str) -> AudioResult:
     """Convert audio to target format using pydub."""
+    logger.info(
+        "format_conversion",
+        source_format=result.format,
+        target_format=target_format,
+        source_path=str(result.audio_path),
+    )
     try:
         from pydub import AudioSegment
 
@@ -282,3 +351,6 @@ async def _convert_format(result: AudioResult, target_format: str) -> AudioResul
     except ImportError:
         logger.warning("pydub_not_installed", hint="pip install pydub")
         return result  # Fall back to original format
+    except Exception as e:
+        logger.error("format_conversion_failed", source_format=result.format, target_format=target_format, error=str(e))
+        raise

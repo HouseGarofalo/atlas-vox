@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
 import { CheckCircle2, Circle, ExternalLink } from "lucide-react";
 import ProviderLogo from "../components/providers/ProviderLogo";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("DocsPage");
 
 /* ---------- types ---------- */
 
@@ -455,6 +458,10 @@ const PROVIDER_GUIDES: ProviderGuide[] = [
 export default function DocsPage() {
   const [selectedProvider, setSelectedProvider] = useState(PROVIDER_GUIDES[0].name);
 
+  useEffect(() => {
+    logger.info("page_mounted");
+  }, []);
+
   const guide = PROVIDER_GUIDES.find((g) => g.name === selectedProvider) ?? PROVIDER_GUIDES[0];
 
   const providerOptions = PROVIDER_GUIDES.map((g) => ({
@@ -477,7 +484,7 @@ export default function DocsPage() {
           <Select
             label="Select Provider"
             value={selectedProvider}
-            onChange={(e) => setSelectedProvider(e.target.value)}
+            onChange={(e) => { logger.info("provider_selected", { provider: e.target.value }); setSelectedProvider(e.target.value); }}
             options={providerOptions}
           />
         </div>

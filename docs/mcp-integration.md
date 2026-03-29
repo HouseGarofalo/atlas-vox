@@ -72,7 +72,7 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "atlas-vox": {
-      "url": "http://localhost:8000/mcp/sse"
+      "url": "http://localhost:8100/mcp/sse"
     }
   }
 }

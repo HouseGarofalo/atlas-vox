@@ -139,7 +139,9 @@ Required for Celery task queue (training jobs, preprocessing).
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `REDIS_URL` | `str` | `redis://localhost:6379/0` | Redis connection URL (used as Celery broker and result backend) |
+| `REDIS_URL` | `str` | `redis://localhost:6379/1` | Redis connection URL (used as Celery broker and result backend) |
+
+> **Note:** Atlas Vox uses Redis db1 (`/1`) to avoid collision with ATLAS on db0.
 
 ---
 
@@ -298,7 +300,7 @@ CORS_ORIGINS=["http://homelab.local:3000"]
 DATABASE_URL=sqlite+aiosqlite:////opt/atlas-vox/data/atlas_vox.db
 AUTH_DISABLED=true
 STORAGE_PATH=/opt/atlas-vox/storage
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://localhost:6379/1
 
 KOKORO_ENABLED=true
 PIPER_ENABLED=true
@@ -353,7 +355,7 @@ LOG_LEVEL=INFO
 
 DATABASE_URL=sqlite+aiosqlite:///./atlas_vox.db
 AUTH_DISABLED=true
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://localhost:6379/1
 
 # GPU-accelerated providers
 COQUI_XTTS_GPU_MODE=docker_gpu

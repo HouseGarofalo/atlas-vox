@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from datetime import UTC, datetime
@@ -10,7 +9,9 @@ from pathlib import Path
 
 import structlog
 
+from app.core.enums import JobStatus, ProfileStatus
 from app.tasks.celery_app import celery_app
+from app.tasks.utils import run_async
 
 logger = structlog.get_logger(__name__)
 
@@ -48,168 +49,168 @@ def _ensure_wav(file_path: Path) -> Path:
     return wav_path
 
 
-def _run_async(coro):
-    """Run an async coroutine from sync Celery task context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(asyncio.run, coro).result()
-    except RuntimeError:
-        pass
-    return asyncio.run(coro)
+async def _load_job_and_samples(db, job_id: str, task):
+    """Load the training job from DB, mark it as training, and return job + provider samples."""
+    from sqlalchemy import select
+
+    from app.models.audio_sample import AudioSample
+    from app.models.training_job import TrainingJob
+    from app.providers.base import ProviderAudioSample
+    from app.services.provider_registry import provider_registry
+
+    result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if job is None:
+        return None, None, None, None
+
+    job.status = JobStatus.TRAINING
+    job.started_at = datetime.now(UTC)
+    await db.commit()
+
+    task.update_state(state="PROGRESS", meta={
+        "percent": 10, "status": "Loading provider...", "job_id": job_id,
+    })
+
+    # Load provider config from DB (worker doesn't run lifespan)
+    from app.models.provider import Provider as ProviderModel
+    prov_result = await db.execute(
+        select(ProviderModel).where(ProviderModel.name == job.provider_name)
+    )
+    prov_row = prov_result.scalar_one_or_none()
+    if prov_row and prov_row.config_json:
+        provider_registry.apply_config(job.provider_name, json.loads(prov_row.config_json))
+
+    provider = provider_registry.get_provider(job.provider_name)
+    capabilities = await provider.get_capabilities()
+
+    sample_result = await db.execute(
+        select(AudioSample).where(AudioSample.profile_id == job.profile_id)
+    )
+    samples = sample_result.scalars().all()
+    provider_samples = []
+    for s in samples:
+        path = Path(s.preprocessed_path) if s.preprocessed_path else Path(s.file_path)
+        provider_samples.append(ProviderAudioSample(
+            file_path=path,
+            duration_seconds=s.duration_seconds,
+            sample_rate=s.sample_rate,
+        ))
+
+    if not provider_samples:
+        raise ValueError("No audio samples available for training")
+
+    # Convert non-WAV files for local providers that only accept WAV input.
+    if len(capabilities.supported_output_formats) == 1 and capabilities.supported_output_formats[0] == "wav":
+        for i, ps in enumerate(provider_samples):
+            wav_path = _ensure_wav(ps.file_path)
+            if wav_path != ps.file_path:
+                provider_samples[i] = ProviderAudioSample(
+                    file_path=wav_path,
+                    duration_seconds=ps.duration_seconds,
+                    sample_rate=16000,
+                )
+
+    return job, provider, capabilities, provider_samples
+
+
+async def _dispatch_to_provider(provider, capabilities, provider_samples, job, task, job_id: str):
+    """Dispatch training to clone_voice or fine_tune based on capabilities."""
+    from app.providers.base import CloneConfig, FineTuneConfig
+
+    task.update_state(state="PROGRESS", meta={
+        "percent": 25, "status": "Training started...", "job_id": job_id,
+    })
+
+    config_data = json.loads(job.config_json) if job.config_json else {}
+
+    if capabilities.supports_cloning and not config_data.get("fine_tune_model_id"):
+        clone_config = CloneConfig(
+            name=config_data.get("name", ""),
+            description=config_data.get("description", ""),
+            language=config_data.get("language", "en"),
+        )
+        return await provider.clone_voice(provider_samples, clone_config)
+    elif capabilities.supports_fine_tuning:
+        ft_config = FineTuneConfig(
+            epochs=config_data.get("epochs", 10),
+            learning_rate=config_data.get("learning_rate", 1e-5),
+            batch_size=config_data.get("batch_size", 4),
+        )
+        model_id = config_data.get("fine_tune_model_id", "default")
+        return await provider.fine_tune(model_id, provider_samples, ft_config)
+    else:
+        raise ValueError(f"Provider '{job.provider_name}' does not support training")
+
+
+async def _create_version(db, job, voice_model, task, job_id: str) -> tuple:
+    """Create a ModelVersion record and activate it on the profile."""
+    from sqlalchemy import func, select
+
+    from app.models.model_version import ModelVersion
+    from app.models.voice_profile import VoiceProfile
+
+    task.update_state(state="PROGRESS", meta={
+        "percent": 90, "status": "Creating model version...", "job_id": job_id,
+    })
+
+    version_count = await db.execute(
+        select(func.count()).where(ModelVersion.profile_id == job.profile_id)
+    )
+    next_version = (version_count.scalar() or 0) + 1
+
+    version = ModelVersion(
+        profile_id=job.profile_id,
+        version_number=next_version,
+        provider_model_id=voice_model.provider_model_id,
+        model_path=str(voice_model.model_path) if voice_model.model_path else None,
+        config_json=job.config_json,
+        metrics_json=json.dumps(voice_model.metrics) if voice_model.metrics else None,
+    )
+    db.add(version)
+    await db.flush()
+
+    job.status = JobStatus.COMPLETED
+    job.progress = 1.0
+    job.result_version_id = version.id
+    job.completed_at = datetime.now(UTC)
+
+    profile_result = await db.execute(
+        select(VoiceProfile).where(VoiceProfile.id == job.profile_id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    if profile:
+        profile.active_version_id = version.id
+        profile.status = ProfileStatus.READY
+
+    await db.commit()
+    return version, next_version
 
 
 async def _execute_training(job_id: str, task) -> dict:
     """Async training execution — dispatches to the correct provider."""
-    from sqlalchemy import func, select
-
     from app.core.database import async_session_factory
-    from app.models.audio_sample import AudioSample
-    from app.models.model_version import ModelVersion
-    from app.models.training_job import TrainingJob
-    from app.models.voice_profile import VoiceProfile
-    from app.providers.base import AudioSample as ProviderSample
-    from app.providers.base import CloneConfig, FineTuneConfig
-    from app.services.provider_registry import provider_registry
 
     async with async_session_factory() as db:
-        # Load job
-        result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_id))
-        job = result.scalar_one_or_none()
+        job, provider, capabilities, provider_samples = await _load_job_and_samples(db, job_id, task)
         if job is None:
             return {"error": "Job not found"}
 
         try:
-            # Mark as training
-            job.status = "training"
-            job.started_at = datetime.now(UTC)
-            await db.commit()
-
-            task.update_state(state="PROGRESS", meta={
-                "percent": 10, "status": "Loading provider...", "job_id": job_id,
-            })
-
-            # Load provider config from DB (worker doesn't run lifespan)
-            from app.models.provider import Provider as ProviderModel
-            import json as _json
-            prov_result = await db.execute(
-                select(ProviderModel).where(ProviderModel.name == job.provider_name)
+            voice_model = await _dispatch_to_provider(
+                provider, capabilities, provider_samples, job, task, job_id
             )
-            prov_row = prov_result.scalar_one_or_none()
-            if prov_row and prov_row.config_json:
-                provider_registry.apply_config(job.provider_name, _json.loads(prov_row.config_json))
-
-            # Get provider
-            provider = provider_registry.get_provider(job.provider_name)
-            capabilities = await provider.get_capabilities()
-
-            # Load preprocessed samples (prefer preprocessed, fall back to original)
-            result = await db.execute(
-                select(AudioSample).where(AudioSample.profile_id == job.profile_id)
-            )
-            samples = result.scalars().all()
-            provider_samples = []
-            for s in samples:
-                path = Path(s.preprocessed_path) if s.preprocessed_path else Path(s.file_path)
-                provider_samples.append(ProviderSample(
-                    file_path=path,
-                    duration_seconds=s.duration_seconds,
-                    sample_rate=s.sample_rate,
-                ))
-
-            if not provider_samples:
-                raise ValueError("No audio samples available for training")
-
-            # Convert non-WAV files to WAV for local providers that require it.
-            # Cloud providers (e.g. ElevenLabs) accept M4A/MP3 directly.
-            # Heuristic: if provider only supports WAV output, it likely
-            # needs WAV input too. Cloud providers list multiple formats.
-            if len(capabilities.supported_output_formats) == 1 and capabilities.supported_output_formats[0] == "wav":
-                for i, ps in enumerate(provider_samples):
-                    wav_path = _ensure_wav(ps.file_path)
-                    if wav_path != ps.file_path:
-                        provider_samples[i] = ProviderSample(
-                            file_path=wav_path,
-                            duration_seconds=ps.duration_seconds,
-                            sample_rate=16000,
-                        )
-
-            task.update_state(state="PROGRESS", meta={
-                "percent": 25, "status": "Training started...", "job_id": job_id,
-            })
-
-            # Parse training config
-            config_data = json.loads(job.config_json) if job.config_json else {}
-
-            # Dispatch to provider: clone_voice or fine_tune
-            if capabilities.supports_cloning and not config_data.get("fine_tune_model_id"):
-                clone_config = CloneConfig(
-                    name=config_data.get("name", ""),
-                    description=config_data.get("description", ""),
-                    language=config_data.get("language", "en"),
-                )
-                voice_model = await provider.clone_voice(provider_samples, clone_config)
-            elif capabilities.supports_fine_tuning:
-                ft_config = FineTuneConfig(
-                    epochs=config_data.get("epochs", 10),
-                    learning_rate=config_data.get("learning_rate", 1e-5),
-                    batch_size=config_data.get("batch_size", 4),
-                )
-                model_id = config_data.get("fine_tune_model_id", "default")
-                voice_model = await provider.fine_tune(model_id, provider_samples, ft_config)
-            else:
-                raise ValueError(f"Provider '{job.provider_name}' does not support training")
-
-            task.update_state(state="PROGRESS", meta={
-                "percent": 90, "status": "Creating model version...", "job_id": job_id,
-            })
-
-            # Create model version
-            version_count = await db.execute(
-                select(func.count()).where(ModelVersion.profile_id == job.profile_id)
-            )
-            next_version = (version_count.scalar() or 0) + 1
-
-            version = ModelVersion(
-                profile_id=job.profile_id,
-                version_number=next_version,
-                provider_model_id=voice_model.provider_model_id,
-                model_path=str(voice_model.model_path) if voice_model.model_path else None,
-                config_json=job.config_json,
-                metrics_json=json.dumps(voice_model.metrics) if voice_model.metrics else None,
-            )
-            db.add(version)
-            await db.flush()
-
-            # Update job as completed
-            job.status = "completed"
-            job.progress = 1.0
-            job.result_version_id = version.id
-            job.completed_at = datetime.now(UTC)
-
-            # Activate version on the profile
-            result = await db.execute(
-                select(VoiceProfile).where(VoiceProfile.id == job.profile_id)
-            )
-            profile = result.scalar_one_or_none()
-            if profile:
-                profile.active_version_id = version.id
-                profile.status = "ready"
-
-            await db.commit()
+            version, next_version = await _create_version(db, job, voice_model, task, job_id)
 
             logger.info("training_complete", job_id=job_id, version_id=version.id)
             return {
                 "job_id": job_id,
-                "status": "completed",
+                "status": JobStatus.COMPLETED,
                 "version_id": version.id,
                 "version_number": next_version,
             }
 
         except Exception as e:
-            job.status = "failed"
+            job.status = JobStatus.FAILED
             job.error_message = str(e)
             job.completed_at = datetime.now(UTC)
             await db.commit()
@@ -227,5 +228,5 @@ def train_model(self, job_id: str) -> dict:
         "percent": 0, "status": "Initializing...", "job_id": job_id,
     })
 
-    result = _run_async(_execute_training(job_id, self))
+    result = run_async(_execute_training(job_id, self))
     return result

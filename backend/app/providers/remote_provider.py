@@ -47,12 +47,13 @@ class RemoteProvider(TTSProvider):
         self._base_url = gpu_service_url.rstrip("/")
         self._timeout = timeout
         self._capabilities_cache: ProviderCapabilities | None = None
-
-    def _client(self) -> httpx.AsyncClient:
-        """Create a fresh httpx client with configured timeout."""
-        return httpx.AsyncClient(
+        self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self._timeout, connect=10.0),
         )
+
+    async def close(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self._client.aclose()
 
     async def synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
@@ -63,9 +64,15 @@ class RemoteProvider(TTSProvider):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self._name}_{uuid.uuid4().hex[:12]}.wav"
 
+        logger.info(
+            "remote_synthesize_started",
+            provider=self._name,
+            voice_id=voice_id,
+            text_length=len(text),
+        )
         start = time.perf_counter()
-        async with self._client() as client:
-            resp = await client.post(
+        try:
+            resp = await self._client.post(
                 url,
                 json={
                     "text": text,
@@ -74,6 +81,16 @@ class RemoteProvider(TTSProvider):
                 },
             )
             resp.raise_for_status()
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error(
+                "remote_synthesize_failed",
+                provider=self._name,
+                voice_id=voice_id,
+                latency_ms=int(elapsed * 1000),
+                error=str(exc),
+            )
+            raise
 
         output_file.write_bytes(resp.content)
         elapsed = time.perf_counter() - start
@@ -92,9 +109,10 @@ class RemoteProvider(TTSProvider):
             pass
 
         logger.info(
-            "remote_synthesis_complete",
+            "remote_synthesize_completed",
             provider=self._name,
-            duration_s=duration,
+            voice_id=voice_id,
+            duration_seconds=duration,
             latency_ms=int(elapsed * 1000),
         )
         return AudioResult(
@@ -123,9 +141,8 @@ class RemoteProvider(TTSProvider):
         if config.language:
             data["language"] = config.language
 
-        async with self._client() as client:
-            resp = await client.post(url, files=files, data=data)
-            resp.raise_for_status()
+        resp = await self._client.post(url, files=files, data=data)
+        resp.raise_for_status()
 
         result = resp.json()
         logger.info(
@@ -160,9 +177,8 @@ class RemoteProvider(TTSProvider):
             "batch_size": str(config.batch_size),
         }
 
-        async with self._client() as client:
-            resp = await client.post(url, files=files, data=data)
-            resp.raise_for_status()
+        resp = await self._client.post(url, files=files, data=data)
+        resp.raise_for_status()
 
         result = resp.json()
         logger.info("remote_fine_tune_complete", provider=self._name)
@@ -177,9 +193,8 @@ class RemoteProvider(TTSProvider):
         """List voices from the remote GPU service."""
         url = f"{self._base_url}/providers/{self._name}/voices"
         try:
-            async with self._client() as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
+            resp = await self._client.get(url)
+            resp.raise_for_status()
 
             voices_data = resp.json()
             voices: list[VoiceInfo] = []
@@ -194,6 +209,7 @@ class RemoteProvider(TTSProvider):
                         preview_url=v.get("preview_url"),
                     )
                 )
+            logger.info("remote_voices_listed", provider=self._name, count=len(voices))
             return voices
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             logger.warning("remote_list_voices_failed", provider=self._name, error=str(exc))
@@ -213,9 +229,8 @@ class RemoteProvider(TTSProvider):
 
         url = f"{self._base_url}/providers"
         try:
-            async with self._client() as client:
-                resp = await client.get(url, timeout=10.0)
-                resp.raise_for_status()
+            resp = await self._client.get(url, timeout=10.0)
+            resp.raise_for_status()
 
             data = resp.json()
             providers_list = data.get("providers", [])
@@ -257,32 +272,36 @@ class RemoteProvider(TTSProvider):
         url = f"{self._base_url}/providers/{self._name}/health"
         start = time.perf_counter()
         try:
-            async with self._client() as client:
-                resp = await client.post(url, timeout=15.0)
-                latency = int((time.perf_counter() - start) * 1000)
+            resp = await self._client.post(url, timeout=15.0)
+            latency = int((time.perf_counter() - start) * 1000)
 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return ProviderHealth(
-                        name=self._name,
-                        healthy=data.get("healthy", True),
-                        latency_ms=latency,
-                        error=data.get("error"),
-                    )
-                else:
-                    return ProviderHealth(
-                        name=self._name,
-                        healthy=False,
-                        latency_ms=latency,
-                        error=f"HTTP {resp.status_code}",
-                    )
+            if resp.status_code == 200:
+                data = resp.json()
+                health = ProviderHealth(
+                    name=self._name,
+                    healthy=data.get("healthy", True),
+                    latency_ms=latency,
+                    error=data.get("error"),
+                )
+                logger.info("remote_health_check", provider=self._name, healthy=health.healthy, latency_ms=latency)
+                return health
+            else:
+                logger.info("remote_health_check", provider=self._name, healthy=False, latency_ms=latency, status_code=resp.status_code)
+                return ProviderHealth(
+                    name=self._name,
+                    healthy=False,
+                    latency_ms=latency,
+                    error=f"HTTP {resp.status_code}",
+                )
         except httpx.ConnectError:
+            logger.warning("remote_health_check", provider=self._name, healthy=False, error="gpu_service_not_reachable")
             return ProviderHealth(
                 name=self._name,
                 healthy=False,
                 error="GPU service not reachable",
             )
         except httpx.TimeoutException:
+            logger.warning("remote_health_check", provider=self._name, healthy=False, error="timeout")
             return ProviderHealth(
                 name=self._name,
                 healthy=False,

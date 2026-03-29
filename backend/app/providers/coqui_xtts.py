@@ -12,9 +12,9 @@ import structlog
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -91,28 +91,36 @@ class CoquiXTTSProvider(TTSProvider):
         voice_id can be a built-in speaker name or a path to a reference WAV file.
         """
         tts = self._get_tts()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"xtts_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="xtts")
 
+        logger.info("coqui_xtts_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         # If voice_id looks like a file path, use it as speaker_wav
-        if Path(voice_id).exists():
-            await run_sync(
-                tts.tts_to_file,
-                text=text, speaker_wav=voice_id, language="en",
-                file_path=str(output_file),
-            )
-        else:
-            await run_sync(
-                tts.tts_to_file,
-                text=text, speaker=voice_id, language="en",
-                file_path=str(output_file),
-            )
+        try:
+            if Path(voice_id).exists():
+                await run_sync(
+                    tts.tts_to_file,
+                    text=text, speaker_wav=voice_id, language="en",
+                    file_path=str(output_file),
+                )
+            else:
+                await run_sync(
+                    tts.tts_to_file,
+                    text=text, speaker=voice_id, language="en",
+                    file_path=str(output_file),
+                )
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("coqui_xtts_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
 
         elapsed = time.perf_counter() - start
-        logger.info("xtts_synthesis_complete", latency_ms=int(elapsed * 1000))
+        logger.info(
+            "coqui_xtts_synthesize_completed",
+            voice_id=voice_id,
+            latency_ms=int(elapsed * 1000),
+        )
 
         return AudioResult(
             audio_path=output_file,
@@ -121,7 +129,7 @@ class CoquiXTTSProvider(TTSProvider):
         )
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         """Clone a voice using XTTS v2 zero-shot inference with reference audio.
 
@@ -160,7 +168,7 @@ class CoquiXTTSProvider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         """Fine-tune XTTS v2 on the provided audio samples."""
         if not samples:
@@ -208,7 +216,7 @@ class CoquiXTTSProvider(TTSProvider):
         # Try to get speakers from the loaded model
         try:
             if self._tts is not None and hasattr(self._tts, "speakers") and self._tts.speakers:
-                return [
+                voices = [
                     VoiceInfo(
                         voice_id=name,
                         name=name,
@@ -217,11 +225,15 @@ class CoquiXTTSProvider(TTSProvider):
                     )
                     for name in self._tts.speakers
                 ]
+                logger.info("coqui_xtts_voices_listed", count=len(voices), source="model")
+                return voices
         except Exception:
             pass
 
         # Fallback: hardcoded list of all known XTTS v2 built-in speakers
-        return self._hardcoded_speakers()
+        fallback = self._hardcoded_speakers()
+        logger.info("coqui_xtts_voices_listed", count=len(fallback), source="hardcoded")
+        return fallback
 
     @staticmethod
     def _hardcoded_speakers() -> list[VoiceInfo]:
@@ -331,13 +343,16 @@ class CoquiXTTSProvider(TTSProvider):
         try:
             if self._tts is not None:
                 latency = int((time.perf_counter() - start) * 1000)
+                logger.info("coqui_xtts_health_check", healthy=True, latency_ms=latency, model_loaded=True)
                 return ProviderHealth(name="coqui_xtts", healthy=True, latency_ms=latency)
             from TTS.api import TTS  # noqa: F401
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("coqui_xtts_health_check", healthy=True, latency_ms=latency, model_loaded=False)
             return ProviderHealth(name="coqui_xtts", healthy=True, latency_ms=latency,
                                   error="Ready — model downloads on first synthesis")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("coqui_xtts_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(
                 name="coqui_xtts", healthy=False, latency_ms=latency, error=str(e)
             )

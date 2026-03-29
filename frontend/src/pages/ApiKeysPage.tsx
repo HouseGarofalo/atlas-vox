@@ -1,17 +1,21 @@
 import { useEffect, useState } from "react";
-import { Copy, Trash2, Plus } from "lucide-react";
+import { Copy, Trash2, Plus, Key } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
 import { api } from "../services/api";
+import type { ApiKeyResponse } from "../types";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("ApiKeysPage");
 
 const ALL_SCOPES = ["read", "write", "synthesize", "train", "admin"];
 
 export default function ApiKeysPage() {
-  const [keys, setKeys] = useState<any[]>([]);
+  const [keys, setKeys] = useState<ApiKeyResponse[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Set<string>>(new Set(["read", "synthesize"]));
@@ -22,17 +26,33 @@ export default function ApiKeysPage() {
 
   const handleCreate = async () => {
     if (!name.trim()) return;
+    logger.info("key_create", { name, scopes: Array.from(scopes) });
     try {
       const result = await api.createApiKey({ name, scopes: Array.from(scopes) });
       setNewKey(result.key);
+      logger.info("key_created", { name });
       toast.success("API key created — copy it now");
       load();
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to create key";
+      logger.error("key_create_error", { error: message });
+      toast.error(message);
+    }
   };
 
   const handleRevoke = async (id: string) => {
     if (!confirm("Revoke this API key?")) return;
-    await api.revokeApiKey(id); toast.success("Key revoked"); load();
+    logger.info("key_revoke", { key_id: id });
+    try {
+      await api.revokeApiKey(id);
+      logger.info("key_revoked", { key_id: id });
+      toast.success("Key revoked");
+      load();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to revoke key";
+      logger.error("key_revoke_error", { key_id: id, error: message });
+      toast.error(message);
+    }
   };
 
   const toggleScope = (s: string) => { const n = new Set(scopes); if (n.has(s)) n.delete(s); else n.add(s); setScopes(n); };
@@ -43,38 +63,49 @@ export default function ApiKeysPage() {
         <h1 className="text-2xl font-bold">API Keys</h1>
         <Button onClick={() => { setShowCreate(true); setNewKey(null); setName(""); }}><Plus className="h-4 w-4" /> New Key</Button>
       </div>
-      {keys.length === 0 ? (
-        <Card className="py-12 text-center"><p className="text-[var(--color-text-secondary)]">No API keys yet.</p></Card>
-      ) : (
-        <Card>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-secondary)]">
-                <th className="pb-2 font-medium">Name</th><th className="pb-2 font-medium">Key</th><th className="pb-2 font-medium">Scopes</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium">Created</th><th className="pb-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {keys.map((k) => (
-                <tr key={k.id} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="py-2 font-medium">{k.name}</td>
-                  <td className="py-2 font-mono text-xs">{k.key_prefix}...</td>
-                  <td className="py-2 text-xs">{k.scopes}</td>
-                  <td className="py-2"><Badge status={k.active ? "healthy" : "revoked"} /></td>
-                  <td className="py-2 text-xs text-[var(--color-text-secondary)]">{new Date(k.created_at).toLocaleDateString()}</td>
-                  <td className="py-2"><Button size="sm" variant="ghost" onClick={() => handleRevoke(k.id)}><Trash2 className="h-3 w-3" /></Button></td>
+      <CollapsiblePanel
+        title={`API Keys (${keys.length})`}
+        icon={<Key className="h-4 w-4 text-primary-500" />}
+        badge={keys.length === 0 ? undefined : <span className="text-xs text-[var(--color-text-secondary)]">{keys.filter((k) => k.is_active !== false).length} active</span>}
+      >
+        {keys.length === 0 ? (
+          <p className="py-8 text-center text-[var(--color-text-secondary)]">No API keys yet.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-4 px-4">
+            <table className="w-full text-sm min-w-[500px]">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-secondary)]">
+                  <th className="pb-2 font-medium">Name</th>
+                  <th className="pb-2 font-medium">Key</th>
+                  <th className="pb-2 font-medium">Scopes</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium hidden sm:table-cell">Created</th>
+                  <th className="pb-2" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
+              </thead>
+              <tbody>
+                {keys.map((k) => (
+                  <tr key={k.id} className="border-b border-[var(--color-border)] last:border-0">
+                    <td className="py-2 font-medium">{k.name}</td>
+                    <td className="py-2 font-mono text-xs">{k.key_prefix}...</td>
+                    <td className="py-2 text-xs">{Array.isArray(k.scopes) ? k.scopes.join(", ") : k.scopes}</td>
+                    <td className="py-2"><Badge status={k.is_active !== false ? "healthy" : "revoked"} /></td>
+                    <td className="py-2 text-xs text-[var(--color-text-secondary)] hidden sm:table-cell">{new Date(k.created_at).toLocaleDateString()}</td>
+                    <td className="py-2"><Button size="sm" variant="ghost" onClick={() => handleRevoke(k.id)}><Trash2 className="h-3 w-3" /></Button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CollapsiblePanel>
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={newKey ? "API Key Created" : "Create API Key"}>
         {newKey ? (
           <div className="space-y-4">
             <p className="text-sm text-[var(--color-text-secondary)]">Copy this key now. It will not be shown again.</p>
             <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
               <code className="flex-1 text-xs break-all">{newKey}</code>
-              <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(newKey); toast.success("Copied"); }}><Copy className="h-4 w-4" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => { logger.info("key_copied"); navigator.clipboard.writeText(newKey); toast.success("Copied"); }}><Copy className="h-4 w-4" /></Button>
             </div>
             <Button className="w-full" onClick={() => setShowCreate(false)}>Done</Button>
           </div>

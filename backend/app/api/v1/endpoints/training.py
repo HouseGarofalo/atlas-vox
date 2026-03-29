@@ -1,13 +1,12 @@
 """Training job endpoints — start, list, status, cancel, WebSocket progress."""
 
-from __future__ import annotations
-
 import asyncio
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.rate_limit import limiter
 from app.schemas.training import TrainingJobListResponse, TrainingJobResponse, TrainingStart
 from app.services.training_service import (
     cancel_job,
@@ -26,13 +25,16 @@ router = APIRouter(tags=["training"])
     response_model=TrainingJobResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def start_training_job(
+    request: Request,
     profile_id: str,
     data: TrainingStart,
     db: DbSession,
     user: CurrentUser,
 ) -> TrainingJobResponse:
     """Start a training job for a voice profile."""
+    logger.info("start_training_job_called", profile_id=profile_id, provider_name=data.provider_name)
     try:
         job = await start_training(
             db,
@@ -40,8 +42,10 @@ async def start_training_job(
             provider_name=data.provider_name,
             config=data.config,
         )
+        logger.info("training_job_started", profile_id=profile_id, job_id=job.id, provider_name=data.provider_name)
         return TrainingJobResponse.model_validate(job)
     except ValueError as e:
+        logger.error("start_training_job_failed", profile_id=profile_id, provider_name=data.provider_name, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -51,9 +55,19 @@ async def list_training_jobs(
     user: CurrentUser,
     profile_id: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(default=50, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> TrainingJobListResponse:
     """List all training jobs with optional filtering."""
-    jobs = await list_jobs(db, profile_id=profile_id, status_filter=status_filter)
+    logger.info(
+        "list_training_jobs_called",
+        profile_id=profile_id,
+        status_filter=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+    jobs = await list_jobs(db, profile_id=profile_id, status_filter=status_filter, limit=limit, offset=offset)
+    logger.info("list_training_jobs_returned", count=len(jobs), profile_id=profile_id)
     return TrainingJobListResponse(
         jobs=[TrainingJobResponse.model_validate(j) for j in jobs],
         count=len(jobs),
@@ -65,9 +79,11 @@ async def get_training_job(
     job_id: str, db: DbSession, user: CurrentUser
 ) -> dict:
     """Get detailed training job status including Celery progress."""
+    logger.info("get_training_job_called", job_id=job_id)
     try:
         return await get_job_status(db, job_id)
     except ValueError as e:
+        logger.info("get_training_job_not_found", job_id=job_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
@@ -76,10 +92,13 @@ async def cancel_training_job(
     job_id: str, db: DbSession, user: CurrentUser
 ) -> TrainingJobResponse:
     """Cancel a running or queued training job."""
+    logger.info("cancel_training_job_called", job_id=job_id)
     try:
         job = await cancel_job(db, job_id)
+        logger.info("training_job_cancelled", job_id=job_id)
         return TrainingJobResponse.model_validate(job)
     except ValueError as e:
+        logger.error("cancel_training_job_failed", job_id=job_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -178,7 +197,7 @@ async def training_progress_ws(websocket: WebSocket, job_id: str, token: str | N
     except Exception as e:
         logger.error("ws_error", job_id=job_id, error=str(e))
         try:
-            await websocket.send_json({"error": str(e)})
+            await websocket.send_json({"error": "Internal error. Check server logs for details."})
         except Exception:
             pass
     finally:

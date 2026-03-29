@@ -5,16 +5,15 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import structlog
 
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -55,10 +54,9 @@ class ElevenLabsProvider(TTSProvider):
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
         client = self._get_client()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"elevenlabs_{uuid.uuid4().hex[:12]}.mp3"
+        output_file = self.prepare_output_path(prefix="elevenlabs", ext="mp3")
 
+        logger.info("elevenlabs_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         model_id = self.get_config_value('model_id', settings.elevenlabs_model_id)
@@ -71,11 +69,21 @@ class ElevenLabsProvider(TTSProvider):
             )
             return b"".join(chunk for chunk in gen)
 
-        audio_bytes = await run_sync(_synth)
+        try:
+            audio_bytes = await run_sync(_synth)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("elevenlabs_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
         output_file.write_bytes(audio_bytes)
 
         elapsed = time.perf_counter() - start
-        logger.info("elevenlabs_synthesis_complete", latency_ms=int(elapsed * 1000))
+        logger.info(
+            "elevenlabs_synthesize_completed",
+            voice_id=voice_id,
+            latency_ms=int(elapsed * 1000),
+            bytes_received=len(audio_bytes),
+        )
 
         return AudioResult(
             audio_path=output_file,
@@ -84,7 +92,7 @@ class ElevenLabsProvider(TTSProvider):
         )
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         client = self._get_client()
 
@@ -110,7 +118,7 @@ class ElevenLabsProvider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         raise NotImplementedError("ElevenLabs fine-tuning is managed via their web dashboard")
 
@@ -143,12 +151,15 @@ class ElevenLabsProvider(TTSProvider):
                         preview_url=v.preview_url,
                     ))
                 if voices:
+                    logger.info("elevenlabs_voices_listed", count=len(voices), source="api")
                     return voices
         except Exception as exc:
             logger.debug("elevenlabs_live_list_failed", error=str(exc))
 
         # Fallback: hardcoded premade voices
-        return self._hardcoded_premade_voices()
+        fallback = self._hardcoded_premade_voices()
+        logger.info("elevenlabs_voices_listed", count=len(fallback), source="hardcoded")
+        return fallback
 
     @staticmethod
     def _hardcoded_premade_voices() -> list[VoiceInfo]:
@@ -236,14 +247,17 @@ class ElevenLabsProvider(TTSProvider):
             if not api_key:
                 from elevenlabs.client import ElevenLabs as _EL  # noqa: F401
                 latency = int((time.perf_counter() - start) * 1000)
+                logger.info("elevenlabs_health_check", healthy=True, latency_ms=latency, note="no_api_key")
                 return ProviderHealth(name="elevenlabs", healthy=True, latency_ms=latency,
                                       error="SDK ready — configure API key in Providers settings")
             client = self._get_client()
             await run_sync(client.voices.get_all)
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("elevenlabs_health_check", healthy=True, latency_ms=latency)
             return ProviderHealth(name="elevenlabs", healthy=True, latency_ms=latency)
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("elevenlabs_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="elevenlabs", healthy=False, latency_ms=latency, error=str(e))
 
     async def stream_synthesize(

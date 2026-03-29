@@ -4,16 +4,17 @@ Any tool that supports OpenAI's TTS API (LangChain, CrewAI, etc.) can use
 Atlas Vox by pointing its base_url at this server.
 """
 
-from __future__ import annotations
 
 import io
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core.dependencies import CurrentUser
+from app.core.rate_limit import limiter
 from app.providers.base import SynthesisSettings
 from app.services.provider_registry import provider_registry
 
@@ -138,14 +139,22 @@ def _convert_audio(audio_bytes: bytes, from_format: str, to_format: str) -> byte
 
 
 @router.post("/audio/speech")
-async def create_speech(request: SpeechRequest) -> StreamingResponse:
+@limiter.limit("20/minute")
+async def create_speech(request: Request, body: SpeechRequest, user: CurrentUser) -> StreamingResponse:
     """OpenAI-compatible text-to-speech endpoint.
 
     Returns the synthesised audio as a binary stream — compatible with the
     OpenAI Python SDK, LangChain, CrewAI, and any other client that speaks
     the ``POST /v1/audio/speech`` contract.
     """
-    provider_name, voice_id = _resolve_voice(request.model, request.voice)
+    logger.info(
+        "create_speech_called",
+        model=body.model,
+        voice=body.voice,
+        text_length=len(body.input),
+        response_format=body.response_format,
+    )
+    provider_name, voice_id = _resolve_voice(body.model, body.voice)
 
     # Validate provider
     try:
@@ -154,15 +163,15 @@ async def create_speech(request: SpeechRequest) -> StreamingResponse:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Unknown provider '{provider_name}' (resolved from model='{request.model}'). "
+                f"Unknown provider '{provider_name}' (resolved from model='{body.model}'). "
                 f"Available: {', '.join(provider_registry.list_available())}"
             ),
         )
 
     # Synthesize
     try:
-        settings = SynthesisSettings(speed=request.speed)
-        result = await provider.synthesize(request.input, voice_id, settings)
+        settings = SynthesisSettings(speed=body.speed)
+        result = await provider.synthesize(body.input, voice_id, settings)
     except Exception as exc:
         logger.error(
             "openai_compat_synthesis_error",
@@ -172,34 +181,36 @@ async def create_speech(request: SpeechRequest) -> StreamingResponse:
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Synthesis failed: {exc}",
+            detail="Synthesis failed. Check server logs for details.",
         )
 
+    logger.info("create_speech_succeeded", provider=provider_name, voice=voice_id)
     # Read audio bytes
     audio_bytes = result.audio_path.read_bytes()
 
     # Convert format if the provider output doesn't match the requested format
-    if request.response_format != result.format:
-        audio_bytes = _convert_audio(audio_bytes, result.format, request.response_format)
+    if body.response_format != result.format:
+        audio_bytes = _convert_audio(audio_bytes, result.format, body.response_format)
 
-    media_type = AUDIO_MEDIA_TYPES.get(request.response_format, "audio/wav")
+    media_type = AUDIO_MEDIA_TYPES.get(body.response_format, "audio/wav")
 
     return StreamingResponse(
         iter([audio_bytes]),
         media_type=media_type,
         headers={
-            "Content-Disposition": f"attachment; filename=speech.{request.response_format}",
+            "Content-Disposition": f"attachment; filename=speech.{body.response_format}",
         },
     )
 
 
 @router.get("/models")
-async def list_models() -> dict[str, Any]:
+async def list_models(user: CurrentUser) -> dict[str, Any]:
     """OpenAI-compatible models list.
 
     Returns the set of 'models' that a client can pass in the ``model``
     field of a speech request.
     """
+    logger.info("list_models_called")
     available = provider_registry.list_available()
     data: list[dict[str, str]] = []
 
@@ -231,4 +242,5 @@ async def list_models() -> dict[str, Any]:
             "owned_by": "atlas-vox",
         })
 
+    logger.info("list_models_returned", count=len(data))
     return {"object": "list", "data": data}

@@ -1,13 +1,12 @@
 """Audio sample endpoints — upload, list, delete, analysis, preprocessing."""
 
-from __future__ import annotations
 
 import json
 import uuid
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -127,16 +126,24 @@ async def upload_samples(
 
 @router.get("", response_model=SampleListResponse)
 async def list_samples(
-    profile_id: str, db: DbSession, user: CurrentUser
+    profile_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    limit: int = Query(default=50, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> SampleListResponse:
     """List all audio samples for a profile."""
+    logger.info("list_samples_called", profile_id=profile_id, limit=limit, offset=offset)
     await _get_profile_or_404(db, profile_id)
     result = await db.execute(
         select(AudioSample)
         .where(AudioSample.profile_id == profile_id)
         .order_by(AudioSample.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     samples = result.scalars().all()
+    logger.info("list_samples_returned", profile_id=profile_id, count=len(samples))
     return SampleListResponse(
         samples=[SampleResponse.model_validate(s) for s in samples],
         count=len(samples),
@@ -172,9 +179,12 @@ async def get_sample_analysis(
 
     Runs analysis on demand and caches in the DB.
     """
+    logger.info("get_sample_analysis_called", profile_id=profile_id, sample_id=sample_id)
     sample = await _get_sample_or_404(db, profile_id, sample_id)
 
     # Use cached analysis if available
+    cached = bool(sample.analysis_json)
+    logger.info("get_sample_analysis_cache", profile_id=profile_id, sample_id=sample_id, cached=cached)
     if sample.analysis_json:
         data = json.loads(sample.analysis_json)
         return SampleAnalysis(
@@ -215,6 +225,7 @@ async def trigger_preprocessing(
 
     Queues a Celery task and returns the task ID.
     """
+    logger.info("trigger_preprocessing_called", profile_id=profile_id)
     await _get_profile_or_404(db, profile_id)
 
     result = await db.execute(

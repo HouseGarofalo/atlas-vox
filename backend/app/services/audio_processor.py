@@ -165,5 +165,14 @@ async def preprocess_audio(
 
 async def analyze_audio(path: Path) -> AudioAnalysis:
     """Analyze an audio file and return pitch/energy/spectral metrics."""
+    logger.info("audio_analysis_started", path=str(path))
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, partial(_analyze_sync, path))
+    result = await loop.run_in_executor(None, partial(_analyze_sync, path))
+    logger.info(
+        "audio_analysis_completed",
+        path=str(path),
+        duration_seconds=result.duration_seconds,
+        sample_rate=result.sample_rate,
+        rms_db=result.rms_db,
+    )
+    return result

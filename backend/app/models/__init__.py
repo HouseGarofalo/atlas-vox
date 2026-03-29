@@ -9,3 +9,6 @@ from app.models.synthesis_history import SynthesisHistory  # noqa: F401
 from app.models.training_job import TrainingJob  # noqa: F401
 from app.models.voice_profile import VoiceProfile  # noqa: F401
 from app.models.webhook import Webhook  # noqa: F401
+
+# Self-healing models
+from app.healing.models import Incident  # noqa: F401

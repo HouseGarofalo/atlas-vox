@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import structlog
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+logger = structlog.get_logger("atlas_vox.cli")
 
 app = typer.Typer()
 console = Console()
@@ -24,8 +27,10 @@ def upload_samples(
         from app.core.database import async_session_factory
         from app.models.audio_sample import AudioSample
 
+        logger.info("cli_upload_started", profile_id=profile_id, directory=directory)
         sample_dir = Path(directory)
         if not sample_dir.is_dir():
+            logger.error("cli_upload_failed", profile_id=profile_id, error="not_a_directory", directory=directory)
             console.print(f"[red]✗[/red] Not a directory: {directory}")
             raise typer.Exit(1)
 
@@ -61,6 +66,7 @@ def upload_samples(
                     progress.advance(task)
             await db.commit()
 
+        logger.info("cli_upload_completed", profile_id=profile_id, sample_count=len(files))
         console.print(f"[green]✓[/green] Uploaded {len(files)} samples for profile {profile_id}")
 
     asyncio.run(_upload())
@@ -76,16 +82,19 @@ def start_training(
         from app.core.database import async_session_factory
         from app.services.training_service import start_training
 
+        logger.info("cli_train_started", profile_id=profile_id, provider=provider)
         async with async_session_factory() as db:
             try:
                 job = await start_training(db, profile_id, provider_name=provider)
                 await db.commit()
+                logger.info("cli_train_queued", profile_id=profile_id, job_id=job.id, provider=job.provider_name)
                 console.print("[green]✓[/green] Training started!")
                 console.print(f"  Job ID: {job.id}")
                 console.print(f"  Provider: {job.provider_name}")
                 console.print(f"  Celery Task: {job.celery_task_id}")
                 console.print(f"\nMonitor: atlas-vox train status {job.id}")
             except ValueError as e:
+                logger.error("cli_train_failed", profile_id=profile_id, error=str(e))
                 console.print(f"[red]✗[/red] {e}")
                 raise typer.Exit(1)
 

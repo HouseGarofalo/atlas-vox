@@ -3,11 +3,47 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from typing import Any
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Auth context — set by transport.py before each tool dispatch so handlers
+# can perform scope checks without requiring changes to server.py.
+# ---------------------------------------------------------------------------
+
+_mcp_auth_ctx_var: ContextVar[dict[str, Any]] = ContextVar(
+    "_mcp_auth_ctx_var",
+    # Default: admin (used when auth is disabled and the context var was never
+    # set, e.g. in unit tests that call handlers directly).
+    default={"sub": "local-user", "scopes": ["admin"]},
+)
+
+
+def _check_scope(*required: str) -> dict[str, str] | None:
+    """Return an error result dict if the current auth context lacks the required scope.
+
+    Returns ``None`` when the caller is authorised.  The caller should return
+    the error dict immediately if it is not ``None``.
+
+    ``admin`` scope bypasses all checks.  Otherwise the caller must hold at
+    least one scope from *required*.
+    """
+    ctx = _mcp_auth_ctx_var.get()
+    scopes: list[str] = ctx.get("scopes", [])
+    if "admin" in scopes:
+        return None
+    if any(s in scopes for s in required):
+        return None
+    logger.warning("mcp_scope_denied", required=list(required), user_scopes=scopes)
+    return {
+        "error": f"Insufficient permissions. Required scope: {' or '.join(required)}",
+        "required_scopes": list(required),
+        "your_scopes": scopes,
+    }
 
 TOOLS = [
     {
@@ -138,6 +174,8 @@ async def handle_tool_call(name: str, arguments: dict[str, Any]) -> dict:
 
 
 async def _synthesize(args: dict) -> dict:
+    if err := _check_scope("synthesize"):
+        return err
     from app.core.database import async_session_factory
     from app.services.synthesis_service import synthesize
 
@@ -148,6 +186,8 @@ async def _synthesize(args: dict) -> dict:
 
 
 async def _list_voices(args: dict) -> list:
+    if err := _check_scope("read"):
+        return [err]
     from app.core.database import async_session_factory
     from app.services.profile_service import list_profiles
 
@@ -157,6 +197,8 @@ async def _list_voices(args: dict) -> list:
 
 
 async def _train_voice(args: dict) -> dict:
+    if err := _check_scope("train"):
+        return err
     from app.core.database import async_session_factory
     from app.services.training_service import start_training
 
@@ -167,6 +209,8 @@ async def _train_voice(args: dict) -> dict:
 
 
 async def _get_training_status(args: dict) -> dict:
+    if err := _check_scope("read"):
+        return err
     from app.core.database import async_session_factory
     from app.services.training_service import get_job_status
 
@@ -175,11 +219,19 @@ async def _get_training_status(args: dict) -> dict:
 
 
 async def _manage_profile(args: dict) -> dict:
+    action = args["action"]
+    # delete requires write scope; create/update require read scope as a minimum.
+    if action == "delete":
+        if err := _check_scope("write"):
+            return err
+    else:
+        if err := _check_scope("read"):
+            return err
+
     from app.core.database import async_session_factory
     from app.schemas.profile import ProfileCreate, ProfileUpdate
     from app.services.profile_service import create_profile, delete_profile, update_profile
 
-    action = args["action"]
     async with async_session_factory() as db:
         if action == "create":
             data = ProfileCreate(name=args["name"], provider_name=args.get("provider_name", "kokoro"))
@@ -199,6 +251,8 @@ async def _manage_profile(args: dict) -> dict:
 
 
 async def _compare_voices(args: dict) -> dict:
+    if err := _check_scope("synthesize"):
+        return err
     from app.core.database import async_session_factory
     from app.services.comparison_service import compare_voices
 
@@ -249,6 +303,8 @@ def _detect_provider(voice: str) -> str:
 
 async def _speak(args: dict) -> dict:
     """Quick text-to-speech without profiles."""
+    if err := _check_scope("synthesize"):
+        return err
     from app.providers.base import SynthesisSettings
     from app.services.provider_registry import provider_registry
 
@@ -280,6 +336,8 @@ async def _speak(args: dict) -> dict:
 
 async def _list_available_voices(args: dict) -> dict:
     """List voices from all providers (or a specific one)."""
+    if err := _check_scope("read"):
+        return err
     from app.services.provider_registry import PROVIDER_DISPLAY_NAMES, provider_registry
 
     filter_provider = args.get("provider")
@@ -310,6 +368,8 @@ async def _list_available_voices(args: dict) -> dict:
 
 
 async def _provider_status(args: dict) -> Any:
+    if err := _check_scope("read"):
+        return err
     from app.services.provider_registry import provider_registry
 
     name = args.get("provider_name")

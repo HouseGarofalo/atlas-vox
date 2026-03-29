@@ -5,14 +5,18 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import structlog
 from rich.console import Console
 from rich.table import Table
+
+logger = structlog.get_logger("atlas_vox.cli.init")
 
 console = Console()
 
 
 def init() -> None:
     """Initialize Atlas Vox: create config, database, check dependencies."""
+    logger.info("init_start")
     console.print("[bold blue]Atlas Vox Initialization[/bold blue]\n")
 
     # Check system deps
@@ -33,6 +37,9 @@ def init() -> None:
         status = "[green]✓ Found[/green]" if ok else "[red]✗ Missing[/red]"
         if not ok:
             all_ok = False
+            logger.warning("dependency_missing", dependency=name)
+        else:
+            logger.debug("dependency_found", dependency=name)
         table.add_row(name, status, note)
 
     console.print(table)
@@ -41,6 +48,7 @@ def init() -> None:
     storage = Path("./storage")
     for subdir in ["samples", "preprocessed", "output", "models", "models/piper", "models/coqui_xtts"]:
         (storage / subdir).mkdir(parents=True, exist_ok=True)
+    logger.info("storage_directories_created", path=str(storage))
     console.print("\n[green]✓[/green] Storage directories created")
 
     # Init database
@@ -49,13 +57,17 @@ def init() -> None:
 
         from app.core.database import init_db
         asyncio.run(init_db())
+        logger.info("database_initialized")
         console.print("[green]✓[/green] Database initialized")
     except Exception as e:
+        logger.error("database_init_failed", error=str(e))
         console.print(f"[red]✗[/red] Database error: {e}")
 
     if all_ok:
+        logger.info("init_complete", status="ready")
         console.print("\n[bold green]Atlas Vox is ready![/bold green] Run `atlas-vox serve` to start.")
     else:
+        logger.warning("init_complete", status="missing_dependencies")
         console.print("\n[yellow]Some dependencies are missing. Install them for full functionality.[/yellow]")
 
 

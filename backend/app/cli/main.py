@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import structlog
 import typer
 from rich.console import Console
+
+logger = structlog.get_logger("atlas_vox.cli")
 
 app = typer.Typer(
     name="atlas-vox",
@@ -16,6 +19,7 @@ console = Console()
 @app.command()
 def version() -> None:
     """Show Atlas Vox version."""
+    logger.info("cli_version_command")
     console.print("[bold blue]Atlas Vox[/bold blue] v0.1.0")
 
 
@@ -28,6 +32,7 @@ def serve(
     """Start the Atlas Vox API server."""
     import uvicorn
 
+    logger.info("cli_serve_started", host=host, port=port, mcp_enabled=mcp)
     console.print(f"[bold green]Starting Atlas Vox server[/bold green] on {host}:{port}")
     if mcp:
         console.print("[dim]MCP server enabled[/dim]")

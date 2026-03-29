@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("SettingsStore");
 
 interface SettingsState {
   theme: "light" | "dark";
@@ -19,11 +22,18 @@ export const useSettingsStore = create<SettingsState>()(
       toggleTheme: () =>
         set((state) => {
           const next = state.theme === "light" ? "dark" : "light";
+          logger.info("toggleTheme", { from: state.theme, to: next });
           document.documentElement.classList.toggle("dark", next === "dark");
           return { theme: next };
         }),
-      setDefaultProvider: (provider) => set({ defaultProvider: provider }),
-      setAudioFormat: (format) => set({ audioFormat: format }),
+      setDefaultProvider: (provider) => {
+        logger.info("setDefaultProvider", { provider });
+        set({ defaultProvider: provider });
+      },
+      setAudioFormat: (format) => {
+        logger.info("setAudioFormat", { format });
+        set({ audioFormat: format });
+      },
     }),
     { name: "atlas-vox-settings" }
   )

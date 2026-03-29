@@ -5,16 +5,15 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import structlog
 
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -74,26 +73,34 @@ class CosyVoiceProvider(TTSProvider):
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
         model = self._get_model()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"cosyvoice_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="cosyvoice")
 
+        logger.info("cosyvoice_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         # Use SFT inference for preset speakers (run in executor)
         # Default to English Female (英文女) if no voice_id provided
-        output = await run_sync(model.inference_sft, text, voice_id or "英文女")
+        try:
+            output = await run_sync(model.inference_sft, text, voice_id or "英文女")
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("cosyvoice_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
 
         import torchaudio
         torchaudio.save(str(output_file), output["tts_speech"], 22050)
 
         elapsed = time.perf_counter() - start
-        logger.info("cosyvoice_synthesis_complete", latency_ms=int(elapsed * 1000))
+        logger.info(
+            "cosyvoice_synthesize_completed",
+            voice_id=voice_id,
+            latency_ms=int(elapsed * 1000),
+        )
 
         return AudioResult(audio_path=output_file, sample_rate=22050, format="wav")
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         if not samples:
             raise ValueError("At least one audio sample is required")
@@ -116,12 +123,12 @@ class CosyVoiceProvider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         raise NotImplementedError("CosyVoice fine-tuning not yet supported")
 
     async def list_voices(self) -> list[VoiceInfo]:
-        return [
+        voices = [
             VoiceInfo(
                 voice_id=s["id"],
                 name=s["name"],
@@ -131,6 +138,8 @@ class CosyVoiceProvider(TTSProvider):
             )
             for s in COSYVOICE_SPEAKERS
         ]
+        logger.info("cosyvoice_voices_listed", count=len(voices))
+        return voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
         # CosyVoice is not pip-installable in the standard backend image.
@@ -161,27 +170,41 @@ class CosyVoiceProvider(TTSProvider):
         start = time.perf_counter()
         try:
             if self._model is not None:
+                logger.info("cosyvoice_health_check", healthy=True, latency_ms=0, model_loaded=True)
                 return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0)
             from cosyvoice.cli.cosyvoice import CosyVoice as _CV  # noqa: F401
+            logger.info("cosyvoice_health_check", healthy=True, latency_ms=0, model_loaded=False)
             return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0)
         except ImportError:
+            logger.info("cosyvoice_health_check", healthy=True, latency_ms=0, note="gpu_worker_only")
             return ProviderHealth(name="cosyvoice", healthy=True, latency_ms=0,
                                   error="Available in GPU worker only")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("cosyvoice_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="cosyvoice", healthy=False, latency_ms=latency, error=str(e))
 
-    async def stream_synthesize(
-        self, text: str, voice_id: str, settings_: SynthesisSettings
-    ) -> AsyncIterator[bytes]:
-        model = self._get_model()
+    def _stream_sync(self, text: str, voice_id: str) -> list[bytes]:
+        """Collect all streaming chunks synchronously (runs in a thread)."""
         import io
 
         import soundfile as sf
 
-        # CosyVoice streaming via inference_sft generator
+        model = self._get_model()
+        chunks = []
         for chunk_output in model.inference_sft(text, voice_id or "英文女", stream=True):
             audio = chunk_output["tts_speech"].numpy()
             buf = io.BytesIO()
             sf.write(buf, audio.squeeze(), 22050, format="WAV")
-            yield buf.getvalue()
+            chunks.append(buf.getvalue())
+        return chunks
+
+    async def stream_synthesize(
+        self, text: str, voice_id: str, settings_: SynthesisSettings
+    ) -> AsyncIterator[bytes]:
+        """Stream synthesis without blocking the event loop."""
+        import asyncio
+
+        chunks = await asyncio.to_thread(self._stream_sync, text, voice_id)
+        for chunk in chunks:
+            yield chunk

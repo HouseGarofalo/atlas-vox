@@ -20,13 +20,23 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_acks_late=True,
+    task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    result_expires=86400,  # 24 hours
+    task_default_retry_delay=60,
+    task_max_retries=3,
     task_routes={
         "app.tasks.preprocessing.*": {"queue": "preprocessing"},
         "app.tasks.training.*": {"queue": "training"},
     },
     task_default_queue="default",
+    beat_schedule={
+        "cleanup-old-audio": {
+            "task": "app.tasks.cleanup.cleanup_old_audio",
+            "schedule": 3600.0,  # every hour
+        },
+    },
 )
 
 # Auto-discover tasks in these modules
-celery_app.autodiscover_tasks(["app.tasks.preprocessing", "app.tasks.training"])
+celery_app.autodiscover_tasks(["app.tasks.preprocessing", "app.tasks.training", "app.tasks.cleanup"])

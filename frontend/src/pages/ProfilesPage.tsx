@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Library, Mic, Plus, Trash2, Upload, Volume2 } from "lucide-react";
 import { toast } from "sonner";
@@ -10,7 +10,10 @@ import { Select } from "../components/ui/Select";
 import { Modal } from "../components/ui/Modal";
 import { useProfileStore } from "../stores/profileStore";
 import { useProviderStore } from "../stores/providerStore";
+import { createLogger } from "../utils/logger";
 import type { VoiceProfile } from "../types";
+
+const logger = createLogger("ProfilesPage");
 
 export default function ProfilesPage() {
   const { profiles, loading, fetchProfiles, createProfile, deleteProfile } = useProfileStore();
@@ -27,23 +30,29 @@ export default function ProfilesPage() {
 
   const handleCreate = async () => {
     if (!form.name.trim()) return;
+    logger.info("profile_create", { provider: form.provider_name, language: form.language });
     try {
       await createProfile(form);
       toast.success("Profile created");
+      logger.info("profile_created");
       setShowCreate(false);
       setCreateMode("choose");
       setForm({ name: "", description: "", language: "en", provider_name: "" });
     } catch (e: any) {
+      logger.error("profile_create_error", { error: e.message });
       toast.error(e.message);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this profile?")) return;
+    logger.info("profile_delete", { profile_id: id });
     try {
       await deleteProfile(id);
       toast.success("Profile deleted");
+      logger.info("profile_deleted", { profile_id: id });
     } catch (e: any) {
+      logger.error("profile_delete_error", { profile_id: id, error: e.message });
       toast.error(e.message);
     }
   };
@@ -68,7 +77,7 @@ export default function ProfilesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Voice Profiles</h1>
-        <Button onClick={() => { setShowCreate(true); setCreateMode("choose"); }}>
+        <Button onClick={() => { logger.info("modal_open"); setShowCreate(true); setCreateMode("choose"); }}>
           <Plus className="h-4 w-4" /> New Profile
         </Button>
       </div>
@@ -80,14 +89,14 @@ export default function ProfilesPage() {
           <p className="text-[var(--color-text-secondary)]">No profiles yet. Create your first voice profile.</p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {profiles.map((profile) => (
             <ProfileCard
               key={profile.id}
               profile={profile}
               onDelete={() => handleDelete(profile.id)}
-              onTrain={() => navigate(`/training?profile=${profile.id}`)}
-              onSynthesize={() => navigate(`/synthesis?profile=${profile.id}`)}
+              onTrain={() => { logger.info("navigate_train", { profile_id: profile.id }); navigate(`/training?profile=${profile.id}`); }}
+              onSynthesize={() => { logger.info("navigate_synthesize", { profile_id: profile.id }); navigate(`/synthesis?profile=${profile.id}`); }}
             />
           ))}
         </div>
@@ -96,7 +105,7 @@ export default function ProfilesPage() {
       {/* New Profile Modal */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); setCreateMode("choose"); }}
+        onClose={() => { logger.info("modal_close"); setShowCreate(false); setCreateMode("choose"); }}
         title="Create Voice Profile"
       >
         {createMode === "choose" ? (
@@ -192,7 +201,7 @@ export default function ProfilesPage() {
   );
 }
 
-function ProfileCard({
+const ProfileCard = React.memo(function ProfileCard({
   profile,
   onDelete,
   onTrain,
@@ -249,4 +258,4 @@ function ProfileCard({
       </div>
     </Card>
   );
-}
+});

@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import structlog
 
-from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -52,12 +50,9 @@ class KokoroTTSProvider(TTSProvider):
     ) -> AudioResult:
         """Generate speech from text using Kokoro."""
         pipeline = self._get_pipeline()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = self.prepare_output_path(prefix="kokoro")
 
-        import uuid
-        output_file = output_dir / f"kokoro_{uuid.uuid4().hex[:12]}.wav"
-
+        logger.info("kokoro_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         def _synth():
@@ -71,12 +66,22 @@ class KokoroTTSProvider(TTSProvider):
             sf.write(str(output_file), full, 24000)
             return full
 
-        full_audio = await run_sync(_synth)
+        try:
+            full_audio = await run_sync(_synth)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("kokoro_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
         sample_rate = 24000
 
         duration = len(full_audio) / sample_rate
         elapsed = time.perf_counter() - start
-        logger.info("kokoro_synthesis_complete", duration_s=duration, latency_ms=int(elapsed * 1000))
+        logger.info(
+            "kokoro_synthesize_completed",
+            voice_id=voice_id,
+            duration_seconds=duration,
+            latency_ms=int(elapsed * 1000),
+        )
 
         return AudioResult(
             audio_path=output_file,
@@ -86,13 +91,13 @@ class KokoroTTSProvider(TTSProvider):
         )
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         """Kokoro does not support voice cloning."""
         raise NotImplementedError("Kokoro does not support voice cloning")
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         """Kokoro does not support fine-tuning."""
         raise NotImplementedError("Kokoro does not support fine-tuning")
@@ -100,6 +105,7 @@ class KokoroTTSProvider(TTSProvider):
     async def list_voices(self) -> list[VoiceInfo]:
         """List all 54 Kokoro built-in voices across 9 languages."""
         if self._voices is not None:
+            logger.debug("kokoro_voices_listed", count=len(self._voices), cached=True)
             return self._voices
 
         # Kokoro voice naming convention:
@@ -175,6 +181,7 @@ class KokoroTTSProvider(TTSProvider):
             VoiceInfo(voice_id="pm_santa", name="Santa (Portuguese Male)", language="pt", gender="Male"),
         ]
         self._voices = default_voices
+        logger.info("kokoro_voices_listed", count=len(self._voices), cached=False)
         return self._voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
@@ -200,9 +207,11 @@ class KokoroTTSProvider(TTSProvider):
         try:
             self._get_pipeline()
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("kokoro_health_check", healthy=True, latency_ms=latency)
             return ProviderHealth(name="kokoro", healthy=True, latency_ms=latency)
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("kokoro_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(
                 name="kokoro", healthy=False, latency_ms=latency, error=str(e)
             )

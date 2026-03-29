@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -17,19 +18,31 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
+# Scopes granted to connections when auth is bypassed (AUTH_DISABLED=true).
+_AUTH_DISABLED_SCOPES: list[str] = ["admin"]
 
-async def _verify_mcp_auth(authorization: str | None = Header(None)) -> None:
-    """Verify API key for MCP connections (skipped if auth disabled)."""
+
+async def _verify_mcp_auth(authorization: str | None) -> dict[str, Any]:
+    """Verify API key for MCP connections (skipped if auth disabled).
+
+    Returns a context dict containing at minimum a ``scopes`` list that
+    tool handlers can use for fine-grained access control.
+    """
     if settings.auth_disabled:
-        return
+        logger.debug("mcp_auth_bypass", reason="AUTH_DISABLED")
+        return {"sub": "local-user", "scopes": _AUTH_DISABLED_SCOPES}
+
     if not authorization:
+        logger.warning("mcp_auth_failed", reason="missing_authorization_header")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MCP requires API key")
+
     # Extract key from "Bearer <key>" format
     key = authorization[7:] if authorization.startswith("Bearer ") else authorization
     if not key:
+        logger.warning("mcp_auth_failed", reason="empty_api_key")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
-    # Validate against stored API keys
+    # Validate against stored API keys and return the key's scopes.
     from sqlalchemy import select
 
     from app.core.database import async_session_factory
@@ -40,14 +53,23 @@ async def _verify_mcp_auth(authorization: str | None = Header(None)) -> None:
         keys = result.scalars().all()
         for stored_key in keys:
             if verify_api_key(key, stored_key.key_hash):
-                return
+                # Scopes are stored as a comma-separated string on the model,
+                # or may be absent on older rows — default to read-only.
+                raw_scopes: str = getattr(stored_key, "scopes", "") or ""
+                scopes = [s.strip() for s in raw_scopes.split(",") if s.strip()] or ["read"]
+                logger.debug("mcp_auth_success", scopes=scopes)
+                return {"sub": stored_key.id, "scopes": scopes}
+
+    logger.warning("mcp_auth_failed", reason="invalid_api_key")
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
 
 @router.get("/sse")
 async def mcp_sse_endpoint(request: Request) -> StreamingResponse:
     """SSE endpoint for MCP clients. Maintains a persistent connection."""
-    await _verify_mcp_auth(request.headers.get("authorization"))
+    auth_ctx = await _verify_mcp_auth(request.headers.get("authorization"))
+    # Store auth context in request state so downstream tool calls can access it.
+    request.state.mcp_auth = auth_ctx
 
     async def event_stream():
         # Send initial connection event
@@ -77,10 +99,19 @@ async def mcp_sse_endpoint(request: Request) -> StreamingResponse:
 @router.post("/message")
 async def mcp_message_endpoint(request: Request) -> dict:
     """Handle JSONRPC 2.0 messages from MCP clients."""
-    await _verify_mcp_auth(request.headers.get("authorization"))
+    auth_ctx = await _verify_mcp_auth(request.headers.get("authorization"))
+    # Store auth context in request state so tool handlers can read it.
+    request.state.mcp_auth = auth_ctx
 
     body = await request.body()
-    response = await mcp_server.handle_message(body.decode())
+    # Bind the auth context into the current async context so tool handlers
+    # can read it via get_mcp_auth_context() without requiring server.py changes.
+    from app.mcp.tools import _mcp_auth_ctx_var
+    token = _mcp_auth_ctx_var.set(auth_ctx)
+    try:
+        response = await mcp_server.handle_message(body.decode())
+    finally:
+        _mcp_auth_ctx_var.reset(token)
 
     if response is None:
         return {}

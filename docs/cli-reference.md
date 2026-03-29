@@ -16,7 +16,7 @@ Initialize Atlas Vox: create storage directories, check system dependencies, ini
 ### `atlas-vox serve`
 Start the API server.
 ```bash
-atlas-vox serve --host 0.0.0.0 --port 8000 --mcp
+atlas-vox serve --host 0.0.0.0 --port 8100 --mcp
 ```
 
 ### `atlas-vox version`

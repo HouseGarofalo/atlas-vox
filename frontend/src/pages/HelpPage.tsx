@@ -2,6 +2,9 @@ import { useState, useMemo } from "react";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { ChevronDown, ChevronRight, Search, ExternalLink } from "lucide-react";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("HelpPage");
 
 /* ---------- types ---------- */
 
@@ -101,6 +104,24 @@ const FAQ_ITEMS: FaqItem[] = [
     answer:
       'Run "make migrate" to apply database migrations. For a fresh start, delete atlas_vox.db and restart the backend - tables are created automatically.',
   },
+  {
+    category: "Performance",
+    question: "Getting '429 Too Many Requests' errors",
+    answer:
+      "Atlas Vox has rate limiting on expensive endpoints: synthesis (10/min), training (5/min), comparison (5/min), OpenAI-compatible (20/min). Wait a minute and try again, or reduce request frequency.",
+  },
+  {
+    category: "Installation",
+    question: "Redis connection fails on startup",
+    answer:
+      "Atlas Vox uses Redis database 1 (redis://localhost:6379/1) to avoid collision with ATLAS on database 0. Ensure Redis is running: 'redis-server' or check Docker. Verify with: python -c \"import redis; redis.Redis(db=1).ping()\"",
+  },
+  {
+    category: "Installation",
+    question: "How do I run Atlas Vox alongside ATLAS?",
+    answer:
+      "Atlas Vox is configured to coexist with ATLAS. It uses port 8100 (ATLAS uses 8000), Redis database 1 (ATLAS uses db0), and a separate SQLite file. Both can run simultaneously with no conflicts.",
+  },
 ];
 
 const GETTING_STARTED_STEPS = [
@@ -115,8 +136,8 @@ const GETTING_STARTED_STEPS = [
     step: 2,
     title: "Open the Web UI",
     description: "Access the dashboard at the default URL.",
-    command: "http://localhost:3100",
-    note: "API docs available at http://localhost:8100/docs",
+    command: "http://localhost:3000 (dev) or http://localhost:3100 (Docker)",
+    note: "API docs at http://localhost:8100/docs",
   },
   {
     step: 3,
@@ -193,6 +214,21 @@ const GUIDE_SECTIONS = [
     content:
       "Toggle light/dark theme, set default provider and audio format. Preferences persist in browser local storage.",
   },
+  {
+    title: "Design System",
+    content:
+      "Customize the look and feel of Atlas Vox in real time. Choose from 8 theme presets (Blue, Emerald, Violet, Sunset, Rose, Mono, Minimal, Spacious Serif) or fine-tune accent color hue/saturation, font family (system, Inter, monospace, serif), font size, density, sidebar width, content max width, border radius, card style (bordered, raised, flat, glassmorphism), and animation toggles. Changes persist across sessions.",
+  },
+  {
+    title: "SSML Editor",
+    content:
+      "The Synthesis Lab includes a Monaco-based SSML editor. Click 'Switch to SSML' to toggle between plain text and XML SSML mode. SSML is supported by Azure Speech for fine-grained control over pronunciation, pauses, emphasis, and prosody.",
+  },
+  {
+    title: "Waveform Visualization",
+    content:
+      "Audio playback uses wavesurfer.js for interactive waveform display. Click anywhere on the waveform to seek. The play/pause button and mute controls work alongside the visual timeline.",
+  },
 ];
 
 const API_EXAMPLES = [
@@ -200,7 +236,7 @@ const API_EXAMPLES = [
     title: "Health Check",
     method: "GET",
     endpoint: "/api/v1/health",
-    response: '{ "status": "healthy", "service": "atlas-vox", "version": "0.1.0" }',
+    response: '{ "status": "healthy", "checks": { "database": "ok", "redis": "ok", "storage": "ok" }, "version": "0.1.0" }',
   },
   {
     title: "List Profiles",
@@ -310,7 +346,7 @@ export default function HelpPage() {
         {TABS.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => { logger.info("tab_change", { tab }); setActiveTab(tab); }}
             className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === tab
                 ? "bg-primary-500 text-white"
@@ -421,7 +457,7 @@ export default function HelpPage() {
               type="text"
               placeholder="Search troubleshooting topics..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); if (e.target.value) logger.debug("faq_search", { term_length: e.target.value.length }); }}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-2.5 pl-10 pr-4 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
           </div>

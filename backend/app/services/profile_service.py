@@ -36,6 +36,14 @@ async def create_profile(db: AsyncSession, data: ProfileCreate) -> VoiceProfile:
     )
     db.add(profile)
     await db.flush()
+    logger.info(
+        "profile_created",
+        profile_id=profile.id,
+        name=profile.name,
+        provider=profile.provider_name,
+        language=profile.language,
+        status=profile.status,
+    )
     return profile
 
 
@@ -45,10 +53,62 @@ async def get_profile(db: AsyncSession, profile_id: str) -> VoiceProfile | None:
     return result.scalar_one_or_none()
 
 
-async def list_profiles(db: AsyncSession) -> list[VoiceProfile]:
-    """List all profiles."""
-    result = await db.execute(select(VoiceProfile).order_by(VoiceProfile.created_at.desc()))
-    return list(result.scalars().all())
+async def list_profiles(
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[VoiceProfile]:
+    """List all profiles with optional pagination."""
+    result = await db.execute(
+        select(VoiceProfile)
+        .order_by(VoiceProfile.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    profiles = list(result.scalars().all())
+    logger.info("profiles_listed", count=len(profiles), limit=limit, offset=offset)
+    return profiles
+
+
+async def list_profiles_with_counts(
+    db: AsyncSession, limit: int = 50, offset: int = 0
+) -> list[dict]:
+    """List profiles with sample_count and version_count pre-computed in a single query."""
+    # Subqueries for counts
+    sample_count_sq = (
+        select(func.count(AudioSample.id))
+        .where(AudioSample.profile_id == VoiceProfile.id)
+        .correlate(VoiceProfile)
+        .scalar_subquery()
+        .label("sample_count")
+    )
+    version_count_sq = (
+        select(func.count(ModelVersion.id))
+        .where(ModelVersion.profile_id == VoiceProfile.id)
+        .correlate(VoiceProfile)
+        .scalar_subquery()
+        .label("version_count")
+    )
+
+    query = (
+        select(VoiceProfile, sample_count_sq, version_count_sq)
+        .order_by(VoiceProfile.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    profiles = [
+        {
+            "profile": row[0],
+            "sample_count": row[1] or 0,
+            "version_count": row[2] or 0,
+        }
+        for row in rows
+    ]
+    logger.info("profiles_listed_with_counts", count=len(profiles), limit=limit, offset=offset)
+    return profiles
 
 
 async def update_profile(
@@ -63,10 +123,12 @@ async def update_profile(
     if "tags" in update_data and update_data["tags"] is not None:
         update_data["tags"] = json.dumps(update_data["tags"])
 
+    changed_fields = list(update_data.keys())
     for key, value in update_data.items():
         setattr(profile, key, value)
 
     await db.flush()
+    logger.info("profile_updated", profile_id=profile_id, changed_fields=changed_fields)
     return profile
 
 
@@ -97,16 +159,20 @@ async def delete_profile(db: AsyncSession, profile_id: str) -> bool:
 
     await db.delete(profile)
     await db.flush()
+    logger.info(
+        "profile_deleted",
+        profile_id=profile_id,
+        active_jobs_cancelled=len(active_jobs),
+    )
     return True
 
 
 async def profile_to_response(db: AsyncSession, profile: VoiceProfile) -> ProfileResponse:
     """Convert a VoiceProfile ORM object to a response schema."""
-    import json as _json
     tags = None
     if profile.tags:
         try:
-            tags = _json.loads(profile.tags)
+            tags = json.loads(profile.tags)
         except (ValueError, TypeError):
             tags = None
 

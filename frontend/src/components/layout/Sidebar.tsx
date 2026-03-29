@@ -9,13 +9,18 @@ import {
   Settings2,
   Key,
   Settings,
+  Palette,
   HelpCircle,
   BookOpen,
+  Shield,
   Menu,
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
+import { createLogger } from "../../utils/logger";
+
+const logger = createLogger("Sidebar");
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -28,6 +33,8 @@ const navItems = [
   { to: "/api-keys", icon: Key, label: "API Keys" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/docs", icon: BookOpen, label: "Docs" },
+  { to: "/design", icon: Palette, label: "Design System" },
+  { to: "/healing", icon: Shield, label: "Self-Healing" },
   { to: "/help", icon: HelpCircle, label: "Help" },
 ];
 
@@ -39,7 +46,7 @@ export default function Sidebar() {
       {/* Mobile menu button */}
       <button
         className="fixed top-4 left-4 z-50 rounded-lg bg-[var(--color-bg)] p-2 shadow-md md:hidden"
-        onClick={() => setOpen(!open)}
+        onClick={() => { logger.info("mobile_menu_toggle", { opened: !open }); setOpen(!open); }}
         aria-label="Toggle menu"
       >
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -55,8 +62,10 @@ export default function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className="sidebar fixed z-40 flex h-full w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)] transition-[left] duration-200"
-        style={{ left: open ? 0 : -256 }}
+        className={clsx(
+          "sidebar fixed z-40 flex h-full flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)] transition-transform duration-200 md:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
       >
         <div className="flex h-16 items-center gap-2 px-6">
           <AudioLines className="h-7 w-7 text-primary-500" />
@@ -68,7 +77,7 @@ export default function Sidebar() {
               key={to}
               to={to}
               end={to === "/"}
-              onClick={() => setOpen(false)}
+              onClick={() => { logger.info("nav_click", { to, label }); setOpen(false); }}
               className={({ isActive }) =>
                 clsx(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",

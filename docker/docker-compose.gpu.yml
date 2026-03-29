@@ -3,12 +3,13 @@
 
 services:
   gpu-worker:
+    container_name: atlas-vox-gpu-worker
     build:
       context: ..
       dockerfile: docker/Dockerfile.gpu-worker
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://atlas-vox-redis:6379/1
       - STORAGE_PATH=/app/storage
       - COQUI_XTTS_GPU_MODE=docker_gpu
       - STYLETTS2_GPU_MODE=docker_gpu

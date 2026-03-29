@@ -449,10 +449,10 @@ print(result.sample_rate)      # 24000
 
 ```bash
 # List Kokoro voices
-curl http://localhost:8000/api/v1/providers/kokoro/voices
+curl http://localhost:8100/api/v1/providers/kokoro/voices
 
 # Health check
-curl -X POST http://localhost:8000/api/v1/providers/kokoro/health
+curl -X POST http://localhost:8100/api/v1/providers/kokoro/health
 ```
 
 ---
@@ -1473,13 +1473,13 @@ async def stream_synthesize(
 make dev
 
 # Check your provider appears
-curl http://localhost:8000/api/v1/providers
+curl http://localhost:8100/api/v1/providers
 
 # Run health check
-curl -X POST http://localhost:8000/api/v1/providers/your_provider/health
+curl -X POST http://localhost:8100/api/v1/providers/your_provider/health
 
 # List voices
-curl http://localhost:8000/api/v1/providers/your_provider/voices
+curl http://localhost:8100/api/v1/providers/your_provider/voices
 ```
 
 ### Checklist
@@ -1617,7 +1617,7 @@ class ProviderHealth:
 
 ```bash
 # Check a specific provider
-curl -X POST http://localhost:8000/api/v1/providers/kokoro/health
+curl -X POST http://localhost:8100/api/v1/providers/kokoro/health
 
 # Response:
 # {"name": "kokoro", "healthy": true, "latency_ms": 142, "error": null}

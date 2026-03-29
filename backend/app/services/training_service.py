@@ -62,6 +62,15 @@ async def start_training(
             f"samples, but only {sample_count} available"
         )
 
+    logger.info(
+        "training_validation_passed",
+        profile_id=profile_id,
+        provider=effective_provider,
+        sample_count=sample_count,
+        supports_cloning=capabilities.supports_cloning,
+        supports_fine_tuning=capabilities.supports_fine_tuning,
+    )
+
     # Create job
     job = TrainingJob(
         profile_id=profile_id,
@@ -102,6 +111,15 @@ async def get_job_status(db: AsyncSession, job_id: str) -> dict:
     job = result.scalar_one_or_none()
     if job is None:
         raise ValueError("Training job not found")
+
+    logger.info(
+        "job_status_queried",
+        job_id=job_id,
+        status=job.status,
+        progress=job.progress,
+        profile_id=job.profile_id,
+        provider=job.provider_name,
+    )
 
     response = {
         "id": job.id,
@@ -173,16 +191,28 @@ async def list_jobs(
     db: AsyncSession,
     profile_id: str | None = None,
     status_filter: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[TrainingJob]:
-    """List training jobs with optional filters."""
+    """List training jobs with optional filters and pagination."""
     query = select(TrainingJob).order_by(TrainingJob.created_at.desc())
     if profile_id:
         query = query.where(TrainingJob.profile_id == profile_id)
     if status_filter:
         query = query.where(TrainingJob.status == status_filter)
 
+    query = query.limit(limit).offset(offset)
     result = await db.execute(query)
-    return list(result.scalars().all())
+    jobs = list(result.scalars().all())
+    logger.info(
+        "jobs_listed",
+        count=len(jobs),
+        profile_id=profile_id,
+        status_filter=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+    return jobs
 
 
 async def list_versions(db: AsyncSession, profile_id: str) -> list[ModelVersion]:
@@ -192,7 +222,9 @@ async def list_versions(db: AsyncSession, profile_id: str) -> list[ModelVersion]
         .where(ModelVersion.profile_id == profile_id)
         .order_by(ModelVersion.version_number.desc())
     )
-    return list(result.scalars().all())
+    versions = list(result.scalars().all())
+    logger.info("versions_listed", profile_id=profile_id, count=len(versions))
+    return versions
 
 
 async def activate_version(

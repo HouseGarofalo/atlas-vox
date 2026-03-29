@@ -15,7 +15,7 @@ class AudioSample(Base):
     __tablename__ = "audio_samples"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str] = mapped_column(String(1000), nullable=False)

@@ -15,9 +15,9 @@ class TrainingJob(Base):
     __tablename__ = "training_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False, index=True)
     provider_name: Mapped[str] = mapped_column(String(50), ForeignKey("providers.name"), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="queued")  # queued, preprocessing, training, completed, failed, cancelled
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)  # queued, preprocessing, training, completed, failed, cancelled
     progress: Mapped[float] = mapped_column(Float, default=0.0)  # 0.0 to 1.0
     celery_task_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON training config

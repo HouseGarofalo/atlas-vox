@@ -13,7 +13,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-**15 TTS providers** &middot; **4 interfaces** &middot; **OpenAI-compatible API** &middot; **Self-hosted**
+**9 TTS providers** &middot; **4 interfaces** &middot; **OpenAI-compatible API** &middot; **Self-hosted**
 
 [Quick Start](#-quick-start) &middot; [Features](#-features) &middot; [Providers](#-tts-providers) &middot; [Documentation](#-documentation) &middot; [Architecture](#-architecture)
 
@@ -23,7 +23,7 @@
 
 ## Overview
 
-Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across **15 TTS engines**. It provides a unified interface to cloud providers (ElevenLabs, Azure), local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2), and 6 GPU-accelerated providers via a standalone host service (Fish Speech, Chatterbox, F5-TTS, OpenVoice v2, Orpheus, Piper Training). Features include voice cloning from 6 providers, an OpenAI-compatible API (`/v1/audio/speech`), an MCP server with 9 tools for AI agent integration, and real-time streaming.
+Atlas Vox is a self-hosted platform for training custom voice models and synthesizing speech across **9 TTS engines**. It provides a unified interface to cloud providers (ElevenLabs, Azure) and local open-source models (Kokoro, Piper, Coqui XTTS v2, StyleTTS2, CosyVoice, Dia, Dia2). Features include voice cloning, an OpenAI-compatible API (`/v1/audio/speech`), an MCP server with 9 tools for AI agent integration, real-time streaming, and a full design system for UI customization.
 
 All data stays on your machine. No audio is sent to third parties unless you explicitly configure a cloud provider.
 
@@ -37,8 +37,8 @@ All data stays on your machine. No audio is sent to third parties unless you exp
 | **Audio Training** | Upload samples, record in-browser, preprocess (noise reduction, normalization), train models via Celery |
 | **Real-time Synthesis** | Text-to-speech with speed / pitch / volume controls, SSML support (Azure), streaming |
 | **Voice Comparison** | Side-by-side synthesis across multiple profiles for A/B testing |
-| **Voice Library** | Browse 290+ voices across all providers with preview playback |
-| **Voice Cloning** | 6 providers support cloning: ElevenLabs, Coqui XTTS, Chatterbox, F5-TTS, OpenVoice v2, StyleTTS2 |
+| **Voice Library** | Browse 200+ voices across all providers with preview playback |
+| **Voice Cloning** | 4 providers support cloning: ElevenLabs, Coqui XTTS, StyleTTS2, CosyVoice |
 | **OpenAI-Compatible API** | Drop-in `POST /v1/audio/speech` endpoint works with OpenAI SDKs, LangChain, CrewAI |
 | **Persona Presets** | 6 built-in presets (Friendly, Professional, Energetic, Calm, Authoritative, Soothing) + custom |
 | **4 Interfaces** | Web UI, REST API (60+ endpoints), CLI (Typer + Rich), MCP Server (9 tools for AI agents) |
@@ -85,7 +85,7 @@ That's it. Kokoro (54 voices) and Piper work immediately with no configuration. 
 
 ```bash
 make install    # Install Python + Node dependencies
-make dev        # Start backend (localhost:8000) + frontend (localhost:3000)
+make dev        # Start backend (localhost:8100) + frontend (localhost:3000)
 ```
 
 You will need Redis running locally for training jobs.
@@ -95,7 +95,7 @@ You will need Redis running locally for training jobs.
 
 ## 🔌 TTS Providers
 
-15 providers total: 9 built-in (Docker) + 6 GPU providers (host service). Each extends `TTSProvider` ABC and declares capabilities dynamically — the UI adapts automatically.
+9 providers, each extending `TTSProvider` ABC with dynamic capability declaration — the UI adapts automatically.
 
 ### Built-in Providers (Docker)
 
@@ -111,17 +111,6 @@ You will need Redis running locally for training jobs.
 | **Dia** | Local | ✅ | | | Cfg | en | 1.6B param dialogue + non-verbals |
 | **Dia2** | Local | | ✅ | | Cfg | en | 2B param streaming dialogue |
 
-### GPU Providers (Host Service on port 8200)
-
-| Provider | Cloning | VRAM | Key Feature |
-|----------|:-------:|------|-------------|
-| **Chatterbox** | ✅ | ~4 GB | Expressive voice cloning (Resemble AI) |
-| **F5-TTS** | ✅ | ~4 GB | Fast flow-matching, zero-shot cloning |
-| **OpenVoice v2** | ✅ | ~2 GB | Instant cloning + style transfer |
-| **Fish Speech** | ✅ | ~4 GB | Multilingual (needs gated HF model) |
-| **Orpheus** | | ~6 GB | High-quality (client SDK, Linux vLLM) |
-| **Piper Training** | | ~2 GB | Train custom Piper ONNX models |
-
 **GPU Modes** (Cfg = configurable per Docker provider):
 
 | Mode | Example | Description |
@@ -134,7 +123,7 @@ You will need Redis running locally for training jobs.
 
 ## 🖥️ Web UI
 
-11 pages accessible via sidebar navigation with full light/dark theme and mobile-responsive layout.
+13 pages accessible via sidebar navigation with full light/dark theme and mobile-responsive layout.
 
 | Page | Route | Purpose |
 |------|-------|---------|
@@ -144,11 +133,13 @@ You will need Redis running locally for training jobs.
 | **Training Studio** | `/training` | Upload/record audio, preprocess, train models |
 | **Synthesis Lab** | `/synthesis` | Text-to-speech with parameter controls + presets |
 | **Comparison** | `/compare` | Side-by-side multi-voice comparison |
-| **Providers** | `/providers` | View all 15 providers with health, config, and test |
+| **Providers** | `/providers` | View all 9 providers with health, config, and test |
 | **API Keys** | `/api-keys` | Create/revoke scoped API keys |
 | **Settings** | `/settings` | Theme toggle, default provider, audio format |
 | **Docs** | `/docs` | Provider setup guides with step-by-step instructions |
 | **Help** | `/help` | In-app help center with FAQ and troubleshooting |
+| **Admin** | `/admin` | System administration and provider management |
+| **Design System** | `/design` | Customize accent color, fonts, radius, density, card styles |
 
 ---
 
@@ -163,7 +154,7 @@ You will need Redis running locally for training jobs.
                                            v
 +----------+     +------------------+   +-----------+   +------------------+
 |  CLI      +---->                  |   |           |   |                  |
-| (Typer)   |    |  FastAPI :8000   +-->+ SQLite /  |   |  Redis :6379     |
+| (Typer)   |    |  FastAPI :8100   +-->+ SQLite /  |   |  Redis :6379     |
 +----------+     |                  |   | PostgreSQL|   |  (Celery broker) |
                  |  12 API routers  |   |           |   +--------+---------+
 +----------+     |  60+ endpoints   |   +-----------+            |
@@ -202,7 +193,7 @@ All settings via environment variables or `.env` file.
 |----------|---------|-------------|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./atlas_vox.db` | Database connection |
 | `AUTH_DISABLED` | `true` | Skip auth (homelab mode) |
-| `REDIS_URL` | `redis://localhost:6379/0` | Celery broker |
+| `REDIS_URL` | `redis://localhost:6379/1` | Celery broker |
 | `STORAGE_PATH` | `./storage` | Audio & model storage |
 | `ELEVENLABS_API_KEY` | *(empty)* | ElevenLabs cloud API |
 | `AZURE_SPEECH_KEY` | *(empty)* | Azure AI Speech key |
@@ -218,7 +209,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the complete 25+ variable refer
 
 ```bash
 make dev          # Start backend + frontend dev servers
-make test         # Run pytest (43+ tests)
+make test         # Run pytest (300 backend + 239 frontend tests)
 make test-cov     # Tests with coverage report
 make lint         # Ruff (Python) + ESLint (TypeScript)
 make format       # Auto-format all code
@@ -242,13 +233,13 @@ atlas-vox/
       tasks/              # Celery background tasks
       cli/                # Typer CLI with 7 command groups
       mcp/                # MCP server (JSONRPC 2.0 + SSE)
-    tests/                # Pytest suite (43+ tests)
+    tests/                # Pytest suite (300 tests)
   frontend/
     src/
-      pages/              # 11 lazy-loaded React pages
+      pages/              # 13 lazy-loaded React pages
       components/         # 40+ UI, audio, layout components
-      stores/             # 5+ Zustand state stores
-      services/           # Typed API client (30+ methods)
+      stores/             # 8 Zustand state stores
+      services/           # Typed API client (40+ methods)
   docker/                 # Dockerfiles + compose configs
   docs/                   # Extended documentation
 ```

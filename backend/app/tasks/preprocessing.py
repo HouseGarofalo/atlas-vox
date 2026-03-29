@@ -2,28 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import structlog
 
 from app.core.config import settings
 from app.tasks.celery_app import celery_app
+from app.tasks.utils import run_async
 
 logger = structlog.get_logger(__name__)
-
-
-def _run_async(coro):
-    """Run an async coroutine from sync Celery task context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(asyncio.run, coro).result()
-    except RuntimeError:
-        pass
-    return asyncio.run(coro)
 
 
 async def _preprocess_profile_samples(profile_id: str, task) -> dict:
@@ -89,7 +76,7 @@ def preprocess_samples(self, profile_id: str) -> dict:
 
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 0, "percent": 0, "status": "Starting..."})
 
-    result = _run_async(_preprocess_profile_samples(profile_id, self))
+    result = run_async(_preprocess_profile_samples(profile_id, self))
 
     logger.info(
         "preprocessing_complete",

@@ -1,8 +1,9 @@
 """Synthesis endpoints — single, stream, batch, history."""
 
-from __future__ import annotations
+import time
 
-from fastapi import APIRouter, HTTPException, status
+import structlog
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import CurrentUser, DbSession
@@ -11,6 +12,7 @@ from app.schemas.synthesis import (
     SynthesisRequest,
     SynthesisResponse,
 )
+from app.core.rate_limit import limiter
 from app.services.synthesis_service import (
     batch_synthesize,
     get_history,
@@ -18,14 +20,26 @@ from app.services.synthesis_service import (
     synthesize,
 )
 
+logger = structlog.get_logger(__name__)
+
 router = APIRouter(tags=["synthesis"])
 
 
 @router.post("/synthesize", response_model=SynthesisResponse)
+@limiter.limit("10/minute")
 async def synthesize_text(
-    data: SynthesisRequest, db: DbSession, user: CurrentUser
+    request: Request, data: SynthesisRequest, db: DbSession, user: CurrentUser
 ) -> SynthesisResponse:
     """Synthesize text to speech, return audio URL."""
+    logger.info(
+        "synthesize_text_called",
+        text_length=len(data.text),
+        profile_id=data.profile_id,
+        preset_id=data.preset_id,
+        output_format=data.output_format,
+        ssml=data.ssml,
+    )
+    t_start = time.perf_counter()
     try:
         result = await synthesize(
             db,
@@ -38,16 +52,34 @@ async def synthesize_text(
             output_format=data.output_format,
             ssml=data.ssml,
         )
+        latency_ms = int((time.perf_counter() - t_start) * 1000)
+        logger.info(
+            "synthesize_text_succeeded",
+            profile_id=data.profile_id,
+            latency_ms=latency_ms,
+        )
         return SynthesisResponse(**result)
     except ValueError as e:
+        logger.error(
+            "synthesize_text_failed",
+            profile_id=data.profile_id,
+            text_length=len(data.text),
+            error=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/synthesize/stream")
+@limiter.limit("10/minute")
 async def stream_synthesis(
-    data: SynthesisRequest, db: DbSession, user: CurrentUser
+    request: Request, data: SynthesisRequest, db: DbSession, user: CurrentUser
 ) -> StreamingResponse:
     """Stream synthesis — chunked transfer encoding for streaming providers."""
+    logger.info(
+        "stream_synthesis_called",
+        text_length=len(data.text),
+        profile_id=data.profile_id,
+    )
     try:
         audio_stream = stream_synthesize(
             db,
@@ -56,22 +88,36 @@ async def stream_synthesis(
             speed=data.speed,
             pitch=data.pitch,
         )
+        logger.info("stream_synthesis_started", profile_id=data.profile_id)
         return StreamingResponse(
             audio_stream,
             media_type="audio/wav",
             headers={"Transfer-Encoding": "chunked"},
         )
     except ValueError as e:
+        logger.error(
+            "stream_synthesis_failed",
+            profile_id=data.profile_id,
+            text_length=len(data.text),
+            error=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/synthesize/batch")
+@limiter.limit("10/minute")
 async def batch_synthesis(
-    data: BatchSynthesisRequest, db: DbSession, user: CurrentUser
+    request: Request, data: BatchSynthesisRequest, db: DbSession, user: CurrentUser
 ) -> list[dict]:
     """Batch synthesize multiple lines."""
+    logger.info(
+        "batch_synthesis_called",
+        line_count=len(data.lines),
+        profile_id=data.profile_id,
+        output_format=data.output_format,
+    )
     try:
-        return await batch_synthesize(
+        results = await batch_synthesize(
             db,
             lines=data.lines,
             profile_id=data.profile_id,
@@ -79,7 +125,19 @@ async def batch_synthesis(
             speed=data.speed,
             output_format=data.output_format,
         )
+        logger.info(
+            "batch_synthesis_succeeded",
+            profile_id=data.profile_id,
+            result_count=len(results),
+        )
+        return results
     except ValueError as e:
+        logger.error(
+            "batch_synthesis_failed",
+            profile_id=data.profile_id,
+            line_count=len(data.lines),
+            error=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -87,11 +145,14 @@ async def batch_synthesis(
 async def synthesis_history(
     db: DbSession,
     user: CurrentUser,
-    limit: int = 50,
+    limit: int = Query(default=50, le=500),
+    offset: int = Query(default=0, ge=0),
     profile_id: str | None = None,
 ) -> list[dict]:
     """Get synthesis history."""
-    history = await get_history(db, limit=limit, profile_id=profile_id)
+    logger.info("synthesis_history_called", limit=limit, offset=offset, profile_id=profile_id)
+    history = await get_history(db, limit=limit, offset=offset, profile_id=profile_id)
+    logger.info("synthesis_history_returned", count=len(history), profile_id=profile_id)
     return [
         {
             "id": h.id,

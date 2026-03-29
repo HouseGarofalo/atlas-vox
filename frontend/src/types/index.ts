@@ -105,3 +105,55 @@ export interface Voice {
   preview_url?: string;
   tags?: string[];
 }
+
+export interface AudioSample {
+  id: string;
+  profile_id: string;
+  filename: string;
+  original_filename: string;
+  format: string;
+  duration_seconds: number | null;
+  sample_rate: number | null;
+  file_size_bytes: number | null;
+  preprocessed: boolean;
+  created_at: string;
+}
+
+export interface ApiKeyResponse {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface SynthesisResult {
+  id: string;
+  audio_url: string;
+  duration_seconds: number | null;
+  latency_ms: number;
+  profile_id: string;
+  provider_name: string;
+}
+
+export interface SynthesisHistoryItem {
+  id: string;
+  text: string;
+  audio_url: string;
+  profile_id: string;
+  provider_name: string;
+  latency_ms?: number;
+  created_at: string;
+}
+
+export interface ComparisonResult {
+  profile_id: string;
+  profile_name?: string;
+  audio_url: string | null;
+  duration_seconds: number | null;
+  latency_ms: number;
+  provider_name: string;
+  error: string | null;
+}

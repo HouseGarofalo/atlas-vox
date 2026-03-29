@@ -89,13 +89,13 @@ atlas-vox serve [OPTIONS]
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `--host` | `str` | `0.0.0.0` | Host to bind to |
-| `--port` | `int` | `8000` | Port to listen on |
+| `--port` | `int` | `8100` | Port to listen on |
 | `--mcp / --no-mcp` | `bool` | `false` | Enable MCP server endpoint |
 
 **Examples:**
 
 ```bash
-# Start with defaults (port 8000, all interfaces)
+# Start with defaults (port 8100, all interfaces)
 atlas-vox serve
 
 # Start on a custom port with MCP enabled
@@ -108,9 +108,9 @@ atlas-vox serve --host 127.0.0.1 --port 8080
 **Output:**
 
 ```
-Starting Atlas Vox server on 0.0.0.0:8000
+Starting Atlas Vox server on 0.0.0.0:8100
 MCP server enabled
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://0.0.0.0:8100 (Press CTRL+C to quit)
 ```
 
 > **Note:** The server runs with `--reload` enabled by default. For production, use `make docker-up` or configure Uvicorn directly.

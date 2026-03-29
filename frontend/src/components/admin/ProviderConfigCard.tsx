@@ -7,7 +7,10 @@ import { useAdminStore } from "../../stores/adminStore";
 import { useProviderStore } from "../../stores/providerStore";
 import ProviderLogo from "../providers/ProviderLogo";
 import { PROVIDER_METADATA } from "../../data/providerMetadata";
+import { createLogger } from "../../utils/logger";
 import type { Provider, ProviderFieldSchema } from "../../types";
+
+const logger = createLogger("ProviderConfigCard");
 
 const PRICING_COLORS: Record<string, string> = {
   "open-source": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
@@ -68,9 +71,10 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
   }, [config]);
 
   const handleFieldChange = useCallback((fieldName: string, value: string) => {
+    logger.debug("field_change", { provider: provider.name, field: fieldName });
     setFormValues((prev) => ({ ...prev, [fieldName]: value }));
     setDirtyFields((prev) => new Set(prev).add(fieldName));
-  }, []);
+  }, [provider.name]);
 
   const toggleSecretVisibility = useCallback((fieldName: string) => {
     setVisibleSecrets((prev) => {
@@ -85,10 +89,11 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
   }, []);
 
   const handleToggleEnabled = useCallback(async () => {
+    logger.info("toggle_enabled", { provider: provider.name, enabled: !provider.enabled });
     try {
       await saveProviderConfig(provider.name, { enabled: !provider.enabled });
-    } catch {
-      // error is handled in store
+    } catch (e: any) {
+      logger.error("toggle_enabled_error", { provider: provider.name, error: String(e) });
     }
   }, [provider.name, provider.enabled, saveProviderConfig]);
 
@@ -100,21 +105,25 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
       changedConfig[fieldName] = formValues[fieldName];
     }
 
+    logger.info("save_config", { provider: provider.name, fields_changed: dirtyFields.size });
     try {
       await saveProviderConfig(provider.name, { config: changedConfig });
+      logger.info("save_config_complete", { provider: provider.name });
       setSavedRecently(true);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSavedRecently(false), 2000);
-    } catch {
-      // error is handled in store
+    } catch (e: any) {
+      logger.error("save_config_error", { provider: provider.name, error: String(e) });
     }
   }, [dirtyFields, formValues, provider.name, saveProviderConfig]);
 
   const handleHealthCheck = useCallback(() => {
+    logger.info("health_check", { provider: provider.name });
     checkHealth(provider.name);
   }, [provider.name, checkHealth]);
 
   const handleTest = useCallback(() => {
+    logger.info("test_provider", { provider: provider.name, text_length: testText.length });
     testProvider(provider.name, testText);
   }, [provider.name, testText, testProvider]);
 
@@ -132,7 +141,7 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
       <button
         type="button"
         className="flex w-full items-start gap-3 text-left"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => { logger.info("panel_toggle", { provider: provider.name, expanded: !expanded }); setExpanded(!expanded); }}
       >
         <ProviderLogo name={provider.name} size={36} className="flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">

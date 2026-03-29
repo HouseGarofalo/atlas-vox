@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "atlas-vox"
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
     log_level: str = "INFO"
     log_format: str = "json"
 
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6379/1"
 
     # Storage
     storage_path: Path = Path("./storage")
@@ -84,6 +84,16 @@ class Settings(BaseSettings):
             import json
             return json.loads(v)
         return v
+
+    @model_validator(mode="after")
+    def validate_jwt_secret(self) -> "Settings":
+        """Ensure a real JWT secret is set when authentication is enabled."""
+        if not self.auth_disabled and self.jwt_secret_key == "change-me-in-production":
+            raise ValueError(
+                "jwt_secret_key must be changed from the default value when "
+                "AUTH_DISABLED is False. Set a strong random secret in JWT_SECRET_KEY."
+            )
+        return self
 
     @property
     def is_sqlite(self) -> bool:

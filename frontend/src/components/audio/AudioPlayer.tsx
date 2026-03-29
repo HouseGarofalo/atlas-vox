@@ -1,5 +1,8 @@
-import { useRef, useState, useEffect } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { useRef, useState, useEffect, useCallback } from "react";
+import { Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { createLogger } from "../../utils/logger";
+
+const logger = createLogger("AudioPlayer");
 
 interface AudioPlayerProps {
   src: string;
@@ -7,43 +10,92 @@ interface AudioPlayerProps {
 }
 
 export function AudioPlayer({ src, compact }: AudioPlayerProps) {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<any>(null);
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setPlaying(false);
-    setProgress(0);
-  }, [src]);
+    if (!containerRef.current) return;
 
-  const toggle = () => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (playing) {
-      el.pause();
-    } else {
-      el.play();
-    }
-    setPlaying(!playing);
-  };
+    let ws: any;
+    let destroyed = false;
 
-  const onTimeUpdate = () => {
-    const el = audioRef.current;
-    if (!el) return;
-    setProgress(el.currentTime);
-    setDuration(el.duration || 0);
-  };
+    const init = async () => {
+      try {
+        const WaveSurfer = (await import("wavesurfer.js")).default;
+        if (destroyed) return;
 
-  const onEnded = () => setPlaying(false);
+        ws = WaveSurfer.create({
+          container: containerRef.current!,
+          waveColor: "rgba(99, 102, 241, 0.4)",
+          progressColor: "rgba(99, 102, 241, 1)",
+          cursorColor: "rgba(99, 102, 241, 0.8)",
+          barWidth: 2,
+          barGap: 1,
+          barRadius: 2,
+          height: compact ? 32 : 48,
+          normalize: true,
+          url: src,
+        });
 
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = audioRef.current;
-    if (!el || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    el.currentTime = pct * duration;
-  };
+        ws.on("ready", () => {
+          if (destroyed) return;
+          setDuration(ws.getDuration());
+          setReady(true);
+          logger.info("waveform_ready", { duration: ws.getDuration() });
+        });
+
+        ws.on("timeupdate", (time: number) => {
+          if (!destroyed) setCurrentTime(time);
+        });
+
+        ws.on("play", () => { if (!destroyed) setPlaying(true); });
+        ws.on("pause", () => { if (!destroyed) setPlaying(false); });
+        ws.on("finish", () => {
+          if (!destroyed) { setPlaying(false); logger.info("audio_ended"); }
+        });
+        ws.on("error", (err: any) => {
+          logger.error("waveform_error", { error: String(err), src });
+        });
+
+        wavesurferRef.current = ws;
+      } catch (err) {
+        logger.error("wavesurfer_init_error", { error: String(err) });
+      }
+    };
+
+    init();
+
+    return () => {
+      destroyed = true;
+      if (ws) {
+        try { ws.destroy(); } catch {}
+      }
+      wavesurferRef.current = null;
+      setReady(false);
+      setPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+    };
+  }, [src, compact]);
+
+  const toggle = useCallback(() => {
+    const ws = wavesurferRef.current;
+    if (!ws || !ready) return;
+    ws.playPause();
+  }, [ready]);
+
+  const toggleMute = useCallback(() => {
+    const ws = wavesurferRef.current;
+    if (!ws) return;
+    const next = !muted;
+    ws.setMuted(next);
+    setMuted(next);
+  }, [muted]);
 
   const fmt = (s: number) => {
     const m = Math.floor(s / 60);
@@ -53,27 +105,28 @@ export function AudioPlayer({ src, compact }: AudioPlayerProps) {
 
   return (
     <div className={`flex items-center gap-3 ${compact ? "" : "rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"}`}>
-      <audio ref={audioRef} src={src} onTimeUpdate={onTimeUpdate} onEnded={onEnded} onLoadedMetadata={onTimeUpdate} />
       <button
         onClick={toggle}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white hover:bg-primary-600"
+        disabled={!ready}
+        aria-label={playing ? "Pause" : "Play"}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
       </button>
-      <div className="flex flex-1 items-center gap-2">
-        <span className="w-10 text-xs text-[var(--color-text-secondary)]">{fmt(progress)}</span>
-        <div
-          className="relative h-1.5 flex-1 cursor-pointer rounded-full bg-gray-200 dark:bg-gray-700"
-          onClick={seek}
-        >
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-primary-500"
-            style={{ width: duration ? `${(progress / duration) * 100}%` : "0%" }}
-          />
+      <div className="flex flex-1 flex-col gap-1 min-w-0">
+        <div ref={containerRef} className="w-full" />
+        <div className="flex justify-between text-xs text-[var(--color-text-secondary)]">
+          <span>{fmt(currentTime)}</span>
+          <span>{fmt(duration)}</span>
         </div>
-        <span className="w-10 text-xs text-[var(--color-text-secondary)]">{fmt(duration)}</span>
       </div>
-      <Volume2 className="h-4 w-4 text-[var(--color-text-secondary)]" />
+      <button
+        onClick={toggleMute}
+        className="shrink-0 rounded p-1 text-[var(--color-text-secondary)] hover:bg-gray-100 dark:hover:bg-gray-800"
+        aria-label={muted ? "Unmute" : "Mute"}
+      >
+        {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+      </button>
     </div>
   );
 }

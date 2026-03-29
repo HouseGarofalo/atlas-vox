@@ -16,7 +16,6 @@
 - [Backup and Restore](#-backup-and-restore)
 - [Monitoring and Logging](#-monitoring-and-logging)
 - [Scaling Considerations](#-scaling-considerations)
-- [GPU Service Deployment](#-gpu-service-deployment)
 
 ---
 
@@ -28,7 +27,7 @@ Atlas Vox ships with production-ready Docker Compose configurations.
 
 ```
 docker-compose.yml
-├── backend       (FastAPI on :8000, Python 3.11)
+├── backend       (FastAPI on :8100, Python 3.11)
 ├── frontend      (Nginx serving React build on :80)
 ├── redis         (Redis 7 Alpine on :6379)
 └── worker        (Celery worker, same image as backend)
@@ -196,7 +195,7 @@ DATABASE_URL=postgresql+asyncpg://user:password@host:5432/atlas_vox
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `REDIS_URL` | `redis://localhost:6379/1` | Redis connection URL |
 
 ### Storage
 
@@ -222,10 +221,6 @@ DATABASE_URL=postgresql+asyncpg://user:password@host:5432/atlas_vox
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GPU_SERVICE_URL` | *(empty)* | URL of the standalone GPU service (e.g., `http://host.docker.internal:8200`) |
-
-When set, the backend auto-discovers GPU providers (Fish Speech, Chatterbox, F5-TTS, OpenVoice v2, Orpheus, Piper Training) from the GPU service at startup and registers them as `RemoteProvider` instances.
-
 ### Provider: GPU Modes
 
 | Variable | Default | Options |
@@ -653,144 +648,6 @@ DATABASE_URL=postgresql+asyncpg://user:pass@pgbouncer:6432/atlas_vox
 ```
 
 ---
-
-## 🖥️ GPU Service Deployment
-
-The GPU service is a standalone FastAPI application that runs **natively on the host** (not in Docker) to provide GPU-accelerated TTS via 6 additional providers. The Dockerized Atlas Vox backend connects to it over HTTP.
-
-### Architecture
-
-```
-Atlas Vox (Docker)                    GPU Service (Host)
-+-------------------+                 +--------------------+
-| FastAPI Backend   |  --- HTTP --->  | FastAPI (port 8200)|
-| (port 8000)       |                 |   |
-| Celery Worker     |                 |   +-- Fish Speech   |
-| Redis             |                 |   +-- Chatterbox    |
-| Frontend (Nginx)  |                 |   +-- F5-TTS        |
-+-------------------+                 |   +-- OpenVoice v2  |
-                                      |   +-- Orpheus TTS   |
-                                      |   +-- Piper Training|
-                                      +--------------------+
-                                            |
-                                      NVIDIA GPU (CUDA)
-```
-
-### Prerequisites
-
-- **Python 3.11+** on the host
-- **NVIDIA GPU** with CUDA 12.x support
-- **PyTorch** with CUDA — install from https://pytorch.org/get-started/locally/
-
-### Setup
-
-```bash
-# Navigate to the GPU service
-cd gpu-service
-
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate       # Windows
-# source .venv/bin/activate  # Linux/macOS
-
-# Install PyTorch with CUDA (example for CUDA 12.4)
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-
-# Install the GPU service
-pip install -e .
-
-# (Optional) Pre-download model weights
-python scripts/download_models.py --all        # All models
-python scripts/download_models.py --provider fish_speech  # Just one
-
-# Start the service
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8200 --reload
-```
-
-On Windows, convenience scripts are also available:
-```bash
-scripts\start.bat          # CMD
-.\scripts\start.ps1        # PowerShell
-```
-
-### Connecting to Atlas Vox
-
-Add the GPU service URL to your Atlas Vox environment:
-
-```env
-# In docker/.env
-GPU_SERVICE_URL=http://host.docker.internal:8200
-```
-
-- On **Windows/macOS with Docker Desktop**: `host.docker.internal` resolves to the host automatically.
-- On **Linux**: Use the host's LAN IP or add `--add-host=host.docker.internal:host-gateway` to your Docker Compose config.
-
-After setting the variable, restart the Atlas Vox backend. GPU providers will be automatically discovered and appear in the Providers page.
-
-### Multi-GPU Configuration
-
-If your machine has multiple GPUs, assign providers to specific devices:
-
-```env
-# Example: RTX 5090 (cuda:0) for large models, RTX 3050 (cuda:1) for smaller ones
-GPU_DEVICE_MAP={"fish_speech": "cuda:0", "orpheus": "cuda:0", "openvoice_v2": "cuda:1", "chatterbox": "cuda:1"}
-```
-
-The default device is `cuda:0`. The device map is a JSON object mapping provider names to CUDA device strings.
-
-### GPU Service Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GPU_HOST` | `0.0.0.0` | Bind address |
-| `GPU_PORT` | `8200` | Port number |
-| `GPU_STORAGE_PATH` | `./storage` | Storage for cloned voices and temp files |
-| `GPU_DEFAULT_DEVICE` | `cuda:0` | Default CUDA device |
-| `GPU_DEVICE_MAP` | `{}` | JSON mapping: provider name to CUDA device |
-| `GPU_AUTO_LOAD_PROVIDERS` | `[]` | JSON list of providers to load on startup |
-| `GPU_CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:8000"]` | Allowed CORS origins |
-| `GPU_LOG_LEVEL` | `INFO` | Log level |
-
-### Installing Individual GPU Providers
-
-Each GPU provider has its own dependencies. Install only what you need:
-
-| Provider | Install Command |
-|----------|----------------|
-| Fish Speech 1.5 | `pip install fish-speech` |
-| Chatterbox | `git clone https://github.com/resemble-ai/chatterbox && cd chatterbox && pip install -e .` |
-| F5-TTS | `pip install f5-tts` |
-| OpenVoice v2 | `git clone https://github.com/myshell-ai/OpenVoice && cd OpenVoice && pip install -e .` |
-| Orpheus TTS | See the Orpheus TTS repository for installation |
-| Piper Training | `pip install piper-train` |
-
-### Running as a Background Service (Production)
-
-For production use, run the GPU service as a system service:
-
-**Windows (Task Scheduler or NSSM):**
-```bash
-nssm install atlas-vox-gpu "C:\path\to\gpu-service\.venv\Scripts\python.exe" "-m" "uvicorn" "app.main:app" "--host" "0.0.0.0" "--port" "8200"
-nssm start atlas-vox-gpu
-```
-
-**Linux (systemd):**
-```ini
-# /etc/systemd/system/atlas-vox-gpu.service
-[Unit]
-Description=Atlas Vox GPU Service
-After=network.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/path/to/gpu-service
-ExecStart=/path/to/gpu-service/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8200
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
 
 ---
 

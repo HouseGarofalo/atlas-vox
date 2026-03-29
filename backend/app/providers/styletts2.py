@@ -11,9 +11,9 @@ import structlog
 from app.core.config import settings
 from app.providers.base import (
     AudioResult,
-    AudioSample,
     CloneConfig,
     FineTuneConfig,
+    ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
     SynthesisSettings,
@@ -74,28 +74,36 @@ class StyleTTS2Provider(TTSProvider):
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
         model = self._get_model()
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"styletts2_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix="styletts2")
 
+        logger.info("styletts2_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
         # voice_id can be a reference WAV path for zero-shot
-        if Path(voice_id).exists():
-            wav = await run_sync(model.inference, text, target_voice_path=voice_id, diffusion_steps=10)
-        else:
-            wav = await run_sync(model.inference, text, diffusion_steps=10)
+        try:
+            if Path(voice_id).exists():
+                wav = await run_sync(model.inference, text, target_voice_path=voice_id, diffusion_steps=10)
+            else:
+                wav = await run_sync(model.inference, text, diffusion_steps=10)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            logger.error("styletts2_synthesize_failed", voice_id=voice_id, latency_ms=int(elapsed * 1000), error=str(exc))
+            raise
 
         import soundfile as sf
         sf.write(str(output_file), wav, 24000)
 
         elapsed = time.perf_counter() - start
-        logger.info("styletts2_synthesis_complete", latency_ms=int(elapsed * 1000))
+        logger.info(
+            "styletts2_synthesize_completed",
+            voice_id=voice_id,
+            latency_ms=int(elapsed * 1000),
+        )
 
         return AudioResult(audio_path=output_file, sample_rate=24000, format="wav")
 
     async def clone_voice(
-        self, samples: list[AudioSample], config: CloneConfig
+        self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
         if not samples:
             raise ValueError("At least one audio sample is required")
@@ -120,7 +128,7 @@ class StyleTTS2Provider(TTSProvider):
         )
 
     async def fine_tune(
-        self, model_id: str, samples: list[AudioSample], config: FineTuneConfig
+        self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
         raise NotImplementedError(
             "StyleTTS2 fine-tuning is not supported via this provider. "
@@ -128,7 +136,7 @@ class StyleTTS2Provider(TTSProvider):
         )
 
     async def list_voices(self) -> list[VoiceInfo]:
-        return [
+        voices = [
             VoiceInfo(
                 voice_id="default",
                 name="StyleTTS2 Default",
@@ -136,6 +144,8 @@ class StyleTTS2Provider(TTSProvider):
                 description="Zero-shot — provide reference audio for custom voice",
             ),
         ]
+        logger.info("styletts2_voices_listed", count=len(voices))
+        return voices
 
     async def get_capabilities(self) -> ProviderCapabilities:
         # StyleTTS2 zero-shot cloning requires both the library AND a downloaded model.
@@ -177,11 +187,14 @@ class StyleTTS2Provider(TTSProvider):
         try:
             if self._model is not None:
                 latency = int((time.perf_counter() - start) * 1000)
+                logger.info("styletts2_health_check", healthy=True, latency_ms=latency, model_loaded=True)
                 return ProviderHealth(name="styletts2", healthy=True, latency_ms=latency)
             from styletts2 import tts as styletts2_tts  # noqa: F401
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("styletts2_health_check", healthy=True, latency_ms=latency, model_loaded=False)
             return ProviderHealth(name="styletts2", healthy=True, latency_ms=latency,
                                   error="Ready — model downloads on first synthesis")
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
+            logger.info("styletts2_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="styletts2", healthy=False, latency_ms=latency, error=str(e))

@@ -1,7 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import AppLayout from "./components/layout/AppLayout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { createLogger } from "./utils/logger";
+
+const logger = createLogger("App");
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ProfilesPage = lazy(() => import("./pages/ProfilesPage"));
@@ -14,11 +18,19 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const VoiceLibraryPage = lazy(() => import("./pages/VoiceLibraryPage"));
 const HelpPage = lazy(() => import("./pages/HelpPage"));
 const DocsPage = lazy(() => import("./pages/DocsPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const DesignSystemPage = lazy(() => import("./pages/DesignSystemPage"));
+const HealingPage = lazy(() => import("./pages/HealingPage"));
 
 function App() {
+  useEffect(() => {
+    logger.info("app_mounted");
+  }, []);
+
   return (
     <>
       <Toaster position="top-right" richColors />
+      <ErrorBoundary>
       <Routes>
         <Route element={<AppLayout />}>
           <Route
@@ -109,8 +121,33 @@ function App() {
               </Suspense>
             }
           />
+          <Route
+            path="admin"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <AdminPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="design"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <DesignSystemPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="healing"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <HealingPage />
+              </Suspense>
+            }
+          />
         </Route>
       </Routes>
+      </ErrorBoundary>
     </>
   );
 }

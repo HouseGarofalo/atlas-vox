@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
+import socket
 from datetime import UTC, datetime
 
 import structlog
@@ -21,19 +23,60 @@ BLOCKED_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
                     "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
                     "172.30.", "172.31.", "192.168.", "169.254.")
 
+_ALLOWED_SCHEMES = {"http", "https"}
+
 
 def _is_url_safe(url: str) -> bool:
-    """Reject URLs pointing to internal/private networks (SSRF protection)."""
+    """Reject URLs pointing to internal/private networks (SSRF protection).
+
+    Checks performed in order:
+    1. URL scheme must be http or https.
+    2. Hostname blocklist (localhost variants, well-known private ranges by
+       prefix, and special TLDs such as .internal / .local).
+    3. DNS resolution — the hostname is resolved to all of its IP addresses
+       and each one is checked against Python's ``ipaddress`` private/reserved
+       detection.  This prevents SSRF via DNS rebinding or creative hostname
+       aliases.
+    """
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
+
+    # 1. Scheme validation — reject everything that isn't http(s).
+    if (parsed.scheme or "").lower() not in _ALLOWED_SCHEMES:
+        return False
+
     host = (parsed.hostname or "").lower()
+
+    # 2. Static hostname blocklist.
     if host in BLOCKED_HOSTS:
         return False
     if any(host.startswith(p) for p in BLOCKED_PREFIXES):
         return False
     if host.endswith(".internal") or host.endswith(".local"):
         return False
+
+    # 3. DNS resolution — resolve to IPs and block any private/reserved address.
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, OSError):
+        # DNS resolution failure — treat as unsafe to avoid silent bypass.
+        logger.warning("webhook_dns_resolution_failed", host=host)
+        return False
+
+    for addr_info in addr_infos:
+        # addr_info is (family, type, proto, canonname, sockaddr)
+        # sockaddr is (address, port) for IPv4 and (address, port, flow, scope) for IPv6.
+        ip_str = addr_info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            # Unparseable address — reject.
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            logger.warning("webhook_ssrf_ip_blocked", host=host, resolved_ip=ip_str)
+            return False
+
     return True
 
 
@@ -51,6 +94,12 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
         select(Webhook).where(Webhook.active == True)  # noqa: E712
     )
     webhooks = result.scalars().all()
+
+    logger.info(
+        "dispatch_started",
+        webhook_event=event,
+        webhook_count=len(webhooks),
+    )
 
     deliveries = []
     for wh in webhooks:
@@ -89,9 +138,9 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
                 "status_code": resp.status_code,
                 "success": 200 <= resp.status_code < 300,
             })
-            logger.info("webhook_delivered", webhook_id=wh.id, event=event, status=resp.status_code)
+            logger.info("webhook_delivered", webhook_id=wh.id, webhook_event=event, status=resp.status_code)
         except Exception as e:
-            logger.error("webhook_delivery_failed", webhook_id=wh.id, event=event, error=str(e))
+            logger.error("webhook_delivery_failed", webhook_id=wh.id, webhook_event=event, error=str(e))
             deliveries.append({
                 "webhook_id": wh.id,
                 "url": wh.url,
@@ -100,6 +149,14 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
                 "error": "Delivery failed",  # Generic message — full error logged server-side
             })
 
+    success_count = sum(1 for d in deliveries if d.get("success"))
+    logger.info(
+        "dispatch_completed",
+        webhook_event=event,
+        total=len(deliveries),
+        success=success_count,
+        failed=len(deliveries) - success_count,
+    )
     return deliveries
 
 

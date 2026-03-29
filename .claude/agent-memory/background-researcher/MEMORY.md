@@ -1,0 +1,1 @@
+- [Atlas Vox TTS Provider Research](tts_provider_research.md) — Deep research on all 9 TTS providers: voices, APIs, cloning, training

@@ -1,8 +1,8 @@
 # Atlas Vox API Reference
 
-Base URL: `http://localhost:8000/api/v1`
+Base URL: `http://localhost:8100/api/v1`
 
-Interactive docs: `http://localhost:8000/docs` (Swagger) | `http://localhost:8000/redoc` (ReDoc)
+Interactive docs: `http://localhost:8100/docs` (Swagger) | `http://localhost:8100/redoc` (ReDoc)
 
 ## Endpoints
 

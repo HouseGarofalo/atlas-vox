@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+import structlog
 import typer
 from rich.console import Console
 from rich.table import Table
+
+logger = structlog.get_logger("atlas_vox.cli.compare")
 
 app = typer.Typer()
 console = Console()
@@ -22,6 +25,8 @@ def compare_voices(
         console.print("[red]Need at least 2 voices for comparison.[/red]")
         raise typer.Exit(1)
 
+    logger.info("compare_voices_start", profile_count=len(profile_ids))
+
     async def _compare():
         from app.core.database import async_session_factory
         from app.services.comparison_service import compare_voices
@@ -30,6 +35,8 @@ def compare_voices(
             try:
                 results = await compare_voices(db, text=text, profile_ids=profile_ids)
                 await db.commit()
+
+                logger.info("compare_voices_complete", result_count=len(results))
 
                 table = Table(title="Voice Comparison")
                 table.add_column("Profile", style="cyan")
@@ -49,6 +56,7 @@ def compare_voices(
 
                 console.print(table)
             except ValueError as e:
+                logger.error("compare_voices_failed", error=str(e))
                 console.print(f"[red]✗[/red] {e}")
                 raise typer.Exit(1)
 

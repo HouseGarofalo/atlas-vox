@@ -1,10 +1,9 @@
 """Provider management endpoints."""
 
-from __future__ import annotations
 
 import json
 import time
-from datetime import UTC
+from datetime import UTC, datetime, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -36,6 +35,7 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 @router.get("", response_model=ProviderListResponse)
 async def list_providers() -> ProviderListResponse:
     """List all known TTS providers with implementation status."""
+    logger.info("list_providers_called")
     providers = []
     for info in provider_registry.list_all_known():
         caps = None
@@ -56,16 +56,18 @@ async def list_providers() -> ProviderListResponse:
                 gpu_mode=caps.gpu_mode if caps else "none",
                 capabilities=caps,
                 health=None,
-                created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
-                updated_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
         )
+    logger.info("list_providers_returned", count=len(providers))
     return ProviderListResponse(providers=providers, count=len(providers))
 
 
 @router.get("/{name}")
 async def get_provider(name: str) -> ProviderResponse:
     """Get details for a specific provider."""
+    logger.info("get_provider_called", provider=name)
     known = {p["name"]: p for p in provider_registry.list_all_known()}
     if name not in known:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Provider '{name}' not found")
@@ -79,7 +81,6 @@ async def get_provider(name: str) -> ProviderResponse:
         except Exception:
             pass
 
-    from datetime import datetime
     return ProviderResponse(
         id=name,
         name=name,
@@ -97,6 +98,7 @@ async def get_provider(name: str) -> ProviderResponse:
 @router.post("/{name}/health", response_model=ProviderHealthSchema)
 async def check_provider_health(name: str) -> ProviderHealthSchema:
     """Run a health check on a provider."""
+    logger.info("check_provider_health_called", provider=name)
     available = provider_registry.list_available()
     if name not in available:
         raise HTTPException(
@@ -105,12 +107,14 @@ async def check_provider_health(name: str) -> ProviderHealthSchema:
         )
 
     health = await provider_registry.health_check(name)
+    logger.info("check_provider_health_returned", provider=name, healthy=health.healthy)
     return ProviderHealthSchema(**health.__dict__)
 
 
 @router.get("/{name}/voices")
 async def list_provider_voices(name: str) -> dict:
     """List available voices for a provider."""
+    logger.info("list_provider_voices_called", provider=name)
     available = provider_registry.list_available()
     if name not in available:
         raise HTTPException(
@@ -120,6 +124,7 @@ async def list_provider_voices(name: str) -> dict:
 
     provider = provider_registry.get_provider(name)
     voices = await provider.list_voices()
+    logger.info("list_provider_voices_returned", provider=name, count=len(voices))
     return {
         "provider": name,
         "voices": [{"voice_id": v.voice_id, "name": v.name, "language": v.language} for v in voices],
@@ -135,6 +140,7 @@ async def get_provider_config(
     name: str, db: AsyncSession = Depends(get_db)
 ) -> ProviderConfigResponse:
     """Get the configuration for a provider, including its schema for UI rendering."""
+    logger.info("get_provider_config_called", provider=name)
     if name not in PROVIDER_DISPLAY_NAMES:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -271,6 +277,7 @@ async def update_provider_config(
 @router.post("/{name}/test", response_model=ProviderTestResponse)
 async def test_provider(name: str, body: ProviderTestRequest) -> ProviderTestResponse:
     """Test a provider by running a quick synthesis."""
+    logger.info("test_provider_called", provider=name, text_length=len(body.text))
     available = provider_registry.list_available()
     if name not in available:
         raise HTTPException(
@@ -303,6 +310,7 @@ async def test_provider(name: str, body: ProviderTestRequest) -> ProviderTestRes
         # Build a URL-friendly audio path
         audio_url = f"/storage/output/{result.audio_path.name}"
 
+        logger.info("test_provider_succeeded", provider=name, latency_ms=latency)
         return ProviderTestResponse(
             success=True,
             audio_url=audio_url,

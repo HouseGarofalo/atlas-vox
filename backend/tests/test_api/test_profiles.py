@@ -95,3 +95,81 @@ async def test_create_profile_without_voice_id_is_pending(client: AsyncClient):
     data = resp.json()
     assert data["status"] == "pending"
     assert data["voice_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Model versioning
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_versions_empty(client: AsyncClient):
+    """GET /api/v1/profiles/{id}/versions returns empty list for a new profile."""
+    create = await client.post("/api/v1/profiles", json={"name": "VersionsEmpty", "provider_name": "kokoro"})
+    assert create.status_code == 201
+    pid = create.json()["id"]
+
+    resp = await client.get(f"/api/v1/profiles/{pid}/versions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "versions" in data
+    assert "count" in data
+    assert data["count"] == 0
+    assert data["versions"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_versions_with_versions(client: AsyncClient, db_session):
+    """GET /api/v1/profiles/{id}/versions returns versions after inserting some."""
+    from app.models.model_version import ModelVersion
+
+    create = await client.post("/api/v1/profiles", json={"name": "WithVersions", "provider_name": "kokoro"})
+    assert create.status_code == 201
+    pid = create.json()["id"]
+
+    # Insert a ModelVersion and commit so the HTTP handler's SELECT sees the row.
+    # The `client` fixture overrides get_db with the same db_session, so we must
+    # commit rather than just flush to make the data visible within the same
+    # SQLite connection that the ASGI handler will query.
+    version = ModelVersion(profile_id=pid, version_number=1)
+    db_session.add(version)
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/profiles/{pid}/versions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] >= 1
+    ids = [v["id"] for v in data["versions"]]
+    assert version.id in ids
+
+
+@pytest.mark.asyncio
+async def test_activate_version_success(client: AsyncClient, db_session):
+    """POST /api/v1/profiles/{id}/activate-version/{ver_id} activates the version."""
+    from app.models.model_version import ModelVersion
+
+    create = await client.post("/api/v1/profiles", json={"name": "ActivateOK", "provider_name": "kokoro"})
+    assert create.status_code == 201
+    pid = create.json()["id"]
+
+    version = ModelVersion(profile_id=pid, version_number=1)
+    db_session.add(version)
+    await db_session.commit()
+    ver_id = version.id
+
+    resp = await client.post(f"/api/v1/profiles/{pid}/activate-version/{ver_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == pid
+    # Profile should now be ready after activation
+    assert data["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_activate_version_not_found(client: AsyncClient):
+    """POST /api/v1/profiles/{id}/activate-version/{ver_id} returns 400 when version doesn't exist."""
+    create = await client.post("/api/v1/profiles", json={"name": "ActivateFail", "provider_name": "kokoro"})
+    assert create.status_code == 201
+    pid = create.json()["id"]
+
+    resp = await client.post(f"/api/v1/profiles/{pid}/activate-version/nonexistent-version-id")
+    assert resp.status_code == 400

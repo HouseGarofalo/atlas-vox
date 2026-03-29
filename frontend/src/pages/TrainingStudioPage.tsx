@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Card } from "../components/ui/Card";
+import { Music, Cpu, History } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { ProgressBar } from "../components/ui/ProgressBar";
+import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
 import { AudioRecorder, FileUploader } from "../components/audio/AudioRecorder";
 import { useProfileStore } from "../stores/profileStore";
 import { useTrainingStore } from "../stores/trainingStore";
 import { useTrainingProgress } from "../hooks/useWebSocket";
 import { api } from "../services/api";
+import type { AudioSample } from "../types";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("TrainingStudioPage");
 
 export default function TrainingStudioPage() {
   const [searchParams] = useSearchParams();
   const { profiles, fetchProfiles } = useProfileStore();
   const { jobs, fetchJobs, startTraining, cancelJob } = useTrainingStore();
   const [selectedProfile, setSelectedProfile] = useState(searchParams.get("profile") || "");
-  const [samples, setSamples] = useState<any[]>([]);
+  const [samples, setSamples] = useState<AudioSample[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [preprocessing, setPreprocessing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -27,7 +32,12 @@ export default function TrainingStudioPage() {
     fetchProfiles().catch(() => toast.error("Failed to load profiles"));
     fetchJobs().catch(() => toast.error("Failed to load training jobs"));
   }, []);
-  useEffect(() => { if (selectedProfile) loadSamples(); }, [selectedProfile]);
+  useEffect(() => {
+    if (selectedProfile) {
+      logger.info("profile_selected", { profile_id: selectedProfile });
+      loadSamples();
+    }
+  }, [selectedProfile]);
 
   // When training completes, refresh the profile list so status updates from "training" to "ready"
   useEffect(() => {
@@ -48,23 +58,30 @@ export default function TrainingStudioPage() {
 
   const handleUpload = async (files: File[]) => {
     if (!selectedProfile) { toast.error("Select a profile first"); return; }
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    logger.info("file_upload", { count: files.length, total_bytes: totalSize });
     setUploading(true);
     try {
       await api.uploadSamples(selectedProfile, files);
       toast.success(`${files.length} file(s) uploaded and analyzed`);
+      logger.info("file_upload_complete", { count: files.length });
       await loadSamples();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Upload failed";
+      logger.error("file_upload_error", { error: message });
+      toast.error(message);
     } finally {
       setUploading(false);
     }
   };
 
   const handleRecord = async (blob: Blob, filename: string) => {
+    logger.info("recording_complete", { filename, size_bytes: blob.size });
     await handleUpload([new File([blob], filename, { type: blob.type })]);
   };
 
   const handlePreprocess = async () => {
+    logger.info("preprocess_start", { profile_id: selectedProfile });
     setPreprocessing(true);
     try {
       const r = await api.preprocessSamples(selectedProfile);
@@ -81,14 +98,26 @@ export default function TrainingStudioPage() {
         await loadSamples();
         setPreprocessing(false);
       }
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Preprocessing failed";
+      logger.error("preprocess_error", { error: message });
+      toast.error(message);
       setPreprocessing(false);
     }
   };
 
   const handleStartTraining = async () => {
-    try { const job = await startTraining(selectedProfile); setActiveJobId(job.id); toast.success("Training started"); } catch (e: any) { toast.error(e.message); }
+    logger.info("training_start", { profile_id: selectedProfile });
+    try {
+      const job = await startTraining(selectedProfile);
+      setActiveJobId(job.id);
+      logger.info("training_started", { job_id: job.id });
+      toast.success("Training started");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to start training";
+      logger.error("training_start_error", { error: message });
+      toast.error(message);
+    }
   };
 
   const profileOptions = profiles.map((p) => ({ value: p.id, label: `${p.name} (${p.provider_name})` }));
@@ -101,8 +130,10 @@ export default function TrainingStudioPage() {
 
       {selectedProfile && (
         <>
-          <Card>
-            <h2 className="mb-3 text-lg font-semibold">Audio Samples ({samples.length})</h2>
+          <CollapsiblePanel
+            title={`Audio Samples (${samples.length})`}
+            icon={<Music className="h-4 w-4 text-primary-500" />}
+          >
             <div className="space-y-4">
               <FileUploader onFiles={handleUpload} />
               <AudioRecorder onRecorded={handleRecord} />
@@ -112,28 +143,30 @@ export default function TrainingStudioPage() {
               {samples.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)] px-2">
-                    <span>Total: {samples.reduce((sum: number, s: any) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
+                    <span>Total: {samples.reduce((sum, s) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
                   </div>
-                  {samples.map((s: any) => (
+                  {samples.map((s) => (
                     <div key={s.id} className="flex items-center gap-3 rounded border border-[var(--color-border)] p-2">
                       <span className="flex-1 text-sm truncate">{s.original_filename}</span>
-                      <span className="text-xs text-[var(--color-text-secondary)] uppercase">{s.format}</span>
+                      <span className="text-xs text-[var(--color-text-secondary)] uppercase hidden sm:inline">{s.format}</span>
                       <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "Pending"}</span>
                       <Badge status={s.preprocessed ? "ready" : "pending"} />
                     </div>
                   ))}
                 </div>
               )}
-              {samples.some((s: any) => !s.preprocessed) && (
+              {samples.some((s) => !s.preprocessed) && (
                 <Button variant="secondary" onClick={handlePreprocess} disabled={preprocessing}>
                   {preprocessing ? "Preprocessing..." : "Preprocess Samples"}
                 </Button>
               )}
             </div>
-          </Card>
+          </CollapsiblePanel>
 
-          <Card>
-            <h2 className="mb-3 text-lg font-semibold">Train Model</h2>
+          <CollapsiblePanel
+            title="Train Model"
+            icon={<Cpu className="h-4 w-4 text-blue-500" />}
+          >
             <div className="space-y-4">
               <Button onClick={handleStartTraining} disabled={samples.length === 0}>Start Training</Button>
               {progress && (
@@ -143,11 +176,14 @@ export default function TrainingStudioPage() {
                 </div>
               )}
             </div>
-          </Card>
+          </CollapsiblePanel>
 
           {profileJobs.length > 0 && (
-            <Card>
-              <h2 className="mb-3 text-lg font-semibold">Training History</h2>
+            <CollapsiblePanel
+              title="Training History"
+              icon={<History className="h-4 w-4 text-gray-500" />}
+              defaultOpen={false}
+            >
               <div className="space-y-2">
                 {profileJobs.map((job) => (
                   <div key={job.id} className="flex items-center justify-between rounded border border-[var(--color-border)] p-3">
@@ -157,12 +193,12 @@ export default function TrainingStudioPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge status={job.status} />
-                      {["queued", "training"].includes(job.status) && <Button size="sm" variant="danger" onClick={() => cancelJob(job.id)}>Cancel</Button>}
+                      {["queued", "training"].includes(job.status) && <Button size="sm" variant="danger" onClick={() => { logger.info("job_cancel", { job_id: job.id }); cancelJob(job.id); }}>Cancel</Button>}
                     </div>
                   </div>
                 ))}
               </div>
-            </Card>
+            </CollapsiblePanel>
           )}
         </>
       )}

@@ -519,7 +519,7 @@ Add Atlas Vox as an MCP server in your Claude Desktop configuration (`claude_des
 {
   "mcpServers": {
     "atlas-vox": {
-      "url": "http://localhost:8000/mcp/sse",
+      "url": "http://localhost:8100/mcp/sse",
       "transport": "sse"
     }
   }
@@ -532,7 +532,7 @@ Add Atlas Vox as an MCP server in your Claude Desktop configuration (`claude_des
 {
   "mcpServers": {
     "atlas-vox": {
-      "url": "http://localhost:8000/mcp/sse",
+      "url": "http://localhost:8100/mcp/sse",
       "transport": "sse",
       "headers": {
         "Authorization": "Bearer avx_your_api_key_here"
@@ -556,7 +556,7 @@ Once configured, Claude can use natural language to:
 import json
 import httpx
 
-BASE = "http://localhost:8000"
+BASE = "http://localhost:8100"
 
 async def mcp_call(method: str, params: dict = {}, msg_id: int = 1) -> dict:
     """Send a JSONRPC 2.0 message to the Atlas Vox MCP server."""
@@ -603,7 +603,7 @@ print(f"Latency: {audio_data['latency_ms']}ms")
 **Initialize:**
 
 ```bash
-curl -X POST http://localhost:8000/mcp/message \
+curl -X POST http://localhost:8100/mcp/message \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 ```
@@ -611,7 +611,7 @@ curl -X POST http://localhost:8000/mcp/message \
 **List tools:**
 
 ```bash
-curl -X POST http://localhost:8000/mcp/message \
+curl -X POST http://localhost:8100/mcp/message \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
@@ -619,7 +619,7 @@ curl -X POST http://localhost:8000/mcp/message \
 **Synthesize speech:**
 
 ```bash
-curl -X POST http://localhost:8000/mcp/message \
+curl -X POST http://localhost:8100/mcp/message \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc":"2.0","id":3,"method":"tools/call",
@@ -633,7 +633,7 @@ curl -X POST http://localhost:8000/mcp/message \
 **Read profiles resource:**
 
 ```bash
-curl -X POST http://localhost:8000/mcp/message \
+curl -X POST http://localhost:8100/mcp/message \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"atlas-vox://profiles"}}'
 ```

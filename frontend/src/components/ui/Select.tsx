@@ -18,7 +18,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         ref={ref}
         id={id}
         className={clsx(
-          "h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)]",
+          "h-10 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)]",
           "focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500",
           className
         )}

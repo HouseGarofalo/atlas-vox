@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { api } from "../services/api";
 import type { Voice } from "../types";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("VoiceLibraryStore");
 
 interface VoiceLibraryFilters {
   provider: string | null;
@@ -32,16 +35,21 @@ export const useVoiceLibraryStore = create<VoiceLibraryState>((set, get) => ({
   },
 
   fetchAllVoices: async () => {
+    logger.info("fetchAllVoices");
     set({ loading: true, error: null });
     try {
       const { voices } = await api.listAllVoices();
+      logger.info("fetchAllVoices_success", { count: voices.length });
       set({ voices, loading: false });
-    } catch (e: any) {
-      set({ error: e.message, loading: false });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to fetch voices";
+      logger.error("fetchAllVoices_failed", { error: message });
+      set({ error: message, loading: false });
     }
   },
 
   setFilter: (key, value) => {
+    logger.info("setFilter", { key, value });
     set((s) => ({
       filters: { ...s.filters, [key]: value },
     }));
