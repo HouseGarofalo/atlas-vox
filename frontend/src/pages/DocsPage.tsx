@@ -1033,13 +1033,20 @@ const PORT_ASSIGNMENTS: PortAssignment[] = [
    Reusable sub-components
    ================================================================ */
 
-function CodeBlock({ children, className }: { children: string; className?: string }) {
+function CodeBlock({ children, className, title }: { children: string; className?: string; title?: string }) {
   return (
-    <pre
-      className={`rounded bg-gray-900 p-3 text-xs text-green-400 font-mono overflow-x-auto whitespace-pre-wrap ${className ?? ""}`}
-    >
-      {children}
-    </pre>
+    <div className={className}>
+      {title && (
+        <div className="rounded-t bg-gray-800 px-3 py-1.5 text-[10px] font-medium text-gray-400">
+          {title}
+        </div>
+      )}
+      <pre
+        className={`${title ? "rounded-b" : "rounded"} bg-gray-900 p-3 text-xs text-green-400 font-mono overflow-x-auto whitespace-pre-wrap`}
+      >
+        {children}
+      </pre>
+    </div>
   );
 }
 
@@ -1733,25 +1740,299 @@ export function MCPIntegrationTab() {
         </div>
       </CollapsiblePanel>
 
+      {/* Claude Code CLI */}
+      <CollapsiblePanel title="Claude Code (CLI) Configuration" defaultOpen={false} icon={<Terminal className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Add Atlas Vox as an MCP server in your Claude Code <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">settings.json</code> or
+          project-level <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">.claude/settings.json</code>:
+        </p>
+        <CodeBlock title="~/.claude/settings.json">{`{
+  "mcpServers": {
+    "atlas-vox": {
+      "type": "sse",
+      "url": "http://localhost:8100/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer avx_your_api_key_here"
+      }
+    }
+  }
+}`}</CodeBlock>
+        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+          Once configured, you can use Atlas Vox tools directly in Claude Code:
+        </p>
+        <CodeBlock title="Example usage in Claude Code">{`> Use atlas_vox_list_voices to show available voices
+> Synthesize "Hello world" with the kokoro provider using atlas_vox_speak
+> Check provider health with atlas_vox_provider_status`}</CodeBlock>
+      </CollapsiblePanel>
+
+      {/* Custom Agents (Python) */}
+      <CollapsiblePanel title="Custom Python Agent Integration" defaultOpen={false} icon={<Terminal className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Connect any Python agent to Atlas Vox using the <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">mcp</code> SDK:
+        </p>
+        <CodeBlock title="pip install">{`pip install mcp httpx-sse`}</CodeBlock>
+        <CodeBlock title="Python MCP Client">{`import asyncio
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+
+async def main():
+    # Connect to Atlas Vox MCP server
+    async with sse_client(
+        url="http://localhost:8100/mcp/sse",
+        headers={"Authorization": "Bearer avx_your_api_key_here"}
+    ) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            # Initialize the connection
+            await session.initialize()
+
+            # List available tools
+            tools = await session.list_tools()
+            print(f"Available tools: {[t.name for t in tools.tools]}")
+
+            # List available voices
+            result = await session.call_tool(
+                "atlas_vox_list_voices", arguments={}
+            )
+            print(f"Voices: {result.content}")
+
+            # Synthesize speech
+            result = await session.call_tool(
+                "atlas_vox_speak",
+                arguments={
+                    "text": "Hello from my custom agent!",
+                    "voice": "af_heart",
+                    "provider": "kokoro"
+                }
+            )
+            print(f"Audio: {result.content}")
+
+            # Check provider health
+            result = await session.call_tool(
+                "atlas_vox_provider_status", arguments={}
+            )
+            print(f"Providers: {result.content}")
+
+asyncio.run(main())`}</CodeBlock>
+      </CollapsiblePanel>
+
+      {/* Claude Agent SDK */}
+      <CollapsiblePanel title="Claude Agent SDK (Anthropic)" defaultOpen={false} icon={<Terminal className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Use Atlas Vox as a tool server in agents built with the Anthropic Agent SDK:
+        </p>
+        <CodeBlock title="Python — claude_agent_sdk">{`from anthropic import Anthropic
+from claude_agent_sdk import Agent, MCPServerConfig
+
+# Configure Atlas Vox as an MCP server
+atlas_vox = MCPServerConfig(
+    name="atlas-vox",
+    transport="sse",
+    url="http://localhost:8100/mcp/sse",
+    headers={"Authorization": "Bearer avx_your_api_key_here"}
+)
+
+# Create an agent with Atlas Vox tools
+agent = Agent(
+    model="claude-sonnet-4-6",
+    mcp_servers=[atlas_vox],
+    system_prompt="""You are a voice assistant. You can:
+    - List available voices with atlas_vox_list_voices
+    - Synthesize speech with atlas_vox_speak
+    - Train new voice models with atlas_vox_train_voice
+    - Compare voices with atlas_vox_compare_voices
+    - Check provider status with atlas_vox_provider_status"""
+)
+
+# Run the agent
+result = agent.run("Synthesize 'Welcome to Atlas Vox' using the best available voice")`}</CodeBlock>
+      </CollapsiblePanel>
+
+      {/* LangChain / LangGraph */}
+      <CollapsiblePanel title="LangChain / LangGraph Integration" defaultOpen={false} icon={<Terminal className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Use the OpenAI-compatible API endpoint for LangChain agents. No MCP configuration needed — Atlas Vox
+          exposes <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">POST /v1/audio/speech</code> which
+          works with any OpenAI SDK client:
+        </p>
+        <CodeBlock title="Python — LangChain">{`from openai import OpenAI
+
+# Point the OpenAI client at Atlas Vox
+client = OpenAI(
+    base_url="http://localhost:8100/v1",
+    api_key="not-needed"  # AUTH_DISABLED=true
+)
+
+# Synthesize speech (OpenAI-compatible)
+response = client.audio.speech.create(
+    model="tts-1",       # Maps to Kokoro
+    voice="alloy",       # Maps to af_alloy
+    input="Hello from LangChain!",
+    speed=1.0
+)
+
+# Save the audio
+response.stream_to_file("output.mp3")`}</CodeBlock>
+        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+          <strong>Model mapping:</strong> <code className="text-xs">tts-1</code> → Kokoro,{" "}
+          <code className="text-xs">tts-1-hd</code> → ElevenLabs.{" "}
+          <strong>Voice mapping:</strong> alloy, echo, fable, onyx, nova, shimmer map to Kokoro voices.
+        </p>
+      </CollapsiblePanel>
+
+      {/* Direct REST API */}
+      <CollapsiblePanel title="Direct REST API (curl / httpx / fetch)" defaultOpen={false} icon={<Terminal className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          For custom integrations without MCP, use the REST API directly:
+        </p>
+        <CodeBlock title="curl — Synthesize speech">{`# Synthesize text (requires a voice profile ID)
+curl -X POST http://localhost:8100/api/v1/synthesize \\
+  -H "Content-Type: application/json" \\
+  -d '{"text": "Hello world", "profile_id": "YOUR_PROFILE_ID"}' \\
+  | jq .
+
+# OpenAI-compatible endpoint (no profile needed)
+curl -X POST http://localhost:8100/v1/audio/speech \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "tts-1", "voice": "alloy", "input": "Hello world"}' \\
+  --output hello.mp3
+
+# List all providers
+curl http://localhost:8100/api/v1/providers | jq .
+
+# Health check
+curl http://localhost:8100/api/v1/health | jq .`}</CodeBlock>
+        <CodeBlock title="Python — httpx">{`import httpx
+
+client = httpx.Client(base_url="http://localhost:8100")
+
+# List voices
+voices = client.get("/api/v1/voices").json()
+print(f"{voices['count']} voices available")
+
+# Synthesize
+result = client.post("/api/v1/synthesize", json={
+    "text": "Hello from Python!",
+    "profile_id": "your-profile-id",
+    "speed": 1.0,
+    "output_format": "wav"
+}).json()
+print(f"Audio: {result['audio_url']}")`}</CodeBlock>
+        <CodeBlock title="JavaScript — fetch">{`// List providers
+const providers = await fetch('http://localhost:8100/api/v1/providers')
+  .then(r => r.json());
+console.log(providers.providers.map(p => p.display_name));
+
+// OpenAI-compatible synthesis
+const audio = await fetch('http://localhost:8100/v1/audio/speech', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    model: 'tts-1',
+    voice: 'alloy',
+    input: 'Hello from JavaScript!'
+  })
+});
+const blob = await audio.blob();
+// Play or save the audio blob`}</CodeBlock>
+      </CollapsiblePanel>
+
+      {/* n8n / Make / Zapier */}
+      <CollapsiblePanel title="n8n / Make / Zapier (Webhook)" defaultOpen={false} icon={<Workflow className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Use Atlas Vox webhooks to trigger automations when training completes or fails:
+        </p>
+        <CodeBlock title="Create a webhook subscription">{`# Subscribe to training events
+curl -X POST http://localhost:8100/api/v1/webhooks \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "url": "https://your-n8n-instance.com/webhook/atlas-vox",
+    "events": "training.completed,training.failed",
+    "secret": "your-hmac-secret"
+  }'`}</CodeBlock>
+        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+          Atlas Vox sends HMAC-SHA256 signed payloads to your webhook URL. Verify with the{" "}
+          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">X-Atlas-Vox-Signature</code> header.
+        </p>
+        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+          For <strong>n8n</strong>: Use an HTTP Webhook trigger node. For <strong>Make</strong>: Use a Custom Webhook module.
+          For <strong>Zapier</strong>: Use Webhooks by Zapier as the trigger. The payload includes job ID, profile ID,
+          provider, status, and error details.
+        </p>
+      </CollapsiblePanel>
+
       {/* SSE Transport */}
-      <CollapsiblePanel title="SSE Transport" defaultOpen={false} icon={<Workflow className="h-4 w-4 text-primary-500" />}>
+      <CollapsiblePanel title="SSE Transport Details" defaultOpen={false} icon={<Workflow className="h-4 w-4 text-primary-500" />}>
         <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
           Atlas Vox uses <strong>Server-Sent Events (SSE)</strong> as the MCP transport mechanism.
           SSE provides a persistent, one-way connection from server to client, with client-to-server
           communication via HTTP POST to a messages endpoint.
         </p>
-        <CodeBlock>{`
-Transport Flow:
+        <CodeBlock>{`Transport Flow:
   1. Client connects to GET /mcp/sse
   2. Server sends SSE event with messages endpoint URL
-  3. Client sends JSONRPC 2.0 requests via POST to messages endpoint
+  3. Client sends JSONRPC 2.0 requests via POST to /mcp/message
   4. Server streams responses back via SSE
 
-Endpoint:     GET  /mcp/sse          -- SSE connection
-Messages:     POST /mcp/messages     -- JSONRPC 2.0 requests
+Endpoints:
+  GET  /mcp/sse          — SSE connection (persistent)
+  POST /mcp/message      — JSONRPC 2.0 requests
+
 Protocol:     JSONRPC 2.0
-Auth:         Bearer token (optional when AUTH_DISABLED=true)
-Scopes:       read, write, synthesize, train, admin`.trim()}</CodeBlock>
+Auth:         Bearer token in Authorization header
+              Optional when AUTH_DISABLED=true (default)
+Scopes:       read, write, synthesize, train, admin
+Keepalive:    Ping every 30 seconds`}</CodeBlock>
+      </CollapsiblePanel>
+
+      {/* API Key Scopes for MCP */}
+      <CollapsiblePanel title="API Key Scopes for MCP" defaultOpen={false} icon={<ShieldCheck className="h-4 w-4 text-primary-500" />}>
+        <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          Each MCP tool requires specific scopes. Create an API key on the API Keys page with the appropriate scopes for your use case:
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-secondary)]">
+                <th className="pb-2 font-medium">Tool</th>
+                <th className="pb-2 font-medium">Required Scope</th>
+                <th className="pb-2 font-medium">Use Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { tool: "atlas_vox_list_voices", scope: "read", use: "Browse available voices" },
+                { tool: "atlas_vox_provider_status", scope: "read", use: "Check provider health" },
+                { tool: "atlas_vox_get_training_status", scope: "read", use: "Monitor training jobs" },
+                { tool: "atlas_vox_list_available_voices", scope: "read", use: "Browse provider voices" },
+                { tool: "atlas_vox_synthesize", scope: "synthesize", use: "Generate speech from profile" },
+                { tool: "atlas_vox_speak", scope: "synthesize", use: "Quick synthesis (no profile)" },
+                { tool: "atlas_vox_compare_voices", scope: "synthesize", use: "Side-by-side comparison" },
+                { tool: "atlas_vox_manage_profile", scope: "write", use: "Create/update/delete profiles" },
+                { tool: "atlas_vox_train_voice", scope: "train", use: "Start training jobs" },
+              ].map((row) => (
+                <tr key={row.tool} className="border-b border-[var(--color-border)] last:border-0">
+                  <td className="py-2"><code className="text-xs">{row.tool}</code></td>
+                  <td className="py-2"><Badge status={row.scope === "read" ? "ready" : row.scope === "synthesize" ? "training" : row.scope === "write" ? "pending" : "error"} className="text-[10px]" /></td>
+                  <td className="py-2 text-[var(--color-text-secondary)]">{row.use}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <CodeBlock title="Create a scoped API key">{`# Read-only key (list voices, check health)
+curl -X POST http://localhost:8100/api/v1/api-keys \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "my-agent-readonly", "scopes": ["read"]}'
+
+# Synthesis key (read + synthesize)
+curl -X POST http://localhost:8100/api/v1/api-keys \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "my-agent-synth", "scopes": ["read", "synthesize"]}'
+
+# Full access key
+curl -X POST http://localhost:8100/api/v1/api-keys \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "my-agent-admin", "scopes": ["admin"]}'`}</CodeBlock>
       </CollapsiblePanel>
     </div>
   );
