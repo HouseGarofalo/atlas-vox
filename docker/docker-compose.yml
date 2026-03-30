@@ -13,6 +13,7 @@ services:
       - REDIS_URL=redis://atlas-vox-redis:6379/1
       - AUTH_DISABLED=true
       - STORAGE_PATH=/app/storage
+      - PORT=8000
       - GPU_SERVICE_URL=http://host.docker.internal:8200
     extra_hosts:
       - "host.docker.internal:host-gateway"
