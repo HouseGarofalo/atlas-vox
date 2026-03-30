@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
@@ -1059,7 +1059,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
    Tab: Provider Guides
    ================================================================ */
 
-function ProviderGuidesTab() {
+export function ProviderGuidesTab() {
   const [selectedProvider, setSelectedProvider] = useState(PROVIDER_GUIDES[0].name);
   const guide = PROVIDER_GUIDES.find((g) => g.name === selectedProvider) ?? PROVIDER_GUIDES[0];
 
@@ -1235,7 +1235,7 @@ function ProviderGuidesTab() {
    Tab: Architecture
    ================================================================ */
 
-function ArchitectureTab() {
+export function ArchitectureTab() {
   return (
     <div className="space-y-4">
       <Card>
@@ -1443,7 +1443,7 @@ class TTSProvider(ABC):
    Tab: Configuration
    ================================================================ */
 
-function ConfigurationTab() {
+export function ConfigurationTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGroup, setSelectedGroup] = useState("All");
 
@@ -1640,7 +1640,7 @@ MODELS_DIR=./storage/models
    Tab: MCP Integration
    ================================================================ */
 
-function MCPIntegrationTab() {
+export function MCPIntegrationTab() {
   return (
     <div className="space-y-4">
       <Card>
@@ -1761,7 +1761,7 @@ Scopes:       read, write, synthesize, train, admin`.trim()}</CodeBlock>
    Tab: Self-Healing
    ================================================================ */
 
-function SelfHealingTab() {
+export function SelfHealingTab() {
   return (
     <div className="space-y-4">
       <Card>
@@ -1945,7 +1945,7 @@ curl http://localhost:8100/api/v1/healing/incidents
    Tab: Deployment
    ================================================================ */
 
-function DeploymentTab() {
+export function DeploymentTab() {
   return (
     <div className="space-y-4">
       {/* Quickstart */}
@@ -2152,10 +2152,6 @@ docker compose -f docker/docker-compose.yml exec worker celery -A app.tasks.cele
 
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Provider Guides");
-
-  useEffect(() => {
-    logger.info("page_mounted");
-  }, []);
 
   return (
     <div className="space-y-6">

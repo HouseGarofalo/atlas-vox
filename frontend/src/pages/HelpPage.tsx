@@ -1,297 +1,624 @@
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo } from "react";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
 import {
   Search,
   ExternalLink,
-  Rocket,
+  ChevronDown,
+  ChevronRight,
   BookOpen,
+  Rocket,
   Footprints,
   Terminal,
-  AlertTriangle,
+  Wrench,
   Code2,
   Info,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Mic,
-  AudioLines,
-  Users,
-  Cpu,
-  Cloud,
-  Key,
+  Copy,
+  Check,
+} from "lucide-react";
+import {
+  Layers,
   Settings,
-  Palette,
-  Shield,
-  FileText,
-  HelpCircle,
-  Wrench,
-  BarChart3,
-  Globe,
-  Zap,
-  Volume2,
-  Play,
-  ArrowRight,
+  Plug,
+  ShieldCheck,
+  Server,
 } from "lucide-react";
 import { createLogger } from "../utils/logger";
+import {
+  ProviderGuidesTab,
+  ArchitectureTab,
+  ConfigurationTab,
+  MCPIntegrationTab,
+  SelfHealingTab as SelfHealingDocsTab,
+  DeploymentTab,
+} from "./DocsPage";
 
 const logger = createLogger("HelpPage");
 
-/* ================================================================
-   TYPES
-   ================================================================ */
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 interface FaqItem {
   question: string;
   answer: string;
   category: string;
-  severity: "easy" | "moderate" | "complex";
 }
 
-/* ================================================================
-   CONSTANTS
-   ================================================================ */
+interface GettingStartedStep {
+  step: number;
+  title: string;
+  description: string;
+  command?: string;
+  note?: string;
+}
+
+interface GuideSection {
+  title: string;
+  content: string;
+}
+
+interface Walkthrough {
+  title: string;
+  description: string;
+  steps: string[];
+}
+
+interface CliCommand {
+  name: string;
+  syntax: string;
+  description: string;
+  options: { flag: string; description: string }[];
+  example: string;
+}
+
+interface ApiExample {
+  title: string;
+  method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  endpoint: string;
+  body?: string;
+  response: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
 
 const TABS = [
-  "Getting Started",
-  "User Guide",
-  "Walkthroughs",
-  "CLI Reference",
-  "Troubleshooting",
-  "API Reference",
-  "About",
+  { key: "getting-started", label: "Getting Started", icon: Rocket, group: "guide" },
+  { key: "user-guide", label: "User Guide", icon: BookOpen, group: "guide" },
+  { key: "walkthroughs", label: "Walkthroughs", icon: Footprints, group: "guide" },
+  { key: "cli", label: "CLI", icon: Terminal, group: "reference" },
+  { key: "api", label: "API", icon: Code2, group: "reference" },
+  { key: "providers", label: "Providers", icon: Settings, group: "reference" },
+  { key: "architecture", label: "Architecture", icon: Layers, group: "technical" },
+  { key: "configuration", label: "Configuration", icon: Settings, group: "technical" },
+  { key: "mcp", label: "MCP", icon: Plug, group: "technical" },
+  { key: "self-healing", label: "Self-Healing", icon: ShieldCheck, group: "technical" },
+  { key: "deployment", label: "Deployment", icon: Server, group: "technical" },
+  { key: "troubleshooting", label: "Troubleshooting", icon: Wrench, group: "support" },
+  { key: "about", label: "About", icon: Info, group: "support" },
 ] as const;
-type Tab = (typeof TABS)[number];
 
-const TAB_ICONS: Record<Tab, ReactNode> = {
-  "Getting Started": <Rocket className="h-4 w-4" />,
-  "User Guide": <BookOpen className="h-4 w-4" />,
-  Walkthroughs: <Footprints className="h-4 w-4" />,
-  "CLI Reference": <Terminal className="h-4 w-4" />,
-  Troubleshooting: <AlertTriangle className="h-4 w-4" />,
-  "API Reference": <Code2 className="h-4 w-4" />,
-  About: <Info className="h-4 w-4" />,
-};
+const GROUPS = [
+  { key: "guide", label: "Guide" },
+  { key: "reference", label: "Reference" },
+  { key: "technical", label: "Technical" },
+  { key: "support", label: "Support" },
+] as const;
 
-/* ================================================================
-   FAQ DATA
-   ================================================================ */
+type TabKey = (typeof TABS)[number]["key"];
 
-const FAQ_ITEMS: FaqItem[] = [
-  // Installation (5)
+const FAQ_CATEGORIES = [
+  "All",
+  "Installation",
+  "Providers",
+  "Audio",
+  "Training",
+  "Synthesis",
+  "Database",
+  "Self-Healing",
+  "Performance",
+] as const;
+
+/* ---------- Getting Started ---------- */
+
+const GETTING_STARTED_STEPS: GettingStartedStep[] = [
   {
-    category: "Installation",
-    severity: "moderate",
-    question: "Docker build fails during pip install",
-    answer:
-      "This is usually caused by network issues or PyPI rate limiting. Rebuild with no cache:\n\ndocker compose -f docker/docker-compose.yml build --no-cache backend\n\nIf behind a corporate proxy, set HTTP_PROXY and HTTPS_PROXY build args in docker-compose.yml.",
+    step: 1,
+    title: "Install Prerequisites",
+    description:
+      "Ensure you have the required tools installed on your system before proceeding.",
+    command: "python --version   # 3.11+\nnode --version      # 20+\nredis-server --version",
+    note: "Docker is recommended as an alternative -- it bundles everything automatically.",
   },
   {
-    category: "Installation",
-    severity: "easy",
-    question: "Port 3100 or 8100 is already in use",
-    answer:
-      "Edit docker/.env and change BACKEND_PORT and FRONTEND_PORT to different values (e.g., 8200 and 3200). Then restart with make docker-up. On Linux/macOS you can find what's using the port: lsof -i :8100",
+    step: 2,
+    title: "Clone and Configure",
+    description:
+      "Clone the repository and copy the example environment file. Adjust settings as needed.",
+    command: "git clone https://github.com/HouseGarofalo/atlas-vox.git\ncd atlas-vox\ncp .env.example .env",
+    note: "Default settings work out of the box for local development.",
   },
   {
-    category: "Installation",
-    severity: "easy",
-    question: "Redis connection fails on startup",
-    answer:
-      "Atlas Vox uses Redis database 1 (redis://localhost:6379/1) to avoid collision with other services on database 0. Ensure Redis is running: redis-server (or check Docker). Verify connectivity: python -c \"import redis; print(redis.Redis(db=1).ping())\"",
+    step: 3,
+    title: "Start with Docker (Recommended)",
+    description:
+      "Docker Compose starts the backend, frontend, Redis, and a Celery worker in one command.",
+    command: "make docker-up",
+    note: "For GPU support: make docker-gpu-up (requires NVIDIA Container Toolkit).",
   },
   {
-    category: "Installation",
-    severity: "moderate",
-    question: "espeak-ng is missing (Piper/Kokoro won't start)",
-    answer:
-      "Some local TTS providers depend on espeak-ng for phonemization. Install it:\n\n- Ubuntu/Debian: sudo apt install espeak-ng\n- macOS: brew install espeak-ng\n- Windows: download from https://github.com/espeak-ng/espeak-ng/releases\n\nThe Docker image includes it automatically.",
+    step: 4,
+    title: "Or Start Locally",
+    description:
+      "If you prefer a local development setup without Docker, start each service individually.",
+    command:
+      "# Terminal 1 -- Backend\ncd backend && uvicorn app.main:app --reload --port 8100\n\n# Terminal 2 -- Frontend\ncd frontend && npm install && npm run dev\n\n# Terminal 3 -- Celery worker\ncd backend && celery -A app.tasks.celery_app worker --loglevel=info",
+    note: "Redis must be running on localhost:6379 (database 1).",
   },
   {
-    category: "Installation",
-    severity: "easy",
-    question: "Python version mismatch (requires 3.11+)",
-    answer:
-      "Atlas Vox requires Python 3.11 or newer. Check your version: python --version. Use pyenv to install the right version:\n\npyenv install 3.11.9\npyenv local 3.11.9\n\nOr use the Docker setup which includes the correct Python version.",
-  },
-  // Providers (5)
-  {
-    category: "Providers",
-    severity: "easy",
-    question: "A provider shows as 'unhealthy' on the dashboard",
-    answer:
-      "Go to the Providers page, expand the provider card, and click Health Check to see the specific error. Common causes: missing API key (cloud providers like ElevenLabs, Azure), missing model files (local providers on first run), or GPU not available (for GPU-mode providers).",
+    step: 5,
+    title: "Verify Installation",
+    description:
+      "Open the Web UI and check the Dashboard. Healthy providers show a green badge. CPU-only providers (Kokoro, Piper) are green immediately.",
+    command: "http://localhost:3000   # dev frontend\nhttp://localhost:3100   # Docker frontend\nhttp://localhost:8100/docs   # Swagger API docs",
+    note: "Cloud providers (ElevenLabs, Azure) need API keys configured before they go green.",
   },
   {
-    category: "Providers",
-    severity: "easy",
-    question: "Missing API key for cloud providers",
-    answer:
-      "Cloud providers (ElevenLabs, Azure Speech) require API keys. Navigate to Providers, expand the provider, enter your API key in the Settings section, and click Save. Then run Health Check to verify. Keys are stored encrypted in the database.",
-  },
-  {
-    category: "Providers",
-    severity: "moderate",
-    question: "How do I enable GPU mode for local providers?",
-    answer:
-      "Run make docker-gpu-up instead of make docker-up. This starts a GPU worker container with CUDA 12.1 and automatically enables GPU mode for Coqui XTTS, StyleTTS2, CosyVoice, Dia, and Dia2. Requires an NVIDIA GPU with compatible drivers. Verify GPU access: nvidia-smi",
-  },
-  {
-    category: "Providers",
-    severity: "moderate",
-    question: "Model download is stuck or very slow",
-    answer:
-      "Large models (Dia2: ~8GB, Coqui XTTS: ~6GB) can take a while on first download. Models are cached in ~/.cache/atlas-vox/models/. If the download stalls, delete the partial file and restart. You can also pre-download models: atlas-vox providers download <name>",
-  },
-  {
-    category: "Providers",
-    severity: "complex",
-    question: "Provider timeout errors during synthesis",
-    answer:
-      "Default timeout is 30 seconds. Large texts or slow hardware can exceed this. Increase the timeout in your provider config or environment: SYNTHESIS_TIMEOUT=60. For GPU providers running on CPU, performance is 10-50x slower -- switch to GPU mode or use a CPU-optimized provider (Kokoro, Piper).",
-  },
-  // Audio (3)
-  {
-    category: "Audio",
-    severity: "easy",
-    question: "Synthesis succeeds but no audio plays in browser",
-    answer:
-      "Check the browser console for errors. Try accessing the audio URL directly: http://localhost:8100/api/v1/audio/<filename>. Some browsers block autoplay -- click the waveform to start playback. If using MP3/OGG, try WAV format as it has the widest browser support.",
-  },
-  {
-    category: "Audio",
-    severity: "easy",
-    question: "Audio upload is rejected as unsupported format",
-    answer:
-      "Atlas Vox supports WAV, MP3, FLAC, OGG, and M4A formats. Convert other formats using ffmpeg:\n\nffmpeg -i input.webm output.wav\nffmpeg -i input.aac -ar 22050 output.wav",
-  },
-  {
-    category: "Audio",
-    severity: "moderate",
-    question: "Preprocessing fails with 'audio too short' error",
-    answer:
-      "Training audio must be at least 3 seconds long after trimming silence. Record or upload longer clips. Preprocessing trims leading/trailing silence, applies noise reduction, and normalizes volume. If your audio has long pauses, they may be trimmed, making it too short.",
-  },
-  // Training (3)
-  {
-    category: "Training",
-    severity: "moderate",
-    question: "Training job stuck at 'queued' status",
-    answer:
-      "This means the Celery worker is not running or not connected to Redis. In Docker, check worker logs: docker compose -f docker/docker-compose.yml logs worker. For local dev, start a Celery worker manually:\n\ncelery -A app.tasks.celery_app worker --loglevel=info\n\nVerify Redis is accessible on redis://localhost:6379/1.",
-  },
-  {
-    category: "Training",
-    severity: "moderate",
-    question: "Training fails immediately after starting",
-    answer:
-      "Ensure you have uploaded AND preprocessed audio samples before starting training. The most common causes: (1) no preprocessed samples exist for the profile, (2) the provider doesn't support training (check capabilities), (3) GPU out of memory (try reducing batch size or use fewer samples).",
-  },
-  {
-    category: "Training",
-    severity: "easy",
-    question: "WebSocket disconnects during training monitoring",
-    answer:
-      "Training continues in the background even if the WebSocket disconnects. Refresh the page to reconnect. If the WebSocket keeps dropping, check for proxy/firewall issues. The backend sends heartbeat pings every 30 seconds -- ensure nothing is closing idle connections.",
-  },
-  // Synthesis (2)
-  {
-    category: "Synthesis",
-    severity: "moderate",
-    question: "Synthesis is very slow (10+ seconds per request)",
-    answer:
-      "If using GPU-oriented models (Coqui XTTS, StyleTTS2, Dia, Dia2) on CPU, performance will be 10-50x slower. Solutions: (1) switch to GPU mode with make docker-gpu-up, (2) use CPU-optimized providers like Kokoro or Piper for fast synthesis, (3) reduce text length -- long passages synthesize slower.",
-  },
-  {
-    category: "Synthesis",
-    severity: "easy",
-    question: "Getting '429 Too Many Requests' rate limit errors",
-    answer:
-      "Atlas Vox rate-limits expensive endpoints to prevent abuse: synthesis (10/min), training (5/min), comparison (5/min), OpenAI-compatible (20/min). Wait 60 seconds and retry, or reduce request frequency. Rate limits reset every minute. For bulk synthesis, use the CLI with --batch flag.",
-  },
-  // Database (2)
-  {
-    category: "Database",
-    severity: "easy",
-    question: "'No such table' errors on startup",
-    answer:
-      "Run make migrate to apply database migrations. For a fresh start, delete atlas_vox.db and restart the backend -- tables are created automatically on first launch. If using PostgreSQL, ensure the database exists and connection string is correct.",
-  },
-  {
-    category: "Database",
-    severity: "complex",
-    question: "Alembic migration errors or conflicts",
-    answer:
-      "If migrations fail due to conflicts: (1) check alembic history: alembic history, (2) stamp the current state: alembic stamp head, (3) create a new migration: alembic revision --autogenerate -m 'fix'. For a clean reset, drop all tables and re-run: alembic upgrade head. Always back up your database before destructive operations.",
-  },
-  // Self-Healing (2)
-  {
-    category: "Self-Healing",
-    severity: "moderate",
-    question: "How do I test the self-healing system?",
-    answer:
-      "Navigate to the Self-Healing page. The system monitors provider health, training job failures, and resource usage. To test: (1) stop a provider's service intentionally, (2) watch the detection rule trigger, (3) observe the automatic remediation action (restart, fallback, or alert). Check the incident log for details.",
-  },
-  {
-    category: "Self-Healing",
-    severity: "complex",
-    question: "Self-healing triggers false positive restarts",
-    answer:
-      "Adjust detection thresholds in the Self-Healing settings. Default health check interval is 30 seconds with 3 failures before triggering. Increase the failure threshold or interval if your providers have intermittent connectivity. You can also exclude specific providers from auto-remediation.",
+    step: 6,
+    title: "Synthesize Your First Voice",
+    description:
+      "Go to the Synthesis Lab, select the default Kokoro provider, type a sentence, and click Synthesize. You should hear audio playback within seconds.",
+    note: "Browse the Voice Library for 400+ built-in voices across all providers.",
   },
 ];
 
-/* ================================================================
-   HELPER COMPONENTS
-   ================================================================ */
+/* ---------- User Guide ---------- */
 
-function CodeBlock({ children, title }: { children: string; title?: string }) {
+const GUIDE_SECTIONS: GuideSection[] = [
+  {
+    title: "Dashboard",
+    content:
+      "The Dashboard is your operational overview. It shows four stats cards (total profiles, active training jobs, recent syntheses, active providers), a provider health grid with live status badges, a list of active training jobs with progress bars, and a scrollable recent synthesis history. The health grid auto-refreshes and links to each provider's detail page.",
+  },
+  {
+    title: "Voice Profiles",
+    content:
+      "Voice Profiles are identities bound to a specific provider. Each profile has a lifecycle: pending (created, no training), training (job in progress), ready (usable for synthesis), error (training failed), and archived (soft-deleted). You can create profiles manually or from a Voice Library entry. Profiles store metadata like language, description, and the provider-specific voice ID. The Training tab on each profile shows version history.",
+  },
+  {
+    title: "Voice Library",
+    content:
+      "The Voice Library aggregates all available voices across all healthy providers (400+ voices). Filter by provider, language, or gender. Preview a voice with one click. Click 'Use Voice' to jump to the Synthesis Lab pre-configured, or 'Create Profile' to create a persistent profile from that voice.",
+  },
+  {
+    title: "Training Studio",
+    content:
+      "The Training Studio manages the full voice-cloning pipeline: upload audio samples (WAV, MP3, FLAC, OGG, M4A) or record directly in the browser, run preprocessing (noise reduction, normalization, silence trimming), configure training parameters (epochs, learning rate, batch size), then launch training. Progress updates arrive via WebSocket in real-time with epoch-level granularity. Completed models appear as new versions on the parent profile.",
+  },
+  {
+    title: "Synthesis Lab",
+    content:
+      "The primary synthesis interface. Enter plain text or switch to the Monaco-based SSML editor (Azure only). Select a profile and adjust speed (0.5-2.0x), pitch (-20 to +20), and volume (0.0-2.0). Choose an output format (WAV, MP3, OGG). Use persona presets for quick parameter tuning. Results play inline with a wavesurfer.js waveform and can be downloaded.",
+  },
+  {
+    title: "Comparison",
+    content:
+      "Select 2-5 voice profiles, enter the same text, and generate synthesis results side-by-side. Each result shows the waveform, latency, and audio format. Useful for A/B testing providers, evaluating training quality, or selecting the best voice for a project.",
+  },
+  {
+    title: "Providers",
+    content:
+      "Lists all 9 TTS providers with capabilities, health status, and configuration. Expand a provider to see its settings form (API keys for cloud, GPU toggle for local), run a health check, or trigger a test synthesis. Provider cards show supported features: streaming, SSML, voice cloning, multi-language, and emotion control.",
+  },
+  {
+    title: "API Keys",
+    content:
+      "Create scoped API keys for programmatic access. Available scopes: read (list/get resources), write (create/update/delete), synthesize (run synthesis), train (start training), admin (full access). Keys use the format avx_* and are hashed with Argon2id on the server. When AUTH_DISABLED=true (default for local dev), API keys are not enforced.",
+  },
+  {
+    title: "Settings",
+    content:
+      "Toggle between light and dark themes, set your default TTS provider and audio output format. Preferences are persisted in browser localStorage and apply immediately.",
+  },
+  {
+    title: "Design System",
+    content:
+      "Customize the look and feel of Atlas Vox in real time with 15 design tokens: accent hue, accent saturation, font family (system, Inter, monospace, serif), font size, density, sidebar width, content max width, border radius, card style (bordered, raised, flat, glassmorphism), and animation toggles. Choose from 8 theme presets (Blue, Emerald, Violet, Sunset, Rose, Mono, Minimal, Spacious Serif) or create your own combination. All changes persist across sessions.",
+  },
+  {
+    title: "Self-Healing System",
+    content:
+      "The self-healing subsystem continuously monitors provider health and system resources. It uses configurable detection rules (consecutive failures, latency thresholds, error rate windows) to identify problems, then runs automated remediation actions (restart provider, clear cache, switch to fallback). The incident log shows all detected issues and their resolution. An MCP bridge exposes self-healing status to external agents.",
+  },
+  {
+    title: "Docs Page",
+    content:
+      "An in-app documentation browser with provider-specific guides (setup, capabilities, pricing), architecture diagrams, and configuration reference. Content is rendered from markdown and stays in sync with the repository docs/ folder.",
+  },
+  {
+    title: "Help Center",
+    content:
+      "This page. Seven tabs covering getting started, feature guides, step-by-step walkthroughs, CLI reference, troubleshooting FAQ, API reference, and project information.",
+  },
+  {
+    title: "Admin (Legacy)",
+    content:
+      "The legacy admin page provides a raw view of system state: database stats, Redis connection, Celery workers, and task queue depth. It is superseded by the Dashboard and Self-Healing pages but remains available for debugging.",
+  },
+  {
+    title: "Persona Presets Reference",
+    content:
+      "Six built-in persona presets for the Synthesis Lab: Friendly (speed 1.0, pitch +2, volume 1.0), Professional (0.95, 0, 1.0), Energetic (1.15, +5, 1.1), Calm (0.85, -3, 0.9), Authoritative (0.9, -5, 1.15), and Soothing (0.8, -2, 0.85). Presets apply immediately when selected and can be fine-tuned with the sliders.",
+  },
+];
+
+/* ---------- Walkthroughs ---------- */
+
+const WALKTHROUGHS: Walkthrough[] = [
+  {
+    title: "First Synthesis",
+    description: "Generate your first TTS audio in under a minute.",
+    steps: [
+      "Open the Synthesis Lab from the sidebar.",
+      "Select the default Kokoro provider profile (pre-configured).",
+      "Type or paste text into the input area (up to 5000 characters).",
+      "Click 'Synthesize' and wait for the waveform to appear.",
+      "Click the play button to listen, or click the download icon to save the WAV file.",
+    ],
+  },
+  {
+    title: "Voice Cloning with Coqui XTTS",
+    description: "Clone a voice from a short audio sample.",
+    steps: [
+      "Navigate to Providers and ensure Coqui XTTS shows a green health badge. Enable GPU mode for best quality.",
+      "Go to Voice Profiles and click 'New Profile'. Select Coqui XTTS as the provider.",
+      "On the profile page, open the Samples tab and upload 1-3 audio clips (6+ seconds each, clean speech, minimal background noise).",
+      "Click 'Preprocess' to normalize audio levels and trim silence.",
+      "Click 'Start Training' and monitor the progress bar. Training takes 5-15 minutes on GPU.",
+      "Once status changes to 'ready', go to the Synthesis Lab and select your new profile to synthesize with your cloned voice.",
+    ],
+  },
+  {
+    title: "Comparing Voices",
+    description: "A/B test multiple voices with the same text.",
+    steps: [
+      "Open the Comparison page from the sidebar.",
+      "Select 2-5 voice profiles from the multi-select dropdown.",
+      "Enter the text you want to compare (the same text is synthesized by each profile).",
+      "Click 'Compare' and review the side-by-side results. Each card shows the waveform, latency, and a play button.",
+    ],
+  },
+  {
+    title: "Azure Speech Setup",
+    description: "Configure the Azure AI Speech cloud provider.",
+    steps: [
+      "In the Azure Portal, create a 'Speech' resource (Cognitive Services). Choose a supported region (e.g., eastus).",
+      "After deployment, go to Keys and Endpoint. Copy Key 1 and the Region name.",
+      "In Atlas Vox, go to Providers > Azure Speech > Settings.",
+      "Paste the API key into the 'API Key' field and enter the region (e.g., eastus) in the 'Region' field. Click Save.",
+      "Click 'Health Check' -- it should turn green. Azure Speech supports SSML, neural voices, and multiple languages.",
+    ],
+  },
+  {
+    title: "ElevenLabs Setup",
+    description: "Configure the ElevenLabs cloud provider.",
+    steps: [
+      "Sign up at elevenlabs.io and navigate to your Profile Settings page.",
+      "Copy your API key from the API Keys section.",
+      "In Atlas Vox, go to Providers > ElevenLabs > Settings. Paste your API key and click Save.",
+      "Run a Health Check to verify. ElevenLabs offers a free tier with limited characters per month.",
+    ],
+  },
+  {
+    title: "OpenAI-Compatible API Usage",
+    description: "Use Atlas Vox as a drop-in replacement for the OpenAI TTS API.",
+    steps: [
+      "Atlas Vox exposes an OpenAI-compatible endpoint at /v1/audio/speech.",
+      "Use any OpenAI TTS client library by pointing it to your Atlas Vox server:\n\ncurl http://localhost:8100/v1/audio/speech \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\": \"kokoro\", \"input\": \"Hello from Atlas Vox!\", \"voice\": \"af_heart\"}' \\\n  --output speech.wav",
+      "The 'model' field maps to a provider name, and 'voice' maps to a voice ID from that provider. Supported response_format values: wav, mp3, opus, flac.",
+    ],
+  },
+  {
+    title: "Design Customization",
+    description: "Personalize the Atlas Vox interface with the Design System.",
+    steps: [
+      "Open the Design System page from the sidebar (palette icon).",
+      "Start with a preset: click one of the 8 theme cards (Blue, Emerald, Violet, Sunset, Rose, Mono, Minimal, Spacious Serif).",
+      "Fine-tune individual tokens using the sliders and dropdowns: accent color hue/saturation, font family, density, card style, border radius, and more.",
+      "All changes apply instantly and persist across browser sessions. Click 'Reset to Defaults' to return to the Blue preset.",
+    ],
+  },
+];
+
+/* ---------- CLI Commands ---------- */
+
+const CLI_COMMANDS: CliCommand[] = [
+  {
+    name: "synthesize",
+    syntax: "atlas-vox synthesize TEXT",
+    description: "Synthesize text to speech and save the output audio file.",
+    options: [
+      { flag: "--provider, -p", description: "Provider name (default: kokoro)" },
+      { flag: "--voice, -v", description: "Voice ID" },
+      { flag: "--output, -o", description: "Output file path (default: output.wav)" },
+      { flag: "--format, -f", description: "Audio format: wav, mp3, ogg" },
+      { flag: "--speed", description: "Speed multiplier (0.5-2.0)" },
+      { flag: "--pitch", description: "Pitch adjustment (-20 to +20)" },
+    ],
+    example: 'atlas-vox synthesize "Hello world" -p kokoro -v af_heart -o hello.wav',
+  },
+  {
+    name: "providers",
+    syntax: "atlas-vox providers [SUBCOMMAND]",
+    description: "List, inspect, and health-check TTS providers.",
+    options: [
+      { flag: "list", description: "Show all providers with status" },
+      { flag: "health [NAME]", description: "Run health check on a provider" },
+      { flag: "config NAME", description: "Show provider configuration" },
+    ],
+    example: "atlas-vox providers list\natlas-vox providers health kokoro",
+  },
+  {
+    name: "profiles",
+    syntax: "atlas-vox profiles [SUBCOMMAND]",
+    description: "Manage voice profiles.",
+    options: [
+      { flag: "list", description: "List all profiles" },
+      { flag: "create NAME --provider PROV", description: "Create a new profile" },
+      { flag: "show ID", description: "Show profile details" },
+      { flag: "delete ID", description: "Delete a profile" },
+    ],
+    example: "atlas-vox profiles list\natlas-vox profiles create myvoice --provider kokoro",
+  },
+  {
+    name: "train",
+    syntax: "atlas-vox train PROFILE_ID",
+    description: "Start a training job for a voice profile.",
+    options: [
+      { flag: "--epochs, -e", description: "Number of training epochs (default: 100)" },
+      { flag: "--learning-rate, -lr", description: "Learning rate (default: 0.0001)" },
+      { flag: "--batch-size, -b", description: "Batch size (default: 4)" },
+      { flag: "--wait, -w", description: "Wait for training to complete" },
+    ],
+    example: "atlas-vox train abc-123 --epochs 200 --wait",
+  },
+  {
+    name: "compare",
+    syntax: "atlas-vox compare TEXT --profiles ID1 ID2 [ID3...]",
+    description: "Synthesize the same text with multiple profiles for comparison.",
+    options: [
+      { flag: "--profiles", description: "Comma-separated profile IDs (2-5)" },
+      { flag: "--output-dir, -o", description: "Directory to save audio files" },
+    ],
+    example: 'atlas-vox compare "Test phrase" --profiles id1,id2,id3 -o ./comparison/',
+  },
+  {
+    name: "presets",
+    syntax: "atlas-vox presets [SUBCOMMAND]",
+    description: "Manage synthesis presets (persona parameter sets).",
+    options: [
+      { flag: "list", description: "Show all presets" },
+      { flag: "show NAME", description: "Show preset details" },
+    ],
+    example: "atlas-vox presets list",
+  },
+  {
+    name: "init",
+    syntax: "atlas-vox init",
+    description: "Initialize the Atlas Vox database and default configuration.",
+    options: [
+      { flag: "--force", description: "Re-initialize even if database exists" },
+    ],
+    example: "atlas-vox init --force",
+  },
+  {
+    name: "serve",
+    syntax: "atlas-vox serve",
+    description: "Start the Atlas Vox API server (alternative to uvicorn).",
+    options: [
+      { flag: "--host", description: "Bind address (default: 0.0.0.0)" },
+      { flag: "--port", description: "Port number (default: 8100)" },
+      { flag: "--reload", description: "Enable auto-reload for development" },
+      { flag: "--workers", description: "Number of worker processes" },
+    ],
+    example: "atlas-vox serve --port 8100 --reload",
+  },
+];
+
+/* ---------- FAQ / Troubleshooting ---------- */
+
+const FAQ_ITEMS: FaqItem[] = [
+  // Installation (4)
+  { category: "Installation", question: "How do I start Atlas Vox with Docker?", answer: 'Run "make docker-up" from the project root. This starts the backend, frontend, Redis, and a Celery worker. The Web UI is at http://localhost:3100.' },
+  { category: "Installation", question: "Docker build fails during pip install", answer: 'Rebuild with no cache: "docker compose -f docker/docker-compose.yml build --no-cache backend". Usually caused by network issues or PyPI rate limiting.' },
+  { category: "Installation", question: "Port 3100 or 8100 is already in use", answer: "Edit docker/.env and change BACKEND_PORT / FRONTEND_PORT. Then restart with make docker-up." },
+  { category: "Installation", question: "Redis connection fails on startup", answer: "Atlas Vox uses Redis database 1 (redis://localhost:6379/1) to avoid collision with other services on database 0. Ensure Redis is running: 'redis-server' or check Docker." },
+  // Providers (5)
+  { category: "Providers", question: "A provider shows as 'unhealthy' on the dashboard", answer: "Go to Providers, expand the provider, and click Health Check to see the specific error. Common causes: missing API key (cloud), missing model files (local), or GPU not available." },
+  { category: "Providers", question: "How do I configure ElevenLabs?", answer: "Get your API key from elevenlabs.io/settings. Go to Providers > ElevenLabs > Settings, enter the API key, click Save, then run a Health Check." },
+  { category: "Providers", question: "How do I configure Azure Speech?", answer: "Create a Speech resource in the Azure Portal. Copy Key 1 and Region from Keys and Endpoint. Enter them in Providers > Azure Speech > Settings." },
+  { category: "Providers", question: "How do I enable GPU mode for local providers?", answer: 'Run "make docker-gpu-up" instead of "make docker-up". This starts a GPU worker with CUDA 12.1 and auto-enables GPU mode for Coqui XTTS, StyleTTS2, CosyVoice, Dia, and Dia2.' },
+  { category: "Providers", question: "Can I use multiple cloud providers at the same time?", answer: "Yes. Each provider is independent. Configure API keys for both ElevenLabs and Azure Speech, and you can use either from the Synthesis Lab or Comparison page." },
+  // Audio (3)
+  { category: "Audio", question: "Synthesis succeeds but no audio plays", answer: "Check the audio URL in the response. Try accessing it directly: http://localhost:8100/api/v1/audio/<filename>. Verify browser console for errors. Try WAV format instead of MP3/OGG." },
+  { category: "Audio", question: "Audio upload is rejected as unsupported format", answer: "Atlas Vox supports WAV, MP3, FLAC, OGG, and M4A. Convert your file with: ffmpeg -i input.webm output.wav" },
+  { category: "Audio", question: "Audio sounds distorted or clipped", answer: "Check the volume slider (should be between 0.8 and 1.2 for most cases). If using a cloned voice, ensure training samples were clean without clipping. Re-preprocess with noise reduction enabled." },
+  // Training (3)
+  { category: "Training", question: "Training job stuck at 'queued'", answer: "The Celery worker is not running or not connected to Redis. In Docker: docker compose -f docker/docker-compose.yml logs worker. For local dev, start Celery manually." },
+  { category: "Training", question: "Training fails immediately", answer: "Ensure you have uploaded and preprocessed audio samples before starting training. Check the training job error message for the specific cause (common: insufficient samples or corrupted audio)." },
+  { category: "Training", question: "How many audio samples do I need for voice cloning?", answer: "Minimum: 1 sample of 6+ seconds (Coqui XTTS). For best quality: 10-30 minutes of clean speech split into 5-15 second segments. More data generally produces better results up to about 1 hour." },
+  // Synthesis (3)
+  { category: "Synthesis", question: "Synthesis returns an empty audio file", answer: "The provider may have returned an error silently. Check backend logs: docker compose logs backend | tail -50. Common cause: text too short (some providers need at least a few words) or invalid voice ID." },
+  { category: "Synthesis", question: "SSML is not being interpreted", answer: "SSML is only supported by Azure Speech. Switch to the Azure Speech provider and ensure you are in SSML mode (click 'Switch to SSML' in the Synthesis Lab). Validate your SSML markup." },
+  { category: "Synthesis", question: "Streaming synthesis is choppy", answer: "Streaming quality depends on network and provider. Use a wired connection for cloud providers. For local providers, ensure the GPU is not overloaded. Reduce text length for smoother streaming." },
+  // Database (2)
+  { category: "Database", question: "Getting 'no such table' errors", answer: 'Run "make migrate" to apply database migrations. For a fresh start, delete atlas_vox.db and restart -- tables are created automatically.' },
+  { category: "Database", question: "Can I switch from SQLite to PostgreSQL?", answer: "Yes. Set DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname in your .env file. Run make migrate to create tables. PostgreSQL is recommended for production deployments." },
+  // Self-Healing (2)
+  { category: "Self-Healing", question: "What triggers self-healing remediation?", answer: "Configurable rules: consecutive health check failures (default: 3), average latency exceeding threshold (default: 5000ms), error rate above threshold in a time window (default: 50% in 5 minutes). Each rule can be customized per provider." },
+  { category: "Self-Healing", question: "A provider keeps restarting due to self-healing", answer: "Check the incident log for the root cause. Common: GPU out of memory (reduce batch size or switch to CPU), missing model files (re-download), or rate limiting (increase cooldown). Disable auto-remediation for that provider temporarily via the Self-Healing settings." },
+  // Performance (3)
+  { category: "Performance", question: "Synthesis is very slow (10+ seconds)", answer: "GPU-oriented models (Coqui XTTS, StyleTTS2, Dia) on CPU are slow. Switch to GPU mode, or use Kokoro/Piper for fast CPU synthesis (typically <1 second)." },
+  { category: "Performance", question: "GPU memory errors (CUDA out of memory)", answer: "VRAM requirements: Dia2 needs 8 GB+, Dia needs 6 GB+, Coqui XTTS needs 4 GB+, StyleTTS2 needs 3 GB+, CosyVoice needs 4 GB+. Close other GPU applications, use shorter text, or switch to CPU mode." },
+  { category: "Performance", question: "Getting '429 Too Many Requests' errors", answer: "Rate limits: synthesis 10/min, training 5/min, comparison 5/min, OpenAI-compatible 20/min. Wait a minute and try again, or reduce request frequency." },
+];
+
+/* ---------- API Reference ---------- */
+
+const API_EXAMPLES: ApiExample[] = [
+  { title: "Health Check", method: "GET", endpoint: "/api/v1/health", response: '{\n  "status": "healthy",\n  "checks": { "database": "ok", "redis": "ok", "storage": "ok" },\n  "version": "0.1.0"\n}' },
+  { title: "List Profiles", method: "GET", endpoint: "/api/v1/profiles", response: '{\n  "profiles": [{ "id": "abc-123", "name": "My Voice", "status": "ready", ... }],\n  "count": 5\n}' },
+  { title: "Create Profile", method: "POST", endpoint: "/api/v1/profiles", body: '{\n  "name": "My Voice",\n  "provider_name": "kokoro",\n  "language": "en"\n}', response: '{\n  "id": "abc-123",\n  "name": "My Voice",\n  "status": "pending",\n  "provider_name": "kokoro"\n}' },
+  { title: "Get Profile", method: "GET", endpoint: "/api/v1/profiles/{id}", response: '{\n  "id": "abc-123",\n  "name": "My Voice",\n  "status": "ready",\n  "provider_name": "kokoro",\n  "voice_id": "af_heart",\n  "language": "en",\n  "created_at": "2025-01-15T10:30:00Z"\n}' },
+  { title: "Synthesize", method: "POST", endpoint: "/api/v1/synthesize", body: '{\n  "text": "Hello world!",\n  "profile_id": "abc-123",\n  "output_format": "wav"\n}', response: '{\n  "audio_url": "/api/v1/audio/out_abc123.wav",\n  "latency_ms": 89,\n  "format": "wav"\n}' },
+  { title: "Stream Synthesis", method: "POST", endpoint: "/api/v1/synthesize/stream", body: '{\n  "text": "Streaming audio output...",\n  "profile_id": "abc-123"\n}', response: '-- Binary audio stream (chunked transfer encoding)\n-- Content-Type: audio/wav' },
+  { title: "Batch Synthesis", method: "POST", endpoint: "/api/v1/synthesize/batch", body: '{\n  "items": [\n    { "text": "First sentence.", "profile_id": "abc-123" },\n    { "text": "Second sentence.", "profile_id": "abc-123" }\n  ]\n}', response: '{\n  "results": [\n    { "audio_url": "/api/v1/audio/batch_1.wav", "latency_ms": 85 },\n    { "audio_url": "/api/v1/audio/batch_2.wav", "latency_ms": 91 }\n  ]\n}' },
+  { title: "Compare Voices", method: "POST", endpoint: "/api/v1/compare", body: '{\n  "text": "Test phrase",\n  "profile_ids": ["id1", "id2", "id3"]\n}', response: '{\n  "text": "Test phrase",\n  "results": [\n    { "profile_id": "id1", "audio_url": "...", "latency_ms": 80 },\n    { "profile_id": "id2", "audio_url": "...", "latency_ms": 120 }\n  ]\n}' },
+  { title: "List Providers", method: "GET", endpoint: "/api/v1/providers", response: '{\n  "providers": [\n    { "name": "kokoro", "status": "healthy", "capabilities": { ... } }\n  ],\n  "count": 9\n}' },
+  { title: "List Voices", method: "GET", endpoint: "/api/v1/voices?provider=kokoro", response: '{\n  "voices": [{ "id": "af_heart", "name": "Heart", "language": "en", ... }],\n  "count": 54\n}' },
+  { title: "List Presets", method: "GET", endpoint: "/api/v1/presets", response: '{\n  "presets": [\n    { "name": "Friendly", "speed": 1.0, "pitch": 2, "volume": 1.0 },\n    { "name": "Professional", "speed": 0.95, "pitch": 0, "volume": 1.0 }\n  ]\n}' },
+  { title: "Create API Key", method: "POST", endpoint: "/api/v1/api-keys", body: '{\n  "name": "CI Pipeline",\n  "scopes": ["read", "synthesize"]\n}', response: '{\n  "id": "key-456",\n  "name": "CI Pipeline",\n  "key": "avx_abc123...",\n  "scopes": ["read", "synthesize"],\n  "created_at": "2025-01-15T10:30:00Z"\n}' },
+];
+
+/* ---------- About data ---------- */
+
+const ABOUT_INFO = [
+  { label: "Version", value: "0.1.0" },
+  { label: "TTS Providers", value: "9" },
+  { label: "Interfaces", value: "Web UI, REST API, CLI, MCP Server" },
+  { label: "Backend", value: "Python 3.11 + FastAPI + SQLAlchemy + Celery" },
+  { label: "Frontend", value: "React 18 + TypeScript + Vite + Tailwind CSS" },
+  { label: "Database", value: "SQLite (dev) / PostgreSQL (prod)" },
+  { label: "Task Queue", value: "Celery + Redis" },
+  { label: "License", value: "MIT" },
+];
+
+const PROVIDER_TABLE = [
+  { name: "Kokoro", type: "Local CPU", model: "82M params", voices: "54", languages: "en, ja, zh, ko, fr, de, it, pt, es, hi", streaming: "No", cloning: "No", pricing: "Open Source" },
+  { name: "Piper", type: "Local CPU", model: "ONNX VITS", voices: "200+", languages: "30+", streaming: "No", cloning: "No", pricing: "Open Source" },
+  { name: "ElevenLabs", type: "Cloud", model: "Proprietary", voices: "100+", languages: "29", streaming: "Yes", cloning: "Yes", pricing: "Freemium" },
+  { name: "Azure Speech", type: "Cloud", model: "Neural TTS", voices: "400+", languages: "140+", streaming: "Yes", cloning: "No", pricing: "Paid" },
+  { name: "Coqui XTTS v2", type: "Local GPU", model: "~1.5B params", voices: "Custom", languages: "17", streaming: "Yes", cloning: "Yes", pricing: "Open Source" },
+  { name: "StyleTTS2", type: "Local GPU", model: "~200M params", voices: "Custom", languages: "en", streaming: "No", cloning: "Yes", pricing: "Open Source" },
+  { name: "CosyVoice", type: "Local GPU", model: "300M params", voices: "Custom", languages: "en, zh, ja, ko", streaming: "Yes", cloning: "Yes", pricing: "Open Source" },
+  { name: "Dia", type: "Local GPU", model: "1.6B params", voices: "2", languages: "en", streaming: "No", cloning: "No", pricing: "Open Source" },
+  { name: "Dia2", type: "Local GPU", model: "2B params", voices: "2", languages: "en", streaming: "Yes", cloning: "No", pricing: "Open Source" },
+];
+
+const DOC_LINKS = [
+  { label: "Swagger API Docs", href: "/docs" },
+  { label: "ReDoc API Reference", href: "/redoc" },
+  { label: "GitHub Repository", href: "https://github.com/HouseGarofalo/atlas-vox" },
+  { label: "Product Requirements Document", href: "/docs/prp/PRD.md" },
+];
+
+const PERSONA_PRESETS = [
+  { name: "Friendly", speed: "1.0x", pitch: "+2", volume: "1.0", character: "Warm and approachable" },
+  { name: "Professional", speed: "0.95x", pitch: "0", volume: "1.0", character: "Clear and authoritative" },
+  { name: "Energetic", speed: "1.15x", pitch: "+5", volume: "1.1", character: "Upbeat and enthusiastic" },
+  { name: "Calm", speed: "0.85x", pitch: "-3", volume: "0.9", character: "Soothing and relaxed" },
+  { name: "Authoritative", speed: "0.9x", pitch: "-5", volume: "1.15", character: "Commanding and confident" },
+  { name: "Soothing", speed: "0.8x", pitch: "-2", volume: "0.85", character: "Gentle and comforting" },
+];
+
+const RATE_LIMITS = [
+  { endpoint: "POST /api/v1/synthesize", limit: "10 req/min" },
+  { endpoint: "POST /api/v1/synthesize/stream", limit: "10 req/min" },
+  { endpoint: "POST /api/v1/synthesize/batch", limit: "5 req/min" },
+  { endpoint: "POST /api/v1/compare", limit: "5 req/min" },
+  { endpoint: "POST /api/v1/training", limit: "5 req/min" },
+  { endpoint: "POST /v1/audio/speech (OpenAI)", limit: "20 req/min" },
+  { endpoint: "GET /api/v1/* (reads)", limit: "60 req/min" },
+  { endpoint: "POST /api/v1/* (writes)", limit: "30 req/min" },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Reusable sub-components                                            */
+/* ------------------------------------------------------------------ */
+
+function CodeBlock({ code, language = "bash" }: { code: string; language?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
-    <div className="my-2 overflow-x-auto rounded-lg bg-gray-900 text-gray-100">
-      {title && (
-        <div className="border-b border-gray-700 px-4 py-2 text-xs font-medium text-gray-400">
-          {title}
+    <div className="group relative mt-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-[var(--color-border)]">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-border)]">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)]">{language}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          aria-label="Copy code"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs leading-relaxed">{code}</pre>
+    </div>
+  );
+}
+
+function FaqCard({ item, open, onToggle }: { item: FaqItem; open: boolean; onToggle: () => void }) {
+  const badgeStatus: Record<string, string> = {
+    Installation: "pending",
+    Providers: "cloud",
+    Audio: "ready",
+    Training: "training",
+    Synthesis: "local",
+    Database: "archived",
+    "Self-Healing": "gpu",
+    Performance: "unhealthy",
+  };
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] transition-colors hover:border-primary-300 dark:hover:border-primary-700">
+      <button onClick={onToggle} className="flex w-full items-center justify-between p-4 text-left">
+        <div className="flex items-center gap-3 min-w-0">
+          <Badge status={badgeStatus[item.category] || "pending"} className="shrink-0 text-[10px]" />
+          <span className="font-medium truncate">{item.question}</span>
+        </div>
+        {open ? <ChevronDown className="h-4 w-4 shrink-0 ml-2" /> : <ChevronRight className="h-4 w-4 shrink-0 ml-2" />}
+      </button>
+      {open && (
+        <div className="border-t border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          {item.answer}
         </div>
       )}
-      <pre className="p-4 text-sm leading-relaxed">
-        <code>{children}</code>
-      </pre>
     </div>
   );
 }
 
-function SeverityBadge({ severity }: { severity: "easy" | "moderate" | "complex" }) {
-  const map = {
-    easy: "ready",
-    moderate: "archived",
-    complex: "error",
-  };
-  return <Badge status={map[severity]} className="text-[10px]" />;
-}
-
-function StepNumber({ n }: { n: number }) {
+function DataTable({ headers, rows }: { headers: string[]; rows: (string | React.ReactNode)[][] }) {
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-500 text-sm font-bold text-white">
-      {n}
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-secondary)]">
+            {headers.map((h) => (
+              <th key={h} className="pb-2 pr-4 font-medium whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-[var(--color-border)] last:border-0">
+              {row.map((cell, j) => (
+                <td key={j} className={`py-2 pr-4 ${j === 0 ? "font-medium" : ""}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
-  );
-}
-
-function SectionLabel({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-secondary)]">
-      {icon}
-      <span>{text}</span>
-    </div>
-  );
-}
-
-function InlineCode({ children }: { children: string }) {
-  return (
-    <code className="rounded bg-gray-100 px-1.5 py-0.5 text-sm dark:bg-gray-800">
-      {children}
-    </code>
   );
 }
 
@@ -300,8 +627,8 @@ function MethodBadge({ method }: { method: string }) {
     GET: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
     POST: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
     PUT: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    PATCH: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
     DELETE: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-    PATCH: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
   };
   return (
     <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${colors[method] || colors.GET}`}>
@@ -310,1336 +637,183 @@ function MethodBadge({ method }: { method: string }) {
   );
 }
 
-/* ================================================================
-   TAB: GETTING STARTED
-   ================================================================ */
+/* ------------------------------------------------------------------ */
+/*  Tab renderers                                                      */
+/* ------------------------------------------------------------------ */
 
 function GettingStartedTab() {
   return (
     <div className="space-y-4">
-      {/* Welcome */}
       <Card>
-        <div className="flex items-start gap-3">
-          <Rocket className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-          <div>
-            <h2 className="text-lg font-semibold">Welcome to Atlas Vox</h2>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-              Atlas Vox is a self-hosted voice training and customization platform that brings
-              together 9 text-to-speech providers under a single, unified interface. It supports
-              voice cloning, real-time synthesis, side-by-side comparison, and a complete training
-              pipeline -- all accessible through the Web UI, REST API, CLI, and MCP server.
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Prerequisites */}
-      <CollapsiblePanel
-        title="Prerequisites"
-        icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
-        defaultOpen={true}
-      >
-        <div className="space-y-2 text-sm">
-          <p className="text-[var(--color-text-secondary)] mb-3">
-            Ensure you have the following installed before starting:
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[
-              { name: "Python 3.11+", required: true, note: "Backend runtime" },
-              { name: "Node.js 20+", required: true, note: "Frontend build" },
-              { name: "Redis", required: true, note: "Task queue & caching" },
-              { name: "Docker & Docker Compose", required: false, note: "Recommended for easy setup" },
-              { name: "NVIDIA GPU + CUDA 12.1", required: false, note: "For GPU providers" },
-              { name: "ffmpeg", required: false, note: "Audio format conversion" },
-            ].map((item) => (
-              <div
-                key={item.name}
-                className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] p-3"
-              >
-                {item.required ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-                ) : (
-                  <Info className="h-4 w-4 shrink-0 text-blue-500" />
-                )}
-                <div>
-                  <div className="font-medium">{item.name}</div>
-                  <div className="text-xs text-[var(--color-text-secondary)]">
-                    {item.required ? "Required" : "Optional"} -- {item.note}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Quickstart */}
-      <CollapsiblePanel
-        title="6-Step Quickstart"
-        icon={<Zap className="h-4 w-4 text-amber-500" />}
-        defaultOpen={true}
-      >
-        <div className="space-y-4">
-          {/* Step 1 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Clone and navigate to the project</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Clone the repository and enter the project directory.
-              </p>
-              <CodeBlock>{`git clone https://github.com/HouseGarofalo/atlas-vox.git
-cd atlas-vox`}</CodeBlock>
-            </div>
-          </div>
-
-          {/* Step 2 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Start services</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Use Docker Compose for the easiest setup, or run locally for development.
-              </p>
-              <CodeBlock title="Docker (recommended)">{`make docker-up`}</CodeBlock>
-              <CodeBlock title="Local development">{`make dev`}</CodeBlock>
-              <p className="mt-1 text-xs italic text-[var(--color-text-secondary)]">
-                For GPU support: <InlineCode>make docker-gpu-up</InlineCode>
-              </p>
-            </div>
-          </div>
-
-          {/* Step 3 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Open the Web UI</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Access the dashboard in your browser.
-              </p>
-              <CodeBlock>{`http://localhost:3100`}</CodeBlock>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                API documentation is at{" "}
-                <InlineCode>http://localhost:8100/docs</InlineCode>
-              </p>
-            </div>
-          </div>
-
-          {/* Step 4 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Check provider health on the Dashboard</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                The Dashboard shows a provider health grid. CPU-only providers (Kokoro, Piper)
-                should show as <Badge status="healthy" className="text-[10px]" /> immediately.
-                Cloud providers need API keys configured first.
-              </p>
-            </div>
-          </div>
-
-          {/* Step 5 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={5} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Create your first voice profile</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Go to Voice Profiles and create a new profile. Select a provider, give it a
-                descriptive name, and choose a language. Or browse the Voice Library first to
-                find a voice you like.
-              </p>
-            </div>
-          </div>
-
-          {/* Step 6 */}
-          <div className="flex items-start gap-4">
-            <StepNumber n={6} />
-            <div className="flex-1">
-              <h3 className="font-semibold">Synthesize your first speech</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Navigate to the Synthesis Lab, select your profile, type some text, and click
-                Synthesize. Listen to the result with the built-in waveform audio player.
-              </p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* What's Next */}
-      <Card>
-        <h3 className="font-semibold mb-3">What's Next?</h3>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <h2 className="mb-2 text-lg font-semibold">Welcome to Atlas Vox</h2>
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Atlas Vox is a self-hosted voice training and customization platform with 9 TTS providers,
+          4 interfaces (Web UI, REST API, CLI, MCP Server), and a complete voice-cloning pipeline.
+          Follow these steps to get up and running.
+        </p>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { tab: "User Guide", desc: "Learn every feature in detail", icon: <BookOpen className="h-4 w-4" /> },
-            { tab: "Walkthroughs", desc: "Step-by-step tutorials", icon: <Footprints className="h-4 w-4" /> },
-            { tab: "CLI Reference", desc: "Command-line usage", icon: <Terminal className="h-4 w-4" /> },
-            { tab: "Troubleshooting", desc: "Common issues & fixes", icon: <AlertTriangle className="h-4 w-4" /> },
-            { tab: "API Reference", desc: "REST API endpoints", icon: <Code2 className="h-4 w-4" /> },
-            { tab: "About", desc: "Tech stack & providers", icon: <Info className="h-4 w-4" /> },
-          ].map((item) => (
-            <div
-              key={item.tab}
-              className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] p-3 text-sm"
-            >
-              <span className="text-primary-500">{item.icon}</span>
-              <div>
-                <div className="font-medium">{item.tab}</div>
-                <div className="text-xs text-[var(--color-text-secondary)]">{item.desc}</div>
-              </div>
+            { label: "Python 3.11+", badge: "required" },
+            { label: "Node.js 20+", badge: "required" },
+            { label: "Redis 7+", badge: "required" },
+          ].map((p) => (
+            <div key={p.label} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2">
+              <span className="text-sm font-medium">{p.label}</span>
+              <Badge status="training" className="text-[10px]" />
             </div>
           ))}
         </div>
       </Card>
+
+      <div className="space-y-3">
+        {GETTING_STARTED_STEPS.map((step) => (
+          <Card key={step.step}>
+            <div className="flex items-start gap-4">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-500 text-sm font-bold text-white">
+                {step.step}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold">{step.title}</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{step.description}</p>
+                {step.command && <CodeBlock code={step.command} />}
+                {step.note && (
+                  <p className="mt-2 text-xs text-[var(--color-text-secondary)] italic">{step.note}</p>
+                )}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
-
-/* ================================================================
-   TAB: USER GUIDE
-   ================================================================ */
 
 function UserGuideTab() {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Card>
-        <div className="flex items-start gap-3">
-          <BookOpen className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-          <div>
-            <h2 className="text-lg font-semibold">Feature Guide</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              Comprehensive documentation for every page and feature in Atlas Vox.
-            </p>
-          </div>
-        </div>
+        <h2 className="mb-2 text-lg font-semibold">Feature Guide</h2>
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Overview of every section in the Atlas Vox interface. Click any panel to expand or collapse.
+        </p>
       </Card>
 
-      {/* Dashboard */}
-      <CollapsiblePanel
-        title="Dashboard"
-        icon={<BarChart3 className="h-4 w-4 text-blue-500" />}
-        defaultOpen={false}
-        id="guide-dashboard"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Dashboard is your home screen, providing an at-a-glance overview of the entire platform.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Stat Cards</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Card</th>
-                  <th className="pb-2 font-medium">Shows</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[var(--color-border)]">
-                  <td className="py-2 font-medium">Voice Profiles</td>
-                  <td className="py-2">Total number of voice profiles across all providers</td>
-                </tr>
-                <tr className="border-b border-[var(--color-border)]">
-                  <td className="py-2 font-medium">Active Jobs</td>
-                  <td className="py-2">Currently running or queued training jobs</td>
-                </tr>
-                <tr className="border-b border-[var(--color-border)]">
-                  <td className="py-2 font-medium">Recent Syntheses</td>
-                  <td className="py-2">Synthesis requests in the last 24 hours</td>
-                </tr>
-                <tr className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="py-2 font-medium">Active Providers</td>
-                  <td className="py-2">Number of healthy and configured providers</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Provider Health Grid</h4>
-          <p>
-            Each provider is shown as a card with a color-coded status:{" "}
-            <Badge status="healthy" className="text-[10px]" /> means operational,{" "}
-            <Badge status="unhealthy" className="text-[10px]" /> means the health check failed,{" "}
-            <Badge status="pending" className="text-[10px]" /> means not yet checked. Click any
-            provider to go to its configuration page.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Training Job Status</h4>
-          <p>
-            Active training jobs are listed with real-time progress bars. Status values:{" "}
-            <Badge status="queued" className="text-[10px]" /> (waiting for a Celery worker),{" "}
-            <Badge status="training" className="text-[10px]" /> (in progress),{" "}
-            <Badge status="completed" className="text-[10px]" /> (finished successfully),{" "}
-            <Badge status="failed" className="text-[10px]" /> (error occurred).
-          </p>
-        </div>
-      </CollapsiblePanel>
+      {GUIDE_SECTIONS.map((section) => (
+        <CollapsiblePanel key={section.title} title={section.title} defaultOpen={false}>
+          <p className="text-sm text-[var(--color-text-secondary)]">{section.content}</p>
+        </CollapsiblePanel>
+      ))}
 
-      {/* Voice Profiles */}
-      <CollapsiblePanel
-        title="Voice Profiles"
-        icon={<Users className="h-4 w-4 text-violet-500" />}
-        defaultOpen={false}
-        id="guide-profiles"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            Voice Profiles are the core identity unit in Atlas Vox. Each profile is bound to a
-            single TTS provider and represents a unique voice configuration.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Profile Status Lifecycle</h4>
-          <div className="flex flex-wrap items-center gap-2 my-2">
-            <Badge status="pending" /> <ArrowRight className="h-3 w-3" />
-            <Badge status="training" /> <ArrowRight className="h-3 w-3" />
-            <Badge status="ready" />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Meaning</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2"><Badge status="pending" /></td><td className="py-2">Newly created, no training started</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2"><Badge status="training" /></td><td className="py-2">Training job is running</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2"><Badge status="ready" /></td><td className="py-2">Training complete, ready for synthesis</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2"><Badge status="error" /></td><td className="py-2">Training failed (check job logs)</td></tr>
-                <tr><td className="py-2"><Badge status="archived" /></td><td className="py-2">Deactivated, preserved for reference</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Creating Profiles</h4>
-          <p>
-            Profiles can be created two ways: (1) clicking "New Profile" and selecting a provider
-            and voice, or (2) from the Voice Library by clicking "Create Profile" on any discovered
-            voice. Profiles created from the library pre-populate the provider and voice ID.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Managing Versions</h4>
-          <p>
-            Each training run produces a new model version. You can switch between versions, compare
-            them side-by-side, and roll back to a previous version if the latest training didn't improve quality.
-          </p>
-        </div>
-      </CollapsiblePanel>
+      <Card>
+        <h3 className="mb-3 font-semibold">Persona Presets</h3>
+        <DataTable
+          headers={["Preset", "Speed", "Pitch", "Volume", "Character"]}
+          rows={PERSONA_PRESETS.map((p) => [
+            p.name,
+            p.speed,
+            p.pitch,
+            p.volume,
+            <span key={p.name} className="text-[var(--color-text-secondary)]">{p.character}</span>,
+          ])}
+        />
+      </Card>
 
-      {/* Voice Library */}
-      <CollapsiblePanel
-        title="Voice Library"
-        icon={<AudioLines className="h-4 w-4 text-emerald-500" />}
-        defaultOpen={false}
-        id="guide-library"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Voice Library aggregates all available voices across every configured provider,
-            giving you a unified catalog of voices to browse and preview.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Filtering</h4>
-          <p>
-            Use the filter controls at the top to narrow results by provider (e.g., only Kokoro voices),
-            language (e.g., English, Japanese), or gender. The search bar performs fuzzy matching on
-            voice name and description.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Previewing Voices</h4>
-          <p>
-            Click the play button on any voice card to hear a sample synthesis. The preview uses
-            a standard sentence to give you a consistent comparison point across voices.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Creating Profiles from Library</h4>
-          <p>
-            Click "Create Profile" on any voice card to instantly create a voice profile with that
-            voice's provider and ID pre-populated. You'll be redirected to the profile detail page
-            to customize settings.
-          </p>
+      <Card>
+        <h3 className="mb-3 font-semibold">Voice Profile Lifecycle</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {["pending", "training", "ready", "error", "archived"].map((s, i) => (
+            <span key={s} className="flex items-center gap-1.5">
+              {i > 0 && <span className="text-[var(--color-text-tertiary)]">&rarr;</span>}
+              <Badge status={s} />
+            </span>
+          ))}
         </div>
-      </CollapsiblePanel>
-
-      {/* Training Studio */}
-      <CollapsiblePanel
-        title="Training Studio"
-        icon={<Mic className="h-4 w-4 text-red-500" />}
-        defaultOpen={false}
-        id="guide-training"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Training Studio is where you clone voices. The full workflow: select a profile,
-            upload or record audio, preprocess it, start training, and monitor progress in real time.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">1. Select Profile</h4>
-          <p>Choose which voice profile to train. Only profiles with status "pending" or "ready" can start new training runs.</p>
-          <h4 className="font-semibold text-[var(--color-text)]">2. Upload or Record Audio</h4>
-          <p>
-            Upload audio files (WAV, MP3, FLAC, OGG, M4A) or record directly in the browser using
-            the built-in audio recorder. Minimum 6 seconds of clear speech is recommended. More
-            audio (1-5 minutes) produces better voice cloning results.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">3. Preprocessing</h4>
-          <p>Click "Preprocess" to prepare audio samples. The pipeline applies:</p>
-          <ul className="ml-4 list-disc space-y-1">
-            <li><strong>Noise reduction</strong> -- removes background noise</li>
-            <li><strong>Volume normalization</strong> -- ensures consistent loudness</li>
-            <li><strong>Silence trimming</strong> -- removes leading/trailing silence</li>
-            <li><strong>Format standardization</strong> -- converts to the provider's required format</li>
-          </ul>
-          <h4 className="font-semibold text-[var(--color-text)]">4. Start Training</h4>
-          <p>
-            Click "Start Training" to submit a Celery task. The job enters a queue and starts when a
-            worker picks it up. Training duration depends on the provider and amount of audio.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">5. Monitor via WebSocket</h4>
-          <p>
-            Training progress updates are streamed in real time via WebSocket. You'll see a progress
-            bar, current epoch, loss values, and estimated time remaining. The profile status automatically
-            changes to "ready" when training completes.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Requirements per Provider</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Provider</th>
-                  <th className="pb-2 font-medium">Min Audio</th>
-                  <th className="pb-2 font-medium">GPU Required</th>
-                  <th className="pb-2 font-medium">VRAM</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2">Coqui XTTS v2</td><td className="py-2">6 seconds</td><td className="py-2">Recommended</td><td className="py-2">4 GB+</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2">StyleTTS2</td><td className="py-2">30 seconds</td><td className="py-2">Recommended</td><td className="py-2">4 GB+</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2">ElevenLabs</td><td className="py-2">1 minute</td><td className="py-2">No (cloud)</td><td className="py-2">N/A</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2">Dia / Dia2</td><td className="py-2">30 seconds</td><td className="py-2">Yes</td><td className="py-2">6-8 GB+</td></tr>
-                <tr><td className="py-2">CosyVoice</td><td className="py-2">10 seconds</td><td className="py-2">Recommended</td><td className="py-2">4 GB+</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Synthesis Lab */}
-      <CollapsiblePanel
-        title="Synthesis Lab"
-        icon={<Volume2 className="h-4 w-4 text-amber-500" />}
-        defaultOpen={false}
-        id="guide-synthesis"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Synthesis Lab is your primary workspace for generating speech. Enter text, pick a
-            voice profile, adjust parameters, and synthesize.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Text Input</h4>
-          <p>
-            Type or paste text into the input area. There's no hard character limit, but longer
-            texts take proportionally longer to synthesize. Most providers handle up to ~5,000
-            characters per request.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">SSML Editor Toggle</h4>
-          <p>
-            Click "Switch to SSML" to open the Monaco-based XML editor. SSML gives fine-grained
-            control over pronunciation, pauses, emphasis, and prosody. Supported by Azure Speech;
-            other providers ignore SSML tags and synthesize plain text content.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Speed / Pitch / Volume Controls</h4>
-          <p>
-            Sliders let you adjust synthesis parameters. Speed (0.5x-2.0x), Pitch (-10 to +10 semitones),
-            Volume (0.0-1.5). Not all providers support all parameters -- unsupported controls are
-            dimmed with a tooltip explaining why.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Persona Presets</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Preset</th>
-                  <th className="pb-2 font-medium">Speed</th>
-                  <th className="pb-2 font-medium">Pitch</th>
-                  <th className="pb-2 font-medium">Volume</th>
-                  <th className="pb-2 font-medium">Character</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { name: "Friendly", speed: "1.0x", pitch: "+2", volume: "1.0", char: "Warm and approachable" },
-                  { name: "Professional", speed: "0.95x", pitch: "0", volume: "1.0", char: "Clear and authoritative" },
-                  { name: "Energetic", speed: "1.15x", pitch: "+5", volume: "1.1", char: "Upbeat and enthusiastic" },
-                  { name: "Calm", speed: "0.85x", pitch: "-3", volume: "0.9", char: "Soothing and relaxed" },
-                  { name: "Authoritative", speed: "0.9x", pitch: "-5", volume: "1.15", char: "Commanding and confident" },
-                  { name: "Soothing", speed: "0.8x", pitch: "-2", volume: "0.85", char: "Gentle and comforting" },
-                ].map((p) => (
-                  <tr key={p.name} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2 font-medium">{p.name}</td>
-                    <td className="py-2">{p.speed}</td>
-                    <td className="py-2">{p.pitch}</td>
-                    <td className="py-2">{p.volume}</td>
-                    <td className="py-2 text-[var(--color-text-secondary)]">{p.char}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Output Formats</h4>
-          <p>
-            Choose from WAV (uncompressed, highest quality), MP3 (compressed, smaller files), or
-            OGG (compressed, open format). WAV is recommended for further processing; MP3/OGG for
-            sharing or embedding.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Comparison */}
-      <CollapsiblePanel
-        title="Comparison"
-        icon={<BarChart3 className="h-4 w-4 text-cyan-500" />}
-        defaultOpen={false}
-        id="guide-comparison"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Comparison page lets you synthesize the same text with multiple voice profiles
-            side-by-side, making it easy to evaluate different voices, providers, or training
-            versions.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">How it works</h4>
-          <ol className="ml-4 list-decimal space-y-1">
-            <li>Enter the text you want to compare</li>
-            <li>Select 2 or more voice profiles from the dropdown</li>
-            <li>Click "Compare" to synthesize all versions simultaneously</li>
-            <li>Listen to each result with the inline audio player</li>
-            <li>Review latency metrics for each provider</li>
-          </ol>
-          <h4 className="font-semibold text-[var(--color-text)]">Interpreting Results</h4>
-          <p>
-            Each result card shows the profile name, provider, audio player, and synthesis latency in
-            milliseconds. Lower latency means faster synthesis. Use this to compare quality, speed,
-            and naturalness across providers.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Providers */}
-      <CollapsiblePanel
-        title="Providers"
-        icon={<Cpu className="h-4 w-4 text-indigo-500" />}
-        defaultOpen={false}
-        id="guide-providers"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Providers page lists all 9 TTS engines with their capabilities, health status,
-            and configuration options.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Provider</th>
-                  <th className="pb-2 font-medium">Type</th>
-                  <th className="pb-2 font-medium">Key Feature</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { name: "Kokoro", type: "local", feat: "CPU-only, 54 built-in voices, default provider" },
-                  { name: "Piper", type: "local", feat: "ONNX runtime, Home Assistant compatible" },
-                  { name: "ElevenLabs", type: "cloud", feat: "Cloud API, voice cloning, high quality" },
-                  { name: "Azure Speech", type: "cloud", feat: "SSML support, 400+ neural voices" },
-                  { name: "Coqui XTTS v2", type: "gpu", feat: "Voice cloning from 6s audio" },
-                  { name: "StyleTTS2", type: "gpu", feat: "Zero-shot, style diffusion" },
-                  { name: "CosyVoice", type: "gpu", feat: "Multilingual, streaming capable" },
-                  { name: "Dia", type: "gpu", feat: "Dialogue generation, 1.6B params" },
-                  { name: "Dia2", type: "gpu", feat: "Next-gen dialogue, streaming, 2B params" },
-                ].map((p) => (
-                  <tr key={p.name} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2 font-medium">{p.name}</td>
-                    <td className="py-2"><Badge status={p.type} className="text-[10px]" /></td>
-                    <td className="py-2">{p.feat}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Configuration</h4>
-          <p>
-            Expand any provider card to access: API key input (cloud providers), GPU mode toggle
-            (local providers), model path configuration, and Health Check / Test Synthesis buttons.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Health Checks</h4>
-          <p>
-            Click "Health Check" to verify the provider is operational. This tests connectivity,
-            model loading, and API authentication. Results are shown inline with specific error
-            messages if unhealthy.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* API Keys */}
-      <CollapsiblePanel
-        title="API Keys"
-        icon={<Key className="h-4 w-4 text-yellow-500" />}
-        defaultOpen={false}
-        id="guide-apikeys"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            API Keys provide programmatic access to Atlas Vox. When AUTH_DISABLED=true (default
-            for single-user mode), keys are not required but can still be created for external integrations.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Scopes</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Scope</th>
-                  <th className="pb-2 font-medium">Permissions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2 font-medium">read</td><td className="py-2">View profiles, voices, providers, history</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2 font-medium">write</td><td className="py-2">Create/update profiles, upload samples</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2 font-medium">synthesize</td><td className="py-2">Generate speech via API</td></tr>
-                <tr className="border-b border-[var(--color-border)]"><td className="py-2 font-medium">train</td><td className="py-2">Start training jobs, manage samples</td></tr>
-                <tr><td className="py-2 font-medium">admin</td><td className="py-2">Full access including key management</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Key Format & Security</h4>
-          <p>
-            Keys use the format <InlineCode>avx_</InlineCode> followed by random characters.
-            Keys are hashed with Argon2id before storage -- the raw key is shown only once at
-            creation time. Copy it immediately; it cannot be recovered.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Settings */}
-      <CollapsiblePanel
-        title="Settings"
-        icon={<Settings className="h-4 w-4 text-gray-500" />}
-        defaultOpen={false}
-        id="guide-settings"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Settings page lets you configure application-wide preferences. All settings persist
-            in browser local storage.
-          </p>
-          <ul className="ml-4 list-disc space-y-1">
-            <li><strong>Theme</strong>: Toggle between light and dark mode</li>
-            <li><strong>Default Provider</strong>: Set which provider is pre-selected in the Synthesis Lab</li>
-            <li><strong>Audio Format</strong>: Choose default output format (WAV, MP3, OGG)</li>
-          </ul>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Design System */}
-      <CollapsiblePanel
-        title="Design System"
-        icon={<Palette className="h-4 w-4 text-pink-500" />}
-        defaultOpen={false}
-        id="guide-design"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Design System page lets you customize the entire look and feel of Atlas Vox in
-            real time. Changes are applied instantly and persist across sessions via local storage.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Design Tokens (15)</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left">
-                  <th className="pb-2 font-medium">Token</th>
-                  <th className="pb-2 font-medium">What it controls</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["Accent Hue", "Primary color hue (0-360 degrees)"],
-                  ["Accent Saturation", "Color intensity (0-100%)"],
-                  ["Font Family", "System, Inter, monospace, or serif"],
-                  ["Font Size", "Base font size (12-18px)"],
-                  ["Density", "Spacing between elements (compact, normal, spacious)"],
-                  ["Sidebar Width", "Navigation sidebar width in pixels"],
-                  ["Content Max Width", "Maximum content area width"],
-                  ["Border Radius", "Corner rounding (0-16px)"],
-                  ["Card Style", "Bordered, raised, flat, or glassmorphism"],
-                  ["Header Height", "Top header bar height"],
-                  ["Animation Speed", "Transition duration multiplier"],
-                  ["Animations Enabled", "Toggle all CSS transitions"],
-                  ["Shadow Intensity", "Depth of card and modal shadows"],
-                  ["Border Width", "Thickness of element borders"],
-                  ["Focus Ring Width", "Accessibility focus indicator size"],
-                ].map(([token, desc]) => (
-                  <tr key={token} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-1.5 font-medium">{token}</td>
-                    <td className="py-1.5">{desc}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <h4 className="font-semibold text-[var(--color-text)]">Theme Presets (8)</h4>
-          <div className="flex flex-wrap gap-2">
-            {["Blue", "Emerald", "Violet", "Sunset", "Rose", "Mono", "Minimal", "Spacious Serif"].map((p) => (
-              <Badge key={p} status="pending" className="text-[10px]" />
-            ))}
-          </div>
-          <p className="text-xs">
-            Blue (default), Emerald, Violet, Sunset, Rose, Mono, Minimal, and Spacious Serif.
-            Selecting a preset applies a curated set of token values. You can then fine-tune individual
-            tokens after applying a preset.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Self-Healing */}
-      <CollapsiblePanel
-        title="Self-Healing"
-        icon={<Shield className="h-4 w-4 text-green-500" />}
-        defaultOpen={false}
-        id="guide-selfhealing"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Self-Healing system continuously monitors provider health, training job stability,
-            and system resources. It automatically detects and remediates issues without manual
-            intervention.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">What it Monitors</h4>
-          <ul className="ml-4 list-disc space-y-1">
-            <li>Provider health check results (every 30 seconds)</li>
-            <li>Training job failure rates</li>
-            <li>Memory and disk usage</li>
-            <li>Redis and database connectivity</li>
-          </ul>
-          <h4 className="font-semibold text-[var(--color-text)]">Detection Rules</h4>
-          <p>
-            Rules define conditions that trigger remediation: e.g., "3 consecutive health check
-            failures" or "training failure rate above 50% in the last hour."
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Remediation Actions</h4>
-          <ul className="ml-4 list-disc space-y-1">
-            <li><strong>Restart</strong>: Restart the provider process</li>
-            <li><strong>Fallback</strong>: Route requests to an alternative provider</li>
-            <li><strong>Alert</strong>: Send webhook notification (no auto-fix)</li>
-            <li><strong>Throttle</strong>: Reduce request rate to an overwhelmed provider</li>
-          </ul>
-          <h4 className="font-semibold text-[var(--color-text)]">MCP Bridge</h4>
-          <p>
-            The self-healing system is accessible via the MCP server, allowing AI agents to
-            query health status, review incidents, and trigger manual remediations.
-          </p>
-          <h4 className="font-semibold text-[var(--color-text)]">Incident Log</h4>
-          <p>
-            All detected issues and remediation actions are logged with timestamps, severity,
-            and outcomes. The log is searchable and exportable for post-incident review.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Docs Page */}
-      <CollapsiblePanel
-        title="Docs (Provider Setup Guides)"
-        icon={<FileText className="h-4 w-4 text-teal-500" />}
-        defaultOpen={false}
-        id="guide-docs"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Docs page provides detailed provider-specific setup guides. Each guide walks you
-            through creating accounts, obtaining API keys, configuring the provider in Atlas Vox,
-            and verifying the integration with a test synthesis.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Help Page */}
-      <CollapsiblePanel
-        title="Help (This Page)"
-        icon={<HelpCircle className="h-4 w-4 text-blue-500" />}
-        defaultOpen={false}
-        id="guide-help"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            You're looking at it. The Help page is the comprehensive in-app documentation center
-            with getting started guides, user guides for every page, step-by-step walkthroughs,
-            CLI reference, searchable troubleshooting FAQ, API reference, and project information.
-          </p>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Admin */}
-      <CollapsiblePanel
-        title="Admin Panel"
-        icon={<Wrench className="h-4 w-4 text-orange-500" />}
-        defaultOpen={false}
-        id="guide-admin"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            The Admin panel provides low-level configuration for providers. It displays provider
-            config cards with raw JSON configuration, model paths, and advanced settings not
-            exposed in the main Providers page. This is primarily for power users and debugging.
-          </p>
-        </div>
-      </CollapsiblePanel>
+        <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
+          Profiles start as pending, transition to training when a job is submitted, become ready on success,
+          or error on failure. Archived profiles are soft-deleted and can be restored.
+        </p>
+      </Card>
     </div>
   );
 }
-
-/* ================================================================
-   TAB: WALKTHROUGHS
-   ================================================================ */
 
 function WalkthroughsTab() {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Card>
-        <div className="flex items-start gap-3">
-          <Footprints className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-          <div>
-            <h2 className="text-lg font-semibold">Step-by-Step Tutorials</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              Follow these guided walkthroughs to learn key workflows from start to finish.
-            </p>
-          </div>
-        </div>
+        <h2 className="mb-2 text-lg font-semibold">Step-by-Step Walkthroughs</h2>
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          {WALKTHROUGHS.length} tutorials covering common workflows from first synthesis to advanced configuration.
+        </p>
       </Card>
 
-      {/* Walkthrough 1: First Synthesis */}
-      <CollapsiblePanel
-        title="Your First Synthesis"
-        icon={<Play className="h-4 w-4 text-green-500" />}
-        defaultOpen={false}
-        id="walk-first-synth"
-        badge={<Badge status="ready" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Generate your first speech output in under 2 minutes.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Open the Synthesis Lab</h4>
-              <p>Click "Synthesis Lab" in the left sidebar. You'll see a text input area, voice selector, and parameter controls.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Select a voice profile</h4>
-              <p>Choose a profile from the dropdown. If you don't have any profiles yet, the default Kokoro voice is available out of the box.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Enter text</h4>
-              <p>Type or paste text into the input area. Start with something short like "Hello, welcome to Atlas Vox."</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Adjust parameters (optional)</h4>
-              <p>Use the speed, pitch, and volume sliders, or select a persona preset like "Friendly" or "Professional."</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={5} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Click Synthesize and listen</h4>
-              <p>Click the Synthesize button. The waveform player will appear with your generated audio. Click the waveform to play.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 2: Cloning a Voice */}
-      <CollapsiblePanel
-        title="Cloning a Voice"
-        icon={<Mic className="h-4 w-4 text-red-500" />}
-        defaultOpen={false}
-        id="walk-clone"
-        badge={<Badge status="training" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Clone a voice from your own audio samples using the training pipeline.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Create a voice profile</h4>
-              <p>Go to Voice Profiles, click "New Profile." Select a cloning-capable provider (Coqui XTTS, ElevenLabs, or StyleTTS2). Name it descriptively.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Upload audio samples</h4>
-              <p>Navigate to Training Studio, select your profile. Upload WAV/MP3 files of the target voice, or record directly in the browser. Aim for 1-5 minutes of clear speech.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Preprocess the audio</h4>
-              <p>Click "Preprocess All." This applies noise reduction, normalization, and silence trimming. Wait for all samples to show a green checkmark.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Start training</h4>
-              <p>Click "Start Training." The job enters the Celery queue. Monitor progress in real time via the WebSocket-powered progress bar.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={5} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Synthesize with your clone</h4>
-              <p>Once training completes (profile status changes to "ready"), go to Synthesis Lab, select your trained profile, and generate speech with your cloned voice.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 3: Comparing Voices */}
-      <CollapsiblePanel
-        title="Comparing Voices Side-by-Side"
-        icon={<BarChart3 className="h-4 w-4 text-cyan-500" />}
-        defaultOpen={false}
-        id="walk-compare"
-        badge={<Badge status="pending" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Evaluate multiple voices with the same text to find the best one for your use case.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Open the Comparison page</h4>
-              <p>Click "Comparison" in the sidebar.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Enter comparison text</h4>
-              <p>Type a representative sentence that tests the qualities you care about (pronunciation, tone, pacing).</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Select 3+ voice profiles</h4>
-              <p>Use the multi-select dropdown to choose profiles from different providers. Try mixing cloud and local providers for interesting comparisons.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Run comparison</h4>
-              <p>Click "Compare." All selected profiles synthesize simultaneously. Results appear as cards with audio players and latency metrics.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={5} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Evaluate results</h4>
-              <p>Listen to each version back-to-back. Compare naturalness, pronunciation accuracy, emotional tone, and synthesis speed (latency).</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 4: Setting Up Azure Speech */}
-      <CollapsiblePanel
-        title="Setting Up Azure Speech"
-        icon={<Cloud className="h-4 w-4 text-blue-500" />}
-        defaultOpen={false}
-        id="walk-azure"
-        badge={<Badge status="cloud" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Configure Azure Cognitive Services Speech for high-quality neural TTS with SSML support.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Create an Azure Speech resource</h4>
-              <p>Log in to the Azure Portal. Go to "Create a resource" and search for "Speech." Create a Speech resource in your preferred region.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Copy your key and region</h4>
-              <p>In the Speech resource, go to "Keys and Endpoint." Copy Key 1 and the Region value (e.g., "eastus").</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Configure in Atlas Vox</h4>
-              <p>Go to Providers, expand "Azure Speech," enter the API Key and Region in the Settings fields, and click Save.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Test the connection</h4>
-              <p>Click "Health Check" to verify. Then click "Test Synthesis" to generate a sample. If successful, the provider status will change to healthy.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 5: Setting Up ElevenLabs */}
-      <CollapsiblePanel
-        title="Setting Up ElevenLabs"
-        icon={<Cloud className="h-4 w-4 text-purple-500" />}
-        defaultOpen={false}
-        id="walk-elevenlabs"
-        badge={<Badge status="cloud" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Connect ElevenLabs for premium cloud-based voice synthesis and cloning.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Create an ElevenLabs account</h4>
-              <p>Go to elevenlabs.io and sign up. The free tier includes limited characters per month.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Get your API key</h4>
-              <p>Go to elevenlabs.io/settings (or Profile Settings). Copy your API key from the "API Keys" section.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Configure in Atlas Vox</h4>
-              <p>Go to Providers, expand "ElevenLabs," paste your API key in the Settings field, and click Save.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Verify with test synthesis</h4>
-              <p>Click "Health Check" then "Test Synthesis." You should hear a sample generated by ElevenLabs. Your Voice Library will now include ElevenLabs voices.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 6: OpenAI-Compatible API */}
-      <CollapsiblePanel
-        title="Using the OpenAI-Compatible API"
-        icon={<Code2 className="h-4 w-4 text-emerald-500" />}
-        defaultOpen={false}
-        id="walk-openai"
-        badge={<Badge status="ready" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Atlas Vox exposes an OpenAI-compatible endpoint so you can use it as a drop-in replacement for the OpenAI TTS API.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Endpoint URL</h4>
-              <p>The OpenAI-compatible endpoint is at:</p>
-              <CodeBlock>{`POST http://localhost:8100/v1/audio/speech`}</CodeBlock>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Basic cURL example</h4>
-              <CodeBlock title="cURL">{`curl -X POST http://localhost:8100/v1/audio/speech \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "kokoro",
-    "input": "Hello from Atlas Vox!",
-    "voice": "af_heart"
-  }' \\
-  --output speech.mp3`}</CodeBlock>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">With OpenAI Python SDK</h4>
-              <CodeBlock title="Python">{`from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8100/v1",
-    api_key="not-needed"  # if AUTH_DISABLED=true
-)
-
-response = client.audio.speech.create(
-    model="kokoro",
-    voice="af_heart",
-    input="Hello from Atlas Vox!"
-)
-response.stream_to_file("output.mp3")`}</CodeBlock>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Available models</h4>
-              <p>The "model" field maps to Atlas Vox provider names: kokoro, piper, elevenlabs, azure_speech, coqui_xtts, styletts2, cosyvoice, dia, dia2.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Walkthrough 7: Customizing the Design */}
-      <CollapsiblePanel
-        title="Customizing the Design"
-        icon={<Palette className="h-4 w-4 text-pink-500" />}
-        defaultOpen={false}
-        id="walk-design"
-        badge={<Badge status="pending" className="text-[10px]" />}
-      >
-        <div className="space-y-4 text-sm text-[var(--color-text-secondary)]">
-          <p>Make Atlas Vox look exactly how you want with the built-in design system.</p>
-          <div className="flex items-start gap-4">
-            <StepNumber n={1} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Open Design System</h4>
-              <p>Click "Design System" in the sidebar. You'll see live-preview controls for every visual token.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={2} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Pick a theme preset</h4>
-              <p>Start with a preset (Blue, Emerald, Violet, Sunset, Rose, Mono, Minimal, Spacious Serif) to establish a base look.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={3} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Adjust accent color</h4>
-              <p>Use the Hue and Saturation sliders to fine-tune the primary accent color. Changes are reflected instantly across the entire UI.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={4} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Change fonts and density</h4>
-              <p>Select a font family (System, Inter, Monospace, Serif), adjust font size, and toggle between compact/normal/spacious density.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            <StepNumber n={5} />
-            <div className="flex-1">
-              <h4 className="font-semibold text-[var(--color-text)]">Verify and save</h4>
-              <p>Browse other pages to see your design applied everywhere. Changes persist automatically in local storage -- no save button needed.</p>
-            </div>
-          </div>
-        </div>
-      </CollapsiblePanel>
+      {WALKTHROUGHS.map((wt, wtIdx) => (
+        <CollapsiblePanel
+          key={wt.title}
+          title={`${wtIdx + 1}. ${wt.title}`}
+          defaultOpen={wtIdx === 0}
+          badge={<span className="text-xs text-[var(--color-text-secondary)]">{wt.steps.length} steps</span>}
+        >
+          <p className="mb-3 text-sm text-[var(--color-text-secondary)]">{wt.description}</p>
+          <ol className="space-y-3">
+            {wt.steps.map((step, stepIdx) => (
+              <li key={stepIdx} className="flex items-start gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700 dark:bg-primary-900 dark:text-primary-300">
+                  {stepIdx + 1}
+                </span>
+                <div className="flex-1 min-w-0 text-sm text-[var(--color-text-secondary)]">
+                  {step.includes("\n\n") ? (
+                    <>
+                      <p>{step.split("\n\n")[0]}</p>
+                      {step.split("\n\n").slice(1).map((block, bi) => (
+                        <CodeBlock key={bi} code={block} />
+                      ))}
+                    </>
+                  ) : (
+                    <p>{step}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </CollapsiblePanel>
+      ))}
     </div>
   );
 }
 
-/* ================================================================
-   TAB: CLI REFERENCE
-   ================================================================ */
-
-function CLIReferenceTab() {
-  const commands = [
-    {
-      name: "atlas-vox init",
-      desc: "Initialize a new Atlas Vox project with default configuration",
-      syntax: "atlas-vox init [--dir <path>]",
-      options: [["--dir", "Target directory (default: current)"]],
-      example: "atlas-vox init --dir ./my-project",
-    },
-    {
-      name: "atlas-vox serve",
-      desc: "Start the Atlas Vox backend server",
-      syntax: "atlas-vox serve [--port <port>] [--host <host>] [--mcp]",
-      options: [
-        ["--port", "Port number (default: 8100)"],
-        ["--host", "Bind address (default: 0.0.0.0)"],
-        ["--mcp", "Enable MCP server alongside REST API"],
-      ],
-      example: "atlas-vox serve --port 9000 --mcp",
-    },
-    {
-      name: "atlas-vox profiles list",
-      desc: "List all voice profiles",
-      syntax: "atlas-vox profiles list [--provider <name>] [--status <status>]",
-      options: [
-        ["--provider", "Filter by provider name"],
-        ["--status", "Filter by status (pending, training, ready, error, archived)"],
-      ],
-      example: "atlas-vox profiles list --status ready",
-    },
-    {
-      name: "atlas-vox profiles create",
-      desc: "Create a new voice profile",
-      syntax: "atlas-vox profiles create <name> --provider <name> [--language <code>]",
-      options: [
-        ["--provider", "TTS provider (required)"],
-        ["--language", "Language code (default: en)"],
-      ],
-      example: 'atlas-vox profiles create "My Voice" --provider kokoro --language en',
-    },
-    {
-      name: "atlas-vox profiles delete",
-      desc: "Delete a voice profile",
-      syntax: "atlas-vox profiles delete <profile_id>",
-      options: [],
-      example: "atlas-vox profiles delete abc-123-def",
-    },
-    {
-      name: "atlas-vox profiles export",
-      desc: "Export a voice profile to a file",
-      syntax: "atlas-vox profiles export <profile_id> [--output <file>]",
-      options: [["--output", "Output file path (default: <name>.json)"]],
-      example: "atlas-vox profiles export abc-123 --output my-voice.json",
-    },
-    {
-      name: "atlas-vox profiles import",
-      desc: "Import a voice profile from a file",
-      syntax: "atlas-vox profiles import <file>",
-      options: [],
-      example: "atlas-vox profiles import my-voice.json",
-    },
-    {
-      name: "atlas-vox synthesize",
-      desc: "Synthesize text to speech",
-      syntax: "atlas-vox synthesize <text> --voice <id> --output <file> [--speed <float>] [--format <fmt>]",
-      options: [
-        ["--voice", "Profile ID or voice name (required)"],
-        ["--output", "Output audio file path (required)"],
-        ["--speed", "Speech speed multiplier (default: 1.0)"],
-        ["--format", "Output format: wav, mp3, ogg (default: wav)"],
-      ],
-      example: 'atlas-vox synthesize "Hello world" --voice abc-123 --output hello.wav',
-    },
-    {
-      name: "atlas-vox train upload",
-      desc: "Upload audio samples for training",
-      syntax: "atlas-vox train upload <profile_id> <files...>",
-      options: [],
-      example: "atlas-vox train upload abc-123 samples/*.wav",
-    },
-    {
-      name: "atlas-vox train start",
-      desc: "Start a training job",
-      syntax: "atlas-vox train start <profile_id> [--epochs <n>]",
-      options: [["--epochs", "Number of training epochs"]],
-      example: "atlas-vox train start abc-123 --epochs 100",
-    },
-    {
-      name: "atlas-vox train status",
-      desc: "Check training job status",
-      syntax: "atlas-vox train status <job_id>",
-      options: [],
-      example: "atlas-vox train status job-456",
-    },
-    {
-      name: "atlas-vox providers list",
-      desc: "List all TTS providers and their status",
-      syntax: "atlas-vox providers list",
-      options: [],
-      example: "atlas-vox providers list",
-    },
-    {
-      name: "atlas-vox providers health",
-      desc: "Run health checks on all providers",
-      syntax: "atlas-vox providers health [--provider <name>]",
-      options: [["--provider", "Check a specific provider only"]],
-      example: "atlas-vox providers health --provider kokoro",
-    },
-    {
-      name: "atlas-vox compare",
-      desc: "Compare synthesis across multiple voices",
-      syntax: "atlas-vox compare <text> --voice <id1> --voice <id2> [--voice <idN>]",
-      options: [["--voice", "Profile IDs to compare (at least 2)"]],
-      example: 'atlas-vox compare "Test phrase" --voice abc-123 --voice def-456 --voice ghi-789',
-    },
-    {
-      name: "atlas-vox presets list",
-      desc: "List available persona presets",
-      syntax: "atlas-vox presets list",
-      options: [],
-      example: "atlas-vox presets list",
-    },
-    {
-      name: "atlas-vox presets create",
-      desc: "Create a custom persona preset",
-      syntax: "atlas-vox presets create <name> --speed <float> --pitch <int> --volume <float>",
-      options: [
-        ["--speed", "Speech speed (0.5-2.0)"],
-        ["--pitch", "Pitch adjustment (-10 to +10)"],
-        ["--volume", "Volume level (0.0-1.5)"],
-      ],
-      example: 'atlas-vox presets create "Narrator" --speed 0.9 --pitch -3 --volume 1.1',
-    },
-  ];
-
+function CliTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex items-start gap-3">
-          <Terminal className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-          <div>
-            <h2 className="text-lg font-semibold">CLI Reference</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              Complete command reference for the <InlineCode>atlas-vox</InlineCode> CLI.
-              Install with <InlineCode>pip install -e .</InlineCode> from the backend directory.
-            </p>
-          </div>
-        </div>
+        <h2 className="mb-2 text-lg font-semibold">CLI Reference</h2>
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Atlas Vox includes a CLI built with Typer and Rich. Install with{" "}
+          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">pip install -e .</code>
+          {" "}and run commands with the <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">atlas-vox</code> entry point.
+        </p>
+        <CodeBlock code="atlas-vox --help" />
       </Card>
 
-      {commands.map((cmd) => (
-        <CollapsiblePanel
-          key={cmd.name}
-          title={cmd.name}
-          icon={<Terminal className="h-4 w-4 text-gray-500" />}
-          defaultOpen={false}
-          id={`cli-${cmd.name.replace(/\s+/g, "-")}`}
-        >
-          <div className="space-y-3 text-sm">
-            <p className="text-[var(--color-text-secondary)]">{cmd.desc}</p>
-            <div>
-              <SectionLabel icon={<Code2 className="h-3.5 w-3.5" />} text="Syntax" />
-              <CodeBlock>{cmd.syntax}</CodeBlock>
+      {CLI_COMMANDS.map((cmd) => (
+        <CollapsiblePanel key={cmd.name} title={cmd.name} defaultOpen={false}>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-3">{cmd.description}</p>
+          <CodeBlock code={cmd.syntax} />
+          {cmd.options.length > 0 && (
+            <div className="mt-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)] mb-2">Options</h4>
+              <DataTable
+                headers={["Flag", "Description"]}
+                rows={cmd.options.map((o) => [
+                  <code key={o.flag} className="text-xs">{o.flag}</code>,
+                  o.description,
+                ])}
+              />
             </div>
-            {cmd.options.length > 0 && (
-              <div>
-                <SectionLabel icon={<Settings className="h-3.5 w-3.5" />} text="Options" />
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[var(--color-border)] text-left">
-                        <th className="pb-2 font-medium">Flag</th>
-                        <th className="pb-2 font-medium">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cmd.options.map(([flag, desc]) => (
-                        <tr key={flag} className="border-b border-[var(--color-border)] last:border-0">
-                          <td className="py-1.5"><InlineCode>{flag}</InlineCode></td>
-                          <td className="py-1.5 text-[var(--color-text-secondary)]">{desc}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            <div>
-              <SectionLabel icon={<Play className="h-3.5 w-3.5" />} text="Example" />
-              <CodeBlock>{cmd.example}</CodeBlock>
-            </div>
+          )}
+          <div className="mt-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)] mb-2">Example</h4>
+            <CodeBlock code={cmd.example} />
           </div>
         </CollapsiblePanel>
       ))}
@@ -1647,36 +821,27 @@ function CLIReferenceTab() {
   );
 }
 
-/* ================================================================
-   TAB: TROUBLESHOOTING
-   ================================================================ */
-
 function TroubleshootingTab() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [category, setCategory] = useState<string>("All");
   const [openFaqs, setOpenFaqs] = useState<Set<number>>(new Set());
-  const [categoryFilter, setCategoryFilter] = useState<string>("All");
-
-  const categories = useMemo(() => {
-    const cats = new Set(FAQ_ITEMS.map((i) => i.category));
-    return ["All", ...Array.from(cats)];
-  }, []);
 
   const filteredFaqs = useMemo(() => {
     let items = FAQ_ITEMS;
-    if (categoryFilter !== "All") {
-      items = items.filter((i) => i.category === categoryFilter);
+    if (category !== "All") {
+      items = items.filter((item) => item.category === category);
     }
     if (searchTerm.trim()) {
       const lower = searchTerm.toLowerCase();
       items = items.filter(
-        (i) =>
-          i.question.toLowerCase().includes(lower) ||
-          i.answer.toLowerCase().includes(lower) ||
-          i.category.toLowerCase().includes(lower)
+        (item) =>
+          item.question.toLowerCase().includes(lower) ||
+          item.answer.toLowerCase().includes(lower) ||
+          item.category.toLowerCase().includes(lower)
       );
     }
     return items;
-  }, [searchTerm, categoryFilter]);
+  }, [searchTerm, category]);
 
   const toggleFaq = (index: number) => {
     setOpenFaqs((prev) => {
@@ -1687,32 +852,10 @@ function TroubleshootingTab() {
     });
   };
 
-  const severityIcon = (s: "easy" | "moderate" | "complex") => {
-    if (s === "easy") return <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />;
-    if (s === "moderate") return <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />;
-    return <XCircle className="h-4 w-4 text-red-500 shrink-0" />;
-  };
-
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-          <div>
-            <h2 className="text-lg font-semibold">Troubleshooting FAQ</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              Search {FAQ_ITEMS.length} common issues across {categories.length - 1} categories.
-              Severity:{" "}
-              <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500" /> Easy fix</span>{" | "}
-              <span className="inline-flex items-center gap-1"><AlertCircle className="h-3 w-3 text-yellow-500" /> Moderate</span>{" | "}
-              <span className="inline-flex items-center gap-1"><XCircle className="h-3 w-3 text-red-500" /> Complex</span>
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Search + Filter */}
-      <div className="flex flex-col gap-3 sm:flex-row">
+      {/* Search and filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-secondary)]" />
           <input
@@ -1726,15 +869,15 @@ function TroubleshootingTab() {
             className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-2.5 pl-10 pr-4 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         </div>
-        <div className="flex gap-1 overflow-x-auto">
-          {categories.map((cat) => (
+        <div className="flex flex-wrap gap-1">
+          {FAQ_CATEGORIES.map((cat) => (
             <button
               key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-                categoryFilter === cat
+              onClick={() => setCategory(cat)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                category === cat
                   ? "bg-primary-500 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
               }`}
             >
               {cat}
@@ -1743,259 +886,38 @@ function TroubleshootingTab() {
         </div>
       </div>
 
-      {/* FAQ Items */}
+      {/* Count */}
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        Showing {filteredFaqs.length} of {FAQ_ITEMS.length} topics
+      </p>
+
+      {/* FAQ list */}
       {filteredFaqs.length === 0 ? (
         <Card className="py-8 text-center">
           <p className="text-[var(--color-text-secondary)]">No matching troubleshooting topics found.</p>
         </Card>
       ) : (
         <div className="space-y-2">
-          {filteredFaqs.map((item) => {
-            const globalIndex = FAQ_ITEMS.indexOf(item);
-            const isOpen = openFaqs.has(globalIndex);
-            return (
-              <div
-                key={globalIndex}
-                className="rounded-lg border border-[var(--color-border)] transition-colors hover:border-primary-300 dark:hover:border-primary-700"
-              >
-                <button
-                  onClick={() => toggleFaq(globalIndex)}
-                  className="flex w-full items-center justify-between p-4 text-left"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {severityIcon(item.severity)}
-                    <div className="min-w-0">
-                      <span className="font-medium block truncate sm:whitespace-normal">{item.question}</span>
-                      <span className="text-xs text-[var(--color-text-secondary)]">{item.category}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <SeverityBadge severity={item.severity} />
-                    {isOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </div>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-text-secondary)] whitespace-pre-line">
-                    {item.answer}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {filteredFaqs.map((item, i) => (
+            <FaqCard key={`${item.category}-${i}`} item={item} open={openFaqs.has(i)} onToggle={() => toggleFaq(i)} />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-/* ================================================================
-   TAB: API REFERENCE
-   ================================================================ */
-
-function APIReferenceTab() {
-  const endpoints = [
-    {
-      title: "Health Check",
-      method: "GET",
-      path: "/api/v1/health",
-      desc: "Check system health including database, Redis, and storage status.",
-      body: null,
-      response: `{
-  "status": "healthy",
-  "checks": {
-    "database": "ok",
-    "redis": "ok",
-    "storage": "ok"
-  },
-  "version": "0.1.0"
-}`,
-    },
-    {
-      title: "List Profiles",
-      method: "GET",
-      path: "/api/v1/profiles",
-      desc: "Retrieve all voice profiles with optional filtering.",
-      body: null,
-      response: `{
-  "profiles": [
-    {
-      "id": "abc-123",
-      "name": "My Voice",
-      "provider_name": "kokoro",
-      "status": "ready",
-      "language": "en"
-    }
-  ],
-  "count": 1
-}`,
-    },
-    {
-      title: "Create Profile",
-      method: "POST",
-      path: "/api/v1/profiles",
-      desc: "Create a new voice profile.",
-      body: `{
-  "name": "My Voice",
-  "provider_name": "kokoro",
-  "language": "en"
-}`,
-      response: `{
-  "id": "abc-123",
-  "name": "My Voice",
-  "provider_name": "kokoro",
-  "status": "pending",
-  "language": "en",
-  "created_at": "2025-01-01T00:00:00Z"
-}`,
-    },
-    {
-      title: "Synthesize Speech",
-      method: "POST",
-      path: "/api/v1/synthesize",
-      desc: "Generate speech from text using a voice profile.",
-      body: `{
-  "text": "Hello world!",
-  "profile_id": "abc-123",
-  "speed": 1.0,
-  "pitch": 0,
-  "output_format": "wav"
-}`,
-      response: `{
-  "audio_url": "/api/v1/audio/output_abc123.wav",
-  "latency_ms": 89,
-  "provider": "kokoro",
-  "format": "wav"
-}`,
-    },
-    {
-      title: "List Providers",
-      method: "GET",
-      path: "/api/v1/providers",
-      desc: "List all TTS providers with capabilities and health status.",
-      body: null,
-      response: `{
-  "providers": [
-    {
-      "name": "kokoro",
-      "display_name": "Kokoro TTS",
-      "type": "local",
-      "healthy": true,
-      "capabilities": {
-        "streaming": false,
-        "ssml": false,
-        "voice_cloning": false
-      }
-    }
-  ],
-  "count": 9
-}`,
-    },
-    {
-      title: "List Voices",
-      method: "GET",
-      path: "/api/v1/voices",
-      desc: "List all available voices across providers.",
-      body: null,
-      response: `{
-  "voices": [
-    {
-      "id": "af_heart",
-      "name": "Heart",
-      "provider": "kokoro",
-      "language": "en",
-      "gender": "female"
-    }
-  ],
-  "count": 458
-}`,
-    },
-    {
-      title: "Compare Voices",
-      method: "POST",
-      path: "/api/v1/compare",
-      desc: "Synthesize text with multiple profiles for side-by-side comparison.",
-      body: `{
-  "text": "Test phrase for comparison",
-  "profile_ids": ["id1", "id2", "id3"]
-}`,
-      response: `{
-  "text": "Test phrase for comparison",
-  "results": [
-    {
-      "profile_id": "id1",
-      "audio_url": "/api/v1/audio/cmp_1.wav",
-      "latency_ms": 92
-    }
-  ]
-}`,
-    },
-    {
-      title: "Upload Audio Sample",
-      method: "POST",
-      path: "/api/v1/samples/upload",
-      desc: "Upload audio samples for voice training (multipart/form-data).",
-      body: `Content-Type: multipart/form-data
-Fields: profile_id, file (audio file)`,
-      response: `{
-  "id": "sample-789",
-  "profile_id": "abc-123",
-  "filename": "recording.wav",
-  "duration_seconds": 12.5,
-  "status": "uploaded"
-}`,
-    },
-    {
-      title: "Start Training",
-      method: "POST",
-      path: "/api/v1/training/start",
-      desc: "Start a voice training job for a profile.",
-      body: `{
-  "profile_id": "abc-123",
-  "config": {
-    "epochs": 100
-  }
-}`,
-      response: `{
-  "job_id": "job-456",
-  "profile_id": "abc-123",
-  "status": "queued",
-  "created_at": "2025-01-01T00:00:00Z"
-}`,
-    },
-    {
-      title: "OpenAI-Compatible TTS",
-      method: "POST",
-      path: "/v1/audio/speech",
-      desc: "OpenAI-compatible text-to-speech endpoint. Drop-in replacement for the OpenAI TTS API.",
-      body: `{
-  "model": "kokoro",
-  "input": "Hello from Atlas Vox!",
-  "voice": "af_heart",
-  "response_format": "mp3",
-  "speed": 1.0
-}`,
-      response: `Binary audio data (Content-Type: audio/mpeg)`,
-    },
-  ];
-
+function ApiTab() {
   return (
     <div className="space-y-4">
+      {/* Links */}
       <Card>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <Code2 className="mt-0.5 h-5 w-5 text-primary-500 shrink-0" />
-            <div>
-              <h2 className="text-lg font-semibold">REST API Reference</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                Base URL: <InlineCode>http://localhost:8100</InlineCode>{" "}
-                | Auth: <InlineCode>Authorization: Bearer &lt;api_key&gt;</InlineCode>{" "}
-                (optional when AUTH_DISABLED=true)
-              </p>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Interactive API Documentation</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              Full Swagger UI and ReDoc are available from your running instance.
+            </p>
           </div>
           <div className="flex gap-2 shrink-0">
             <a
@@ -2018,222 +940,175 @@ Fields: profile_id, file (audio file)`,
         </div>
       </Card>
 
-      {/* Rate Limits */}
-      <CollapsiblePanel
-        title="Rate Limits"
-        icon={<Shield className="h-4 w-4 text-amber-500" />}
-        defaultOpen={false}
-        id="api-ratelimits"
-      >
-        <div className="overflow-x-auto text-sm">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-left">
-                <th className="pb-2 font-medium">Endpoint Group</th>
-                <th className="pb-2 font-medium">Limit</th>
-                <th className="pb-2 font-medium">Window</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-[var(--color-border)]"><td className="py-2">Synthesis</td><td className="py-2">10 requests</td><td className="py-2">per minute</td></tr>
-              <tr className="border-b border-[var(--color-border)]"><td className="py-2">Training</td><td className="py-2">5 requests</td><td className="py-2">per minute</td></tr>
-              <tr className="border-b border-[var(--color-border)]"><td className="py-2">Comparison</td><td className="py-2">5 requests</td><td className="py-2">per minute</td></tr>
-              <tr className="border-b border-[var(--color-border)]"><td className="py-2">OpenAI-compatible</td><td className="py-2">20 requests</td><td className="py-2">per minute</td></tr>
-              <tr><td className="py-2">Read endpoints</td><td className="py-2">60 requests</td><td className="py-2">per minute</td></tr>
-            </tbody>
-          </table>
-          <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-            Rate-limited responses return HTTP 429 with a Retry-After header.
-          </p>
-        </div>
-      </CollapsiblePanel>
+      {/* Base URL and auth */}
+      <Card>
+        <h3 className="mb-2 font-semibold">Base URL and Authentication</h3>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+          Base URL: <code className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">http://localhost:8100/api/v1</code>
+        </p>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+          Authentication: Bearer token via the <code className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">Authorization</code> header.
+          When <code className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">AUTH_DISABLED=true</code> (default), no token is required.
+        </p>
+        <CodeBlock
+          code={'curl -H "Authorization: Bearer avx_your_key_here" \\\n     http://localhost:8100/api/v1/profiles'}
+        />
+      </Card>
 
       {/* Endpoints */}
-      {endpoints.map((ep) => (
-        <CollapsiblePanel
-          key={ep.path + ep.method}
-          title={ep.title}
-          icon={<MethodBadge method={ep.method} />}
-          defaultOpen={false}
-          id={`api-${ep.title.replace(/\s+/g, "-").toLowerCase()}`}
-          badge={
-            <code className="text-xs font-medium text-[var(--color-text-secondary)]">
-              {ep.path}
-            </code>
-          }
-        >
-          <div className="space-y-3 text-sm">
-            <p className="text-[var(--color-text-secondary)]">{ep.desc}</p>
-            <div className="flex items-center gap-2">
-              <MethodBadge method={ep.method} />
-              <InlineCode>{ep.path}</InlineCode>
-            </div>
-            {ep.body && (
-              <div>
-                <p className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Request body:</p>
-                <CodeBlock>{ep.body}</CodeBlock>
+      <Card>
+        <h3 className="mb-4 font-semibold">Endpoint Examples ({API_EXAMPLES.length})</h3>
+        <div className="space-y-4">
+          {API_EXAMPLES.map((ex) => (
+            <div key={ex.title} className="rounded-lg border border-[var(--color-border)] p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <MethodBadge method={ex.method} />
+                <code className="text-sm font-medium">{ex.endpoint}</code>
+                <span className="ml-auto text-xs text-[var(--color-text-secondary)]">{ex.title}</span>
               </div>
-            )}
-            <div>
-              <p className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Response:</p>
-              <CodeBlock>{ep.response}</CodeBlock>
+              {ex.body && (
+                <div className="mb-2">
+                  <p className="text-xs text-[var(--color-text-secondary)] mb-1">Request body:</p>
+                  <pre className="rounded bg-gray-50 p-2 text-xs dark:bg-gray-900 overflow-x-auto">{ex.body}</pre>
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-[var(--color-text-secondary)] mb-1">Response:</p>
+                <pre className="rounded bg-gray-50 p-2 text-xs dark:bg-gray-900 overflow-x-auto">{ex.response}</pre>
+              </div>
             </div>
-          </div>
-        </CollapsiblePanel>
-      ))}
+          ))}
+        </div>
+      </Card>
 
-      {/* OpenAI Compatibility */}
-      <CollapsiblePanel
-        title="OpenAI API Compatibility"
-        icon={<Globe className="h-4 w-4 text-emerald-500" />}
-        defaultOpen={false}
-        id="api-openai-compat"
-      >
-        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-          <p>
-            Atlas Vox implements the OpenAI <InlineCode>/v1/audio/speech</InlineCode> endpoint,
-            making it a drop-in replacement for the OpenAI TTS API. Use any OpenAI SDK by pointing
-            it at your Atlas Vox instance.
-          </p>
-          <CodeBlock title="cURL example">{`curl -X POST http://localhost:8100/v1/audio/speech \\
+      {/* OpenAI compat */}
+      <Card>
+        <h3 className="mb-2 font-semibold">OpenAI-Compatible Endpoint</h3>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+          Atlas Vox exposes an OpenAI-compatible TTS endpoint at{" "}
+          <code className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">/v1/audio/speech</code>.
+          Point any OpenAI TTS client to your Atlas Vox server.
+        </p>
+        <CodeBlock
+          code={`curl http://localhost:8100/v1/audio/speech \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer avx_your_key_here" \\
   -d '{
     "model": "kokoro",
-    "input": "Atlas Vox speaks!",
+    "input": "Hello from Atlas Vox!",
     "voice": "af_heart",
-    "response_format": "mp3",
-    "speed": 1.0
+    "response_format": "wav"
   }' \\
-  --output speech.mp3`}</CodeBlock>
-          <h4 className="font-semibold text-[var(--color-text)]">Model mapping</h4>
-          <p>
-            The <InlineCode>model</InlineCode> field maps to Atlas Vox providers:{" "}
-            kokoro, piper, elevenlabs, azure_speech, coqui_xtts, styletts2, cosyvoice, dia, dia2.
-          </p>
-        </div>
-      </CollapsiblePanel>
+  --output speech.wav`}
+        />
+        <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
+          The <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">model</code> field maps to a provider name.
+          The <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">voice</code> field maps to a voice ID.
+          Supported response_format values: wav, mp3, opus, flac.
+        </p>
+      </Card>
+
+      {/* Webhooks */}
+      <Card>
+        <h3 className="mb-2 font-semibold">Webhooks</h3>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+          Register webhook URLs to receive notifications for training job events and synthesis completions.
+        </p>
+        <CodeBlock
+          code={`POST /api/v1/webhooks
+{
+  "url": "https://your-server.com/hook",
+  "events": ["training.completed", "training.failed", "synthesis.completed"],
+  "secret": "your_webhook_secret"
+}`}
+          language="json"
+        />
+      </Card>
+
+      {/* Rate limits */}
+      <Card>
+        <h3 className="mb-3 font-semibold">Rate Limits</h3>
+        <DataTable
+          headers={["Endpoint", "Limit"]}
+          rows={RATE_LIMITS.map((r) => [
+            <code key={r.endpoint} className="text-xs">{r.endpoint}</code>,
+            r.limit,
+          ])}
+        />
+      </Card>
     </div>
   );
 }
 
-/* ================================================================
-   TAB: ABOUT
-   ================================================================ */
-
 function AboutTab() {
   return (
     <div className="space-y-4">
-      {/* Version Info */}
+      {/* Version info */}
       <Card>
-        <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
-          <Info className="h-5 w-5 text-primary-500" />
-          About Atlas Vox
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody>
-              {[
-                ["Version", "0.1.0"],
-                ["TTS Providers", "9"],
-                ["Interfaces", "Web UI, REST API, CLI, MCP Server"],
-                ["Backend", "Python 3.11 + FastAPI + SQLAlchemy + Celery"],
-                ["Frontend", "React 18 + TypeScript 5 + Vite + Tailwind CSS"],
-                ["State Management", "Zustand"],
-                ["Audio Visualization", "wavesurfer.js"],
-                ["SSML Editor", "Monaco Editor"],
-                ["Database", "SQLite (dev) / PostgreSQL (prod)"],
-                ["Task Queue", "Celery + Redis"],
-                ["Logging", "structlog (JSON format)"],
-                ["License", "MIT"],
-              ].map(([label, value]) => (
-                <tr key={label} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="py-2.5 text-[var(--color-text-secondary)] w-1/3">{label}</td>
-                  <td className="py-2.5 font-medium">{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <h2 className="mb-4 text-lg font-semibold">About Atlas Vox</h2>
+        <div className="space-y-0 text-sm">
+          {ABOUT_INFO.map((item, i) => (
+            <div
+              key={item.label}
+              className={`flex justify-between py-2.5 ${i < ABOUT_INFO.length - 1 ? "border-b border-[var(--color-border)]" : ""}`}
+            >
+              <span className="text-[var(--color-text-secondary)]">{item.label}</span>
+              <span className="font-medium text-right">{item.value}</span>
+            </div>
+          ))}
         </div>
       </Card>
 
-      {/* Provider Comparison */}
-      <CollapsiblePanel
-        title="Provider Comparison"
-        icon={<Cpu className="h-4 w-4 text-indigo-500" />}
-        defaultOpen={true}
-        id="about-providers"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-secondary)]">
-                <th className="pb-2 font-medium">Provider</th>
-                <th className="pb-2 font-medium">Type</th>
-                <th className="pb-2 font-medium">Cloning</th>
-                <th className="pb-2 font-medium">Streaming</th>
-                <th className="pb-2 font-medium">SSML</th>
-                <th className="pb-2 font-medium">GPU</th>
-                <th className="pb-2 font-medium">Languages</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name: "Kokoro", type: "local", clone: false, stream: false, ssml: false, gpu: "No (CPU)", langs: "English, Japanese" },
-                { name: "Piper", type: "local", clone: false, stream: false, ssml: false, gpu: "No (CPU)", langs: "20+ languages" },
-                { name: "ElevenLabs", type: "cloud", clone: true, stream: true, ssml: false, gpu: "N/A (cloud)", langs: "29 languages" },
-                { name: "Azure Speech", type: "cloud", clone: false, stream: true, ssml: true, gpu: "N/A (cloud)", langs: "140+ languages" },
-                { name: "Coqui XTTS v2", type: "gpu", clone: true, stream: true, ssml: false, gpu: "Configurable", langs: "17 languages" },
-                { name: "StyleTTS2", type: "gpu", clone: true, stream: false, ssml: false, gpu: "Configurable", langs: "English" },
-                { name: "CosyVoice", type: "gpu", clone: true, stream: true, ssml: false, gpu: "Configurable", langs: "Chinese, English, Japanese, Korean" },
-                { name: "Dia", type: "gpu", clone: false, stream: false, ssml: false, gpu: "Configurable", langs: "English" },
-                { name: "Dia2", type: "gpu", clone: false, stream: true, ssml: false, gpu: "Configurable", langs: "English" },
-              ].map((p) => (
-                <tr key={p.name} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="py-2 font-medium">{p.name}</td>
-                  <td className="py-2"><Badge status={p.type} className="text-[10px]" /></td>
-                  <td className="py-2">
-                    {p.clone ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-gray-400" />
-                    )}
-                  </td>
-                  <td className="py-2">
-                    {p.stream ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-gray-400" />
-                    )}
-                  </td>
-                  <td className="py-2">
-                    {p.ssml ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-gray-400" />
-                    )}
-                  </td>
-                  <td className="py-2 text-xs">{p.gpu}</td>
-                  <td className="py-2 text-xs">{p.langs}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CollapsiblePanel>
-
-      {/* Documentation Links */}
+      {/* Provider comparison */}
       <Card>
-        <h3 className="mb-3 text-lg font-semibold flex items-center gap-2">
-          <ExternalLink className="h-5 w-5 text-primary-500" />
-          Documentation Links
-        </h3>
-        <div className="space-y-2">
+        <h3 className="mb-3 font-semibold">TTS Provider Comparison</h3>
+        <DataTable
+          headers={["Provider", "Type", "Model", "Voices", "Languages", "Streaming", "Cloning", "Pricing"]}
+          rows={PROVIDER_TABLE.map((p) => [
+            p.name,
+            <Badge key={`${p.name}-type`} status={p.type.includes("CPU") ? "local" : p.type.includes("GPU") ? "gpu" : "cloud"} className="text-[10px]" />,
+            p.model,
+            p.voices,
+            p.languages,
+            p.streaming === "Yes" ? <Badge key={`${p.name}-stream`} status="ready" className="text-[10px]" /> : <span className="text-[var(--color-text-tertiary)]">--</span>,
+            p.cloning === "Yes" ? <Badge key={`${p.name}-clone`} status="ready" className="text-[10px]" /> : <span className="text-[var(--color-text-tertiary)]">--</span>,
+            <Badge key={`${p.name}-price`} status={p.pricing === "Open Source" ? "ready" : p.pricing === "Freemium" ? "pending" : "training"} className="text-[10px]" />,
+          ])}
+        />
+      </Card>
+
+      {/* Tech stack */}
+      <Card>
+        <h3 className="mb-3 font-semibold">Technology Stack</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           {[
-            { label: "Swagger API Docs", href: "/docs", desc: "Interactive API explorer" },
-            { label: "ReDoc API Reference", href: "/redoc", desc: "Clean API documentation" },
-            { label: "GitHub Repository", href: "https://github.com/HouseGarofalo/atlas-vox", desc: "Source code and issues" },
-          ].map((link) => (
+            { area: "Backend Framework", tech: "FastAPI + Pydantic v2" },
+            { area: "ORM", tech: "SQLAlchemy (async)" },
+            { area: "Task Queue", tech: "Celery + Redis" },
+            { area: "Migrations", tech: "Alembic" },
+            { area: "Logging", tech: "structlog (JSON)" },
+            { area: "Frontend Framework", tech: "React 18 + TypeScript 5" },
+            { area: "Build Tool", tech: "Vite" },
+            { area: "CSS", tech: "Tailwind CSS" },
+            { area: "State Management", tech: "Zustand" },
+            { area: "Audio Visualization", tech: "wavesurfer.js" },
+            { area: "Code Editor", tech: "Monaco Editor" },
+            { area: "CLI", tech: "Typer + Rich" },
+            { area: "MCP Transport", tech: "JSONRPC 2.0 + SSE" },
+            { area: "Authentication", tech: "Argon2id + Bearer tokens" },
+          ].map((item) => (
+            <div key={item.area} className="flex justify-between border-b border-[var(--color-border)] pb-2">
+              <span className="text-[var(--color-text-secondary)]">{item.area}</span>
+              <span className="font-medium">{item.tech}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Doc links */}
+      <Card>
+        <h3 className="mb-3 font-semibold">Documentation Links</h3>
+        <div className="space-y-2">
+          {DOC_LINKS.map((link) => (
             <a
               key={link.label}
               href={link.href}
@@ -2241,11 +1116,8 @@ function AboutTab() {
               rel="noopener noreferrer"
               className="flex items-center justify-between rounded-lg border border-[var(--color-border)] p-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             >
-              <div>
-                <span className="font-medium">{link.label}</span>
-                <span className="ml-2 text-xs text-[var(--color-text-secondary)]">{link.desc}</span>
-              </div>
-              <ExternalLink className="h-4 w-4 text-[var(--color-text-secondary)] shrink-0" />
+              <span>{link.label}</span>
+              <ExternalLink className="h-4 w-4 text-[var(--color-text-secondary)]" />
             </a>
           ))}
         </div>
@@ -2254,55 +1126,94 @@ function AboutTab() {
   );
 }
 
-/* ================================================================
-   MAIN PAGE COMPONENT
-   ================================================================ */
+/* ------------------------------------------------------------------ */
+/*  Main page component                                                */
+/* ------------------------------------------------------------------ */
 
-// Need these two icons for the FAQ chevrons (used in TroubleshootingTab inline)
-import { ChevronDown, ChevronRight } from "lucide-react";
+const TAB_COMPONENTS: Record<TabKey, React.FC> = {
+  "getting-started": GettingStartedTab,
+  "user-guide": UserGuideTab,
+  walkthroughs: WalkthroughsTab,
+  cli: CliTab,
+  troubleshooting: TroubleshootingTab,
+  api: ApiTab,
+  about: AboutTab,
+  providers: ProviderGuidesTab,
+  architecture: ArchitectureTab,
+  configuration: ConfigurationTab,
+  mcp: MCPIntegrationTab,
+  "self-healing": SelfHealingDocsTab,
+  deployment: DeploymentTab,
+};
+
+type GroupKey = (typeof GROUPS)[number]["key"];
 
 export default function HelpPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("Getting Started");
+  const [activeGroup, setActiveGroup] = useState<GroupKey>("guide");
+  const [activeTab, setActiveTab] = useState<TabKey>("getting-started");
+
+  const groupTabs = TABS.filter((t) => t.group === activeGroup);
+  const ActiveComponent = TAB_COMPONENTS[activeTab];
+
+  const handleGroupChange = (group: GroupKey) => {
+    setActiveGroup(group);
+    const firstTab = TABS.find((t) => t.group === group);
+    if (firstTab) setActiveTab(firstTab.key);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Documentation Center</h1>
+        <h1 className="text-2xl font-bold">Help & Documentation</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Guides, tutorials, CLI reference, troubleshooting, and API documentation for Atlas Vox
+          Guides, technical reference, troubleshooting, and API documentation
         </p>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] p-1">
-        {TABS.map((tab) => (
+      {/* Group selector */}
+      <div className="flex gap-2">
+        {GROUPS.map((group) => (
           <button
-            key={tab}
-            onClick={() => {
-              logger.info("tab_change", { tab });
-              setActiveTab(tab);
-            }}
-            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "bg-primary-500 text-white"
-                : "text-[var(--color-text-secondary)] hover:bg-gray-100 dark:hover:bg-gray-800"
+            key={group.key}
+            onClick={() => handleGroupChange(group.key)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeGroup === group.key
+                ? "bg-primary-500 text-white shadow-sm"
+                : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-gray-200 dark:hover:bg-gray-700"
             }`}
           >
-            {TAB_ICONS[tab]}
-            <span className="hidden sm:inline">{tab}</span>
+            {group.label}
           </button>
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTab === "Getting Started" && <GettingStartedTab />}
-      {activeTab === "User Guide" && <UserGuideTab />}
-      {activeTab === "Walkthroughs" && <WalkthroughsTab />}
-      {activeTab === "CLI Reference" && <CLIReferenceTab />}
-      {activeTab === "Troubleshooting" && <TroubleshootingTab />}
-      {activeTab === "API Reference" && <APIReferenceTab />}
-      {activeTab === "About" && <AboutTab />}
+      {/* Tab bar within selected group */}
+      <div className="flex gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] p-1 scrollbar-thin">
+        {groupTabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => {
+                logger.info("tab_change", { tab: tab.key });
+                setActiveTab(tab.key);
+              }}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "bg-primary-500/20 text-primary-600 dark:text-primary-400"
+                  : "text-[var(--color-text-secondary)] hover:bg-gray-100 dark:hover:bg-gray-800"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active tab content */}
+      <ActiveComponent />
     </div>
   );
 }
