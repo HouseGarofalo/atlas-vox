@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Type, Settings, Play, Clock } from "lucide-react";
+import { Type, Settings, Play, Clock, Smile } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SSMLEditor } from "../components/audio/SSMLEditor";
 import { Select } from "../components/ui/Select";
@@ -15,6 +15,23 @@ import { createLogger } from "../utils/logger";
 
 const logger = createLogger("SynthesisLabPage");
 
+const AZURE_EMOTIONS = [
+  { value: "", label: "None" },
+  { value: "neutral", label: "Neutral" },
+  { value: "cheerful", label: "Cheerful" },
+  { value: "sad", label: "Sad" },
+  { value: "angry", label: "Angry" },
+  { value: "excited", label: "Excited" },
+  { value: "friendly", label: "Friendly" },
+  { value: "hopeful", label: "Hopeful" },
+] as const;
+
+const OUTPUT_FORMATS = [
+  { value: "wav", label: "WAV" },
+  { value: "mp3", label: "MP3" },
+  { value: "ogg", label: "OGG" },
+] as const;
+
 export default function SynthesisLabPage() {
   const { profiles, fetchProfiles } = useProfileStore();
   const { lastResult, loading, synthesize, fetchHistory, history } = useSynthesisStore();
@@ -25,6 +42,8 @@ export default function SynthesisLabPage() {
   const [speed, setSpeed] = useState(1.0);
   const [pitch, setPitch] = useState(0);
   const [volume, setVolume] = useState(1.0);
+  const [emotion, setEmotion] = useState("");
+  const [outputFormat, setOutputFormat] = useState("wav");
 
   useEffect(() => {
     fetchProfiles();
@@ -33,6 +52,8 @@ export default function SynthesisLabPage() {
   }, []);
 
   const profileOptions = profiles.map((p) => ({ value: p.id, label: `${p.name} (${p.provider_name})` }));
+  const selectedProfileData = profiles.find((p) => p.id === profileId);
+  const isAzure = selectedProfileData?.provider_name === "azure_speech";
 
   const handleProfileSelect = (id: string) => {
     setProfileId(id);
@@ -48,9 +69,27 @@ export default function SynthesisLabPage() {
 
   const handleSynthesize = async () => {
     if (!text.trim() || !profileId) { toast.error("Enter text and select a profile"); return; }
-    logger.info("synthesis_start", { text_length: text.length, profile_id: profileId });
+    logger.info("synthesis_start", { text_length: text.length, profile_id: profileId, emotion, output_format: outputFormat });
+
+    // Wrap text with SSML emotion tags for Azure if an emotion is selected
+    let finalText = text;
+    let useSSML = false;
+    if (isAzure && emotion) {
+      finalText = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name=""><mstts:express-as style="${emotion}">${text}</mstts:express-as></voice></speak>`;
+      useSSML = true;
+    }
+
     try {
-      await synthesize({ text, profile_id: profileId, preset_id: presetId || undefined, speed, pitch, volume });
+      await synthesize({
+        text: finalText,
+        profile_id: profileId,
+        preset_id: presetId || undefined,
+        speed,
+        pitch,
+        volume,
+        output_format: outputFormat,
+        ssml: useSSML || undefined,
+      });
       logger.info("synthesis_complete", { text_length: text.length });
       toast.success("Synthesis complete");
       fetchHistory(20);
@@ -110,8 +149,39 @@ export default function SynthesisLabPage() {
               <Slider label="Speed" id="speed" min={0.5} max={2} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} displayValue={`${speed.toFixed(2)}x`} />
               <Slider label="Pitch" id="pitch" min={-50} max={50} step={1} value={pitch} onChange={(e) => setPitch(Number(e.target.value))} displayValue={`${pitch > 0 ? "+" : ""}${pitch}`} />
               <Slider label="Volume" id="volume" min={0} max={2} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} displayValue={`${(volume * 100).toFixed(0)}%`} />
+              <Select
+                label="Output Format"
+                value={outputFormat}
+                onChange={(e) => setOutputFormat(e.target.value)}
+                options={OUTPUT_FORMATS.map((f) => ({ value: f.value, label: f.label }))}
+              />
             </div>
           </CollapsiblePanel>
+
+          {isAzure && (
+            <CollapsiblePanel title="Emotion / Style" icon={<Smile className="h-4 w-4 text-amber-500" />}>
+              <div className="flex flex-wrap gap-2">
+                {AZURE_EMOTIONS.map((em) => (
+                  <button
+                    key={em.value}
+                    onClick={() => { setEmotion(em.value); logger.info("emotion_selected", { emotion: em.value }); }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors border ${
+                      emotion === em.value
+                        ? "bg-primary-500 text-white border-primary-500"
+                        : "bg-transparent text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-primary-400"
+                    }`}
+                  >
+                    {em.label}
+                  </button>
+                ))}
+              </div>
+              {emotion && (
+                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                  SSML &lt;mstts:express-as style="{emotion}"&gt; will be applied.
+                </p>
+              )}
+            </CollapsiblePanel>
+          )}
           <Button className="w-full" onClick={handleSynthesize} disabled={loading || !text.trim() || !profileId}>
             {loading ? "Synthesizing..." : "Synthesize"}
           </Button>

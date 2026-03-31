@@ -143,6 +143,70 @@ async def _dispatch_to_provider(provider, capabilities, provider_samples, job, t
         raise ValueError(f"Provider '{job.provider_name}' does not support training")
 
 
+async def _score_version_quality(
+    db,
+    job,
+    version,
+    provider,
+    provider_samples,
+) -> None:
+    """Synthesise a test sentence and compute voice quality metrics.
+
+    Updates ``version.metrics_json`` in-place (caller must commit).
+    Failures are non-fatal — logged as warnings so training still succeeds.
+    """
+    from app.services.audio_quality import score_voice_quality
+
+    TEST_SENTENCE = (
+        "The quick brown fox jumps over the lazy dog. "
+        "She sells sea shells by the sea shore."
+    )
+    try:
+        from app.providers.base import SynthesisSettings
+
+        settings_obj = SynthesisSettings(output_format="wav")
+        audio_result = await provider.synthesize(TEST_SENTENCE, settings_obj)
+        synthesized_path = audio_result.audio_path
+
+        original_paths = [s.file_path for s in provider_samples]
+        voice_score = await score_voice_quality(
+            original_samples=original_paths,
+            synthesized_audio=synthesized_path,
+            reference_text=TEST_SENTENCE,
+        )
+
+        # Merge quality score into existing metrics_json
+        existing: dict = {}
+        if version.metrics_json:
+            try:
+                existing = json.loads(version.metrics_json)
+            except json.JSONDecodeError:
+                existing = {}
+        existing["voice_quality"] = voice_score.to_dict()
+        version.metrics_json = json.dumps(existing)
+
+        logger.info(
+            "voice_quality_scored",
+            job_id=job.id,
+            version_id=version.id,
+            overall=voice_score.overall,
+        )
+
+        # Clean up synthesized test file
+        try:
+            synthesized_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    except Exception as exc:
+        logger.warning(
+            "voice_quality_scoring_failed",
+            job_id=job.id,
+            version_id=version.id,
+            error=str(exc),
+        )
+
+
 async def _create_version(db, job, voice_model, task, job_id: str) -> tuple:
     """Create a ModelVersion record and activate it on the profile."""
     from sqlalchemy import func, select
@@ -201,6 +265,13 @@ async def _execute_training(job_id: str, task) -> dict:
                 provider, capabilities, provider_samples, job, task, job_id
             )
             version, next_version = await _create_version(db, job, voice_model, task, job_id)
+
+            # Score voice quality post-training (non-fatal if it fails)
+            task.update_state(state="PROGRESS", meta={
+                "percent": 95, "status": "Scoring voice quality...", "job_id": job_id,
+            })
+            await _score_version_quality(db, job, version, provider, provider_samples)
+            await db.commit()
 
             logger.info("training_complete", job_id=job_id, version_id=version.id)
             return {

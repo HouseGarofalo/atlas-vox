@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.dependencies import CurrentUser, DbSession
 from app.models.audio_sample import AudioSample
 from app.models.voice_profile import VoiceProfile
+from app.schemas.quality import AudioQualityReportSchema, TrainingReadinessSchema
 from app.schemas.sample import (
     PronunciationAssessment,
     SampleAnalysis,
@@ -22,6 +23,7 @@ from app.schemas.sample import (
     TranscribeResponse,
 )
 from app.services.audio_processor import analyze_audio
+from app.services.audio_quality import assess_training_readiness, validate_audio_quality
 
 logger = structlog.get_logger(__name__)
 
@@ -337,3 +339,129 @@ async def assess_sample(
         pronunciation_score=score.pronunciation_score,
         word_scores=score.word_scores,
     )
+
+
+@router.get("/{sample_id}/quality", response_model=AudioQualityReportSchema)
+async def get_sample_quality(
+    profile_id: str,
+    sample_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    force: bool = Query(default=False, description="Re-run quality analysis even if cached"),
+) -> AudioQualityReportSchema:
+    """Get or compute audio quality report for a sample.
+
+    Results are cached in ``sample.analysis_json`` under the ``quality``
+    key.  Pass ``?force=true`` to recompute from scratch.
+    """
+    sample = await _get_sample_or_404(db, profile_id, sample_id)
+
+    # ── Return cached result when available and not forcing refresh ───────────
+    if not force and sample.analysis_json:
+        cached = json.loads(sample.analysis_json)
+        if "quality" in cached:
+            q = cached["quality"]
+            logger.info(
+                "sample_quality_cache_hit",
+                sample_id=sample_id,
+                score=q.get("score"),
+            )
+            return AudioQualityReportSchema(**q)
+
+    # ── Run validation ────────────────────────────────────────────────────────
+    logger.info("sample_quality_compute_start", sample_id=sample_id, profile_id=profile_id)
+    try:
+        report = await validate_audio_quality(Path(sample.file_path))
+    except Exception as exc:
+        logger.error("sample_quality_failed", sample_id=sample_id, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Quality analysis failed: {exc}",
+        ) from exc
+
+    # ── Persist into analysis_json alongside any existing analysis data ───────
+    existing: dict = {}
+    if sample.analysis_json:
+        try:
+            existing = json.loads(sample.analysis_json)
+        except json.JSONDecodeError:
+            existing = {}
+    existing["quality"] = report.to_dict()
+    sample.analysis_json = json.dumps(existing)
+    await db.flush()
+
+    logger.info(
+        "sample_quality_computed",
+        sample_id=sample_id,
+        score=report.score,
+        passed=report.passed,
+    )
+    return AudioQualityReportSchema(**report.to_dict())
+
+
+@router.get("/readiness", response_model=TrainingReadinessSchema)
+async def get_training_readiness(
+    profile_id: str,
+    db: DbSession,
+    user: CurrentUser,
+) -> TrainingReadinessSchema:
+    """Assess whether the profile's samples are ready for training.
+
+    Loads all samples for the profile, runs quality validation for any sample
+    that has not yet been evaluated, and returns a readiness report with a
+    0-100 score and actionable recommendations.
+    """
+    profile = await _get_profile_or_404(db, profile_id)
+
+    result = await db.execute(
+        select(AudioSample)
+        .where(AudioSample.profile_id == profile_id)
+        .order_by(AudioSample.created_at.asc())
+    )
+    samples = result.scalars().all()
+
+    if not samples:
+        return TrainingReadinessSchema(
+            ready=False,
+            score=0.0,
+            sample_count=0,
+            total_duration=0.0,
+            issues=[
+                {
+                    "code": "no_samples",
+                    "severity": "error",
+                    "message": "No audio samples found for this profile",
+                    "value": None,
+                    "threshold": None,
+                }
+            ],
+            recommendations=["Upload at least 2 audio samples to begin training."],
+        )
+
+    # Build the list expected by assess_training_readiness, using cached quality
+    # reports where available to avoid redundant computation.
+    sample_dicts: list[dict] = []
+    for s in samples:
+        entry: dict = {
+            "path": s.file_path,
+            "duration": s.duration_seconds or 0.0,
+        }
+        if s.analysis_json:
+            try:
+                cached = json.loads(s.analysis_json)
+                if "quality" in cached:
+                    entry["quality_report"] = cached["quality"]
+            except json.JSONDecodeError:
+                pass
+        sample_dicts.append(entry)
+
+    logger.info(
+        "training_readiness_assess_start",
+        profile_id=profile_id,
+        sample_count=len(sample_dicts),
+    )
+    readiness = await assess_training_readiness(
+        samples=sample_dicts,
+        provider_name=profile.provider_name,
+    )
+    return TrainingReadinessSchema(**readiness.to_dict())

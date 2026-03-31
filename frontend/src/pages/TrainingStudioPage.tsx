@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Music, Cpu, History, AlertTriangle } from "lucide-react";
+import { Music, Cpu, History, AlertTriangle, Play, Pause, Search, CheckCircle } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
@@ -17,6 +17,22 @@ import { createLogger } from "../utils/logger";
 
 const logger = createLogger("TrainingStudioPage");
 
+interface QualityResult {
+  passed: boolean;
+  score: number;
+  issues: { code: string; severity: string; message: string }[];
+  metrics: Record<string, number>;
+}
+
+interface ReadinessResult {
+  ready: boolean;
+  score: number;
+  sample_count: number;
+  total_duration: number;
+  issues: { code: string; severity: string; message: string }[];
+  recommendations: string[];
+}
+
 export default function TrainingStudioPage() {
   const [searchParams] = useSearchParams();
   const { profiles, fetchProfiles } = useProfileStore();
@@ -26,6 +42,11 @@ export default function TrainingStudioPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [preprocessing, setPreprocessing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [playingSampleId, setPlayingSampleId] = useState<string | null>(null);
+  const [sampleQualities, setSampleQualities] = useState<Record<string, QualityResult>>({});
+  const [checkingQuality, setCheckingQuality] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
+  const [loadingReadiness, setLoadingReadiness] = useState(false);
   const { progress } = useTrainingProgress(activeJobId);
 
   useEffect(() => {
@@ -54,6 +75,53 @@ export default function TrainingStudioPage() {
 
   const loadSamples = async () => {
     try { const { samples: s } = await api.listSamples(selectedProfile); setSamples(s); } catch { /* empty */ }
+  };
+
+  const loadReadiness = useCallback(async () => {
+    if (!selectedProfile) return;
+    setLoadingReadiness(true);
+    try {
+      const r = await api.getTrainingReadiness(selectedProfile);
+      setReadiness(r);
+    } catch {
+      setReadiness(null);
+    } finally {
+      setLoadingReadiness(false);
+    }
+  }, [selectedProfile]);
+
+  useEffect(() => {
+    if (selectedProfile && samples.length > 0) {
+      loadReadiness();
+    } else {
+      setReadiness(null);
+    }
+  }, [selectedProfile, samples.length, loadReadiness]);
+
+  const handleCheckQuality = async (sampleId: string) => {
+    setCheckingQuality(sampleId);
+    try {
+      const result = await api.getSampleQuality(selectedProfile, sampleId);
+      setSampleQualities((prev) => ({ ...prev, [sampleId]: result }));
+      if (result.passed) {
+        toast.success("Sample passed quality check");
+      } else {
+        toast.warning(`Quality issues found (score: ${result.score.toFixed(0)}%)`);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Quality check failed";
+      toast.error(message);
+    } finally {
+      setCheckingQuality(null);
+    }
+  };
+
+  const handlePlaySample = (sampleId: string, _filename: string) => {
+    if (playingSampleId === sampleId) {
+      setPlayingSampleId(null);
+    } else {
+      setPlayingSampleId(sampleId);
+    }
   };
 
   const handleUpload = async (files: File[]) => {
@@ -148,11 +216,63 @@ export default function TrainingStudioPage() {
                     <span>Total: {samples.reduce((sum, s) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
                   </div>
                   {samples.map((s) => (
-                    <div key={s.id} className="flex items-center gap-3 rounded border border-[var(--color-border)] p-2">
-                      <span className="flex-1 text-sm truncate">{s.original_filename}</span>
-                      <span className="text-xs text-[var(--color-text-secondary)] uppercase hidden sm:inline">{s.format}</span>
-                      <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "Pending"}</span>
-                      <Badge status={s.preprocessed ? "ready" : "pending"} />
+                    <div key={s.id} className="rounded border border-[var(--color-border)]">
+                      <div className="flex items-center gap-3 p-2">
+                        <button
+                          onClick={() => handlePlaySample(s.id, s.filename)}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white hover:bg-primary-600 transition-colors"
+                          aria-label={playingSampleId === s.id ? "Stop" : "Play"}
+                        >
+                          {playingSampleId === s.id ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3 ml-0.5" />}
+                        </button>
+                        <span className="flex-1 text-sm truncate">{s.original_filename}</span>
+                        {sampleQualities[s.id] && (
+                          <span
+                            className={`inline-block h-2.5 w-2.5 rounded-full ${
+                              sampleQualities[s.id].score >= 80 ? "bg-green-500" :
+                              sampleQualities[s.id].score >= 50 ? "bg-yellow-500" :
+                              "bg-red-500"
+                            }`}
+                            title={`Quality: ${sampleQualities[s.id].score.toFixed(0)}%`}
+                          />
+                        )}
+                        <span className="text-xs text-[var(--color-text-secondary)] uppercase hidden sm:inline">{s.format}</span>
+                        <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "Pending"}</span>
+                        <Badge status={s.preprocessed ? "ready" : "pending"} />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCheckQuality(s.id)}
+                          disabled={checkingQuality === s.id}
+                          aria-label="Check quality"
+                        >
+                          {checkingQuality === s.id ? (
+                            <span className="text-xs">...</span>
+                          ) : (
+                            <Search className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                      {playingSampleId === s.id && (
+                        <div className="px-2 pb-2">
+                          <audio
+                            src={api.audioUrl(s.filename)}
+                            autoPlay
+                            controls
+                            onEnded={() => setPlayingSampleId(null)}
+                            className="w-full h-8"
+                          />
+                        </div>
+                      )}
+                      {sampleQualities[s.id] && sampleQualities[s.id].issues.length > 0 && (
+                        <div className="px-2 pb-2 space-y-1">
+                          {sampleQualities[s.id].issues.map((issue, i) => (
+                            <p key={i} className={`text-xs ${issue.severity === "error" ? "text-red-500" : "text-yellow-600 dark:text-yellow-400"}`}>
+                              {issue.message}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -177,12 +297,83 @@ export default function TrainingStudioPage() {
             </div>
           )}
 
+          {samples.length > 0 && (
+            <CollapsiblePanel
+              title="Training Readiness"
+              icon={<CheckCircle className="h-4 w-4 text-green-500" />}
+            >
+              {loadingReadiness ? (
+                <p className="text-sm text-[var(--color-text-secondary)]">Checking readiness...</p>
+              ) : readiness ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    {/* Circular progress indicator */}
+                    <div className="relative h-16 w-16 shrink-0">
+                      <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                        <path
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          fill="none"
+                          stroke="var(--color-border, #e5e7eb)"
+                          strokeWidth="3"
+                        />
+                        <path
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          fill="none"
+                          stroke={readiness.score >= 80 ? "#22c55e" : readiness.score >= 50 ? "#f59e0b" : "#ef4444"}
+                          strokeWidth="3"
+                          strokeDasharray={`${readiness.score}, 100`}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">
+                        {Math.round(readiness.score)}%
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">
+                        {readiness.ready ? "Ready to train" : "Not yet ready"}
+                      </p>
+                      <p className="text-xs text-[var(--color-text-secondary)]">
+                        {readiness.sample_count} samples, {readiness.total_duration.toFixed(1)}s total audio
+                      </p>
+                    </div>
+                  </div>
+                  {readiness.recommendations.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-[var(--color-text-secondary)]">Recommendations:</p>
+                      <ul className="space-y-1">
+                        {readiness.recommendations.map((rec, i) => (
+                          <li key={i} className="text-xs text-[var(--color-text-secondary)] flex items-start gap-1.5">
+                            <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-text-secondary)]" />
+                            {rec}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--color-text-secondary)]">Add samples to check training readiness.</p>
+              )}
+            </CollapsiblePanel>
+          )}
+
           <CollapsiblePanel
             title="Train Model"
             icon={<Cpu className="h-4 w-4 text-blue-500" />}
           >
             <div className="space-y-4">
-              <Button onClick={handleStartTraining} disabled={samples.length < (isAzure ? 2 : 1)}>Start Training</Button>
+              <Button
+                onClick={handleStartTraining}
+                disabled={samples.length < (isAzure ? 2 : 1) || (readiness !== null && !readiness.ready)}
+              >
+                Start Training
+              </Button>
+              {readiness !== null && !readiness.ready && (
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Training is disabled until readiness requirements are met. See the Readiness panel above.
+                </p>
+              )}
               {progress && (
                 <div className="space-y-2">
                   <ProgressBar percent={progress.percent} label={progress.status} />

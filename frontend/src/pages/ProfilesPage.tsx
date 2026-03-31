@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Library, Mic, Plus, Trash2, Upload, Volume2 } from "lucide-react";
+import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -8,8 +8,10 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Modal } from "../components/ui/Modal";
+import { AudioPlayer } from "../components/audio/AudioPlayer";
 import { useProfileStore } from "../stores/profileStore";
 import { useProviderStore } from "../stores/providerStore";
+import { api } from "../services/api";
 import { createLogger } from "../utils/logger";
 import type { VoiceProfile } from "../types";
 
@@ -22,6 +24,7 @@ export default function ProfilesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"choose" | "training">("choose");
   const [form, setForm] = useState({ name: "", description: "", language: "en", provider_name: "" });
+  const [compareProfile, setCompareProfile] = useState<VoiceProfile | null>(null);
 
   useEffect(() => {
     fetchProfiles();
@@ -97,10 +100,18 @@ export default function ProfilesPage() {
               onDelete={() => handleDelete(profile.id)}
               onTrain={() => { logger.info("navigate_train", { profile_id: profile.id }); navigate(`/training?profile=${profile.id}`); }}
               onSynthesize={() => { logger.info("navigate_synthesize", { profile_id: profile.id }); navigate(`/synthesis?profile=${profile.id}`); }}
+              onCompare={() => { logger.info("version_compare_open", { profile_id: profile.id }); setCompareProfile(profile); }}
             />
           ))}
         </div>
       )}
+
+      {/* Version Compare Modal */}
+      <VersionCompareModal
+        profile={compareProfile}
+        open={compareProfile !== null}
+        onClose={() => setCompareProfile(null)}
+      />
 
       {/* New Profile Modal */}
       <Modal
@@ -206,11 +217,13 @@ const ProfileCard = React.memo(function ProfileCard({
   onDelete,
   onTrain,
   onSynthesize,
+  onCompare,
 }: {
   profile: VoiceProfile;
   onDelete: () => void;
   onTrain: () => void;
   onSynthesize: () => void;
+  onCompare: () => void;
 }) {
   const isReady = profile.status === "ready";
   const hasLibraryVoice = !!profile.voice_id;
@@ -238,7 +251,7 @@ const ProfileCard = React.memo(function ProfileCard({
         ) : (
           <>
             <span>{profile.sample_count} samples</span>
-            <span>{profile.version_count} versions</span>
+            <span>{profile.version_count} version{profile.version_count !== 1 ? "s" : ""}</span>
           </>
         )}
       </div>
@@ -252,6 +265,11 @@ const ProfileCard = React.memo(function ProfileCard({
             <Upload className="h-3 w-3" /> Train
           </Button>
         )}
+        {profile.version_count > 1 && (
+          <Button size="sm" variant="secondary" onClick={onCompare}>
+            <GitCompare className="h-3 w-3" />
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onDelete}>
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -259,3 +277,144 @@ const ProfileCard = React.memo(function ProfileCard({
     </Card>
   );
 });
+
+interface VersionInfo {
+  id: string;
+  profile_id: string;
+  version_number: number;
+  provider_name: string;
+  created_at: string;
+}
+
+function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile | null; open: boolean; onClose: () => void }) {
+  const [versions, setVersions] = useState<VersionInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<[string, string]>(["", ""]);
+  const [testText, setTestText] = useState("Hello, this is a version comparison test.");
+  const [comparing, setComparing] = useState(false);
+  const [results, setResults] = useState<{ version_id: string; audio_url: string | null; error: string | null }[]>([]);
+
+  useEffect(() => {
+    if (!open || !profile) return;
+    setLoading(true);
+    setSelected(["", ""]);
+    setResults([]);
+    api.listVersions(profile.id)
+      .then(({ versions: v }) => {
+        setVersions(v);
+        // Auto-select latest two
+        if (v.length >= 2) {
+          setSelected([v[v.length - 2].id, v[v.length - 1].id]);
+        }
+      })
+      .catch(() => toast.error("Failed to load versions"))
+      .finally(() => setLoading(false));
+  }, [open, profile]);
+
+  const handleCompare = async () => {
+    if (!profile || !selected[0] || !selected[1]) return;
+    setComparing(true);
+    setResults([]);
+    const newResults: typeof results = [];
+
+    for (const versionId of selected) {
+      try {
+        // Activate version, synthesize, then we have audio
+        await api.activateVersion(profile.id, versionId);
+        const result = await api.synthesize({ text: testText, profile_id: profile.id });
+        newResults.push({ version_id: versionId, audio_url: result.audio_url, error: null });
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Synthesis failed";
+        newResults.push({ version_id: versionId, audio_url: null, error: message });
+      }
+    }
+
+    setResults(newResults);
+    setComparing(false);
+  };
+
+  const versionOptions = versions.map((v) => ({ value: v.id, label: `v${v.version_number} (${new Date(v.created_at).toLocaleDateString()})` }));
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Compare Versions - ${profile?.name ?? ""}`} wide>
+      {loading ? (
+        <p className="text-sm text-[var(--color-text-secondary)]">Loading versions...</p>
+      ) : versions.length < 2 ? (
+        <p className="text-sm text-[var(--color-text-secondary)]">Need at least 2 versions to compare.</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Version A"
+              value={selected[0]}
+              onChange={(e) => setSelected([e.target.value, selected[1]])}
+              options={[{ value: "", label: "Select..." }, ...versionOptions]}
+            />
+            <Select
+              label="Version B"
+              value={selected[1]}
+              onChange={(e) => setSelected([selected[0], e.target.value])}
+              options={[{ value: "", label: "Select..." }, ...versionOptions]}
+            />
+          </div>
+
+          {/* Version details side by side */}
+          <div className="grid grid-cols-2 gap-4">
+            {selected.map((vId, idx) => {
+              const v = versions.find((ver) => ver.id === vId);
+              return (
+                <div key={idx} className="rounded border border-[var(--color-border)] p-3 text-xs space-y-1">
+                  {v ? (
+                    <>
+                      <p className="font-medium">Version {v.version_number}</p>
+                      <p className="text-[var(--color-text-secondary)]">Provider: {v.provider_name}</p>
+                      <p className="text-[var(--color-text-secondary)]">Created: {new Date(v.created_at).toLocaleString()}</p>
+                    </>
+                  ) : (
+                    <p className="text-[var(--color-text-secondary)]">Select a version</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <Input
+            label="Test Text"
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            placeholder="Enter text to synthesize for comparison"
+          />
+
+          <Button
+            onClick={handleCompare}
+            disabled={comparing || !selected[0] || !selected[1] || selected[0] === selected[1] || !testText.trim()}
+          >
+            {comparing ? "Comparing..." : "Synthesize Test"}
+          </Button>
+
+          {results.length > 0 && (
+            <div className="grid grid-cols-2 gap-4">
+              {results.map((r, idx) => {
+                const v = versions.find((ver) => ver.id === r.version_id);
+                return (
+                  <div key={idx} className="space-y-2">
+                    <p className="text-sm font-medium">Version {v?.version_number ?? "?"}</p>
+                    {r.error ? (
+                      <p className="text-xs text-red-500">{r.error}</p>
+                    ) : r.audio_url ? (
+                      <AudioPlayer src={r.audio_url} compact />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button variant="secondary" onClick={onClose}>Close</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}

@@ -225,6 +225,15 @@ class ApiClient {
     return this.request<{ enabled: boolean; running: boolean }>(`/healing/toggle?enable=${enable}`, { method: "POST" });
   }
 
+  // Sample Quality & Training Readiness
+  getSampleQuality(profileId: string, sampleId: string) {
+    return this.request<{ passed: boolean; score: number; issues: { code: string; severity: string; message: string }[]; metrics: Record<string, number> }>(`/profiles/${profileId}/samples/${sampleId}/quality`);
+  }
+
+  getTrainingReadiness(profileId: string) {
+    return this.request<{ ready: boolean; score: number; sample_count: number; total_duration: number; issues: { code: string; severity: string; message: string }[]; recommendations: string[] }>(`/profiles/${profileId}/samples/readiness`);
+  }
+
   // Audio URL helper
   audioUrl(filename: string) {
     return `${this.baseUrl}/audio/${filename}`;
