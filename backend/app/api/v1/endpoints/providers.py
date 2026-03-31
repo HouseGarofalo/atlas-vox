@@ -43,8 +43,8 @@ async def list_providers() -> ProviderListResponse:
             try:
                 raw_caps = await provider_registry.get_capabilities(info["name"])
                 caps = ProviderCapabilitiesSchema(**raw_caps.__dict__)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("provider_capabilities_failed", provider=info["name"], error=str(exc))
 
         providers.append(
             ProviderResponse(
@@ -78,8 +78,8 @@ async def get_provider(name: str) -> ProviderResponse:
         try:
             raw_caps = await provider_registry.get_capabilities(name)
             caps = ProviderCapabilitiesSchema(**raw_caps.__dict__)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("provider_capabilities_failed", provider=name, error=str(exc))
 
     return ProviderResponse(
         id=name,
