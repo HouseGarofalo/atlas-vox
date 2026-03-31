@@ -73,8 +73,30 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all tables (for development/testing). Use Alembic in production."""
+    """Create all tables and add any missing columns for existing tables."""
     logger.info("db_init_start")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # For SQLite: add columns that may be missing on existing tables.
+        # create_all only creates NEW tables, not new columns on existing ones.
+        if settings.is_sqlite:
+            from sqlalchemy import inspect, text
+
+            def _add_missing_columns(sync_conn):
+                inspector = inspect(sync_conn)
+                for table in Base.metadata.sorted_tables:
+                    if not inspector.has_table(table.name):
+                        continue
+                    existing = {c["name"] for c in inspector.get_columns(table.name)}
+                    for col in table.columns:
+                        if col.name not in existing:
+                            col_type = col.type.compile(sync_conn.dialect)
+                            sync_conn.execute(text(
+                                f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}"
+                            ))
+                            logger.info("db_column_added", table=table.name, column=col.name)
+
+            await conn.run_sync(_add_missing_columns)
+
     logger.info("db_init_complete")
