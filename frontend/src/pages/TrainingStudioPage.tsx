@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Music, Cpu, History } from "lucide-react";
+import { Music, Cpu, History, AlertTriangle } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
@@ -122,6 +122,8 @@ export default function TrainingStudioPage() {
 
   const profileOptions = profiles.map((p) => ({ value: p.id, label: `${p.name} (${p.provider_name})` }));
   const profileJobs = jobs.filter((j) => j.profile_id === selectedProfile);
+  const selectedProfileData = profiles.find((p) => p.id === selectedProfile);
+  const isAzure = selectedProfileData?.provider_name === "azure_speech";
 
   return (
     <div className="space-y-6">
@@ -163,12 +165,24 @@ export default function TrainingStudioPage() {
             </div>
           </CollapsiblePanel>
 
+          {isAzure && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div className="text-sm text-amber-800 dark:text-amber-200">
+                <p className="font-semibold mb-1">Azure Custom Voice — Consent Required</p>
+                <p>Your <strong>first uploaded sample</strong> must be a consent recording. Record yourself reading:</p>
+                <p className="mt-1 italic text-xs">"I [your full name] am aware that recordings of my voice will be used by [company name] to create and use a synthetic version of my voice."</p>
+                <p className="mt-1 text-xs">Upload the consent recording first, then add your voice samples (5-90 seconds each). Minimum 2 files total.</p>
+              </div>
+            </div>
+          )}
+
           <CollapsiblePanel
             title="Train Model"
             icon={<Cpu className="h-4 w-4 text-blue-500" />}
           >
             <div className="space-y-4">
-              <Button onClick={handleStartTraining} disabled={samples.length === 0}>Start Training</Button>
+              <Button onClick={handleStartTraining} disabled={samples.length < (isAzure ? 2 : 1)}>Start Training</Button>
               {progress && (
                 <div className="space-y-2">
                   <ProgressBar percent={progress.percent} label={progress.status} />

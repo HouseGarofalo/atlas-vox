@@ -1,9 +1,16 @@
-"""Azure AI Speech provider — cloud TTS with SSML support and Custom Neural Voice."""
+"""Azure AI Speech provider — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training."""
 
 from __future__ import annotations
 
+import asyncio
+import io
 import time
+import uuid
+import zipfile
+from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
+import httpx
 import structlog
 
 from app.core.config import settings
@@ -23,9 +30,253 @@ from app.providers.base import (
 
 logger = structlog.get_logger(__name__)
 
+# Azure Custom Voice API version
+CNV_API_VERSION = "2024-02-01-preview"
+
+# Language code → Azure locale mapping
+_LOCALE_MAP = {
+    "en": "en-US", "es": "es-ES", "fr": "fr-FR", "de": "de-DE",
+    "it": "it-IT", "pt": "pt-BR", "zh": "zh-CN", "ja": "ja-JP",
+    "ko": "ko-KR", "ar": "ar-SA", "ru": "ru-RU", "nl": "nl-NL",
+    "pl": "pl-PL", "sv": "sv-SE", "tr": "tr-TR", "hi": "hi-IN",
+}
+
+
+class AzureCNVClient:
+    """REST API client for Azure Custom Voice (Personal + Professional)."""
+
+    def __init__(self, subscription_key: str, region: str) -> None:
+        self.subscription_key = subscription_key
+        self.region = region
+        self.base_url = f"https://{region}.api.cognitive.microsoft.com/customvoice"
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Ocp-Apim-Subscription-Key": self.subscription_key}
+
+    def _json_headers(self) -> dict[str, str]:
+        return {**self._auth_headers(), "Content-Type": "application/json"}
+
+    def _url(self, path: str) -> str:
+        return f"{self.base_url}/{path}?api-version={CNV_API_VERSION}"
+
+    # ---- Project Management ----
+
+    async def create_project(self, project_id: str, kind: str = "PersonalVoice",
+                              description: str = "") -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(
+                self._url(f"projects/{project_id}"),
+                headers=self._json_headers(),
+                json={"kind": kind, "description": description},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_project(self, project_id: str) -> dict | None:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                self._url(f"projects/{project_id}"),
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_or_create_project(self, project_id: str, kind: str = "PersonalVoice",
+                                     description: str = "") -> dict:
+        existing = await self.get_project(project_id)
+        if existing:
+            return existing
+        return await self.create_project(project_id, kind=kind, description=description)
+
+    # ---- Consent ----
+
+    async def create_consent(self, consent_id: str, project_id: str,
+                              voice_talent_name: str, company_name: str,
+                              audio_file: Path, locale: str = "en-US") -> dict:
+        async with httpx.AsyncClient(timeout=60) as client:
+            with open(audio_file, "rb") as f:
+                resp = await client.post(
+                    self._url(f"consents/{consent_id}"),
+                    headers=self._auth_headers(),
+                    data={
+                        "projectId": project_id,
+                        "voiceTalentName": voice_talent_name,
+                        "companyName": company_name,
+                        "locale": locale,
+                    },
+                    files={"audiodata": (audio_file.name, f, "audio/wav")},
+                )
+            resp.raise_for_status()
+            return resp.json()
+
+    # ---- Personal Voice ----
+
+    async def create_personal_voice(self, personal_voice_id: str,
+                                     project_id: str, consent_id: str,
+                                     audio_files: list[Path]) -> dict:
+        async with httpx.AsyncClient(timeout=120) as client:
+            files_list = []
+            handles = []
+            try:
+                for af in audio_files:
+                    fh = open(af, "rb")
+                    handles.append(fh)
+                    files_list.append(("audiodata", (af.name, fh, "audio/wav")))
+
+                resp = await client.post(
+                    self._url(f"personalvoices/{personal_voice_id}"),
+                    headers=self._auth_headers(),
+                    data={"projectId": project_id, "consentId": consent_id},
+                    files=files_list,
+                )
+            finally:
+                for fh in handles:
+                    fh.close()
+
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_personal_voice(self, personal_voice_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                self._url(f"personalvoices/{personal_voice_id}"),
+                headers=self._auth_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def wait_for_personal_voice(self, personal_voice_id: str,
+                                       poll_interval: int = 5,
+                                       timeout: int = 600) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            voice = await self.get_personal_voice(personal_voice_id)
+            status = voice.get("status", "")
+            logger.info("azure_pv_poll", id=personal_voice_id, status=status)
+            if status in ("Succeeded", "Failed", "Disabling"):
+                if status == "Failed":
+                    raise RuntimeError(
+                        f"Personal voice creation failed: {voice.get('description', voice)}"
+                    )
+                return voice
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError("Personal voice creation timed out")
+
+    # ---- Professional Voice (Training Set + Model + Endpoint) ----
+
+    async def create_training_set(self, training_set_id: str, project_id: str,
+                                   description: str = "") -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(
+                self._url(f"trainingsets/{training_set_id}"),
+                headers=self._json_headers(),
+                json={"projectId": project_id, "description": description},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def upload_training_data(self, training_set_id: str,
+                                    audio_files: list[Path],
+                                    kind: str = "IndividualUtterances") -> dict:
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for af in audio_files:
+                zf.write(af, af.name)
+        zip_buf.seek(0)
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                self._url(f"trainingsets/{training_set_id}/uploads"),
+                headers=self._auth_headers(),
+                data={"kind": kind},
+                files={"audiodata": ("training_data.zip", zip_buf, "application/zip")},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def create_model(self, model_id: str, project_id: str,
+                           consent_id: str, training_set_id: str,
+                           voice_name: str, locale: str = "en-US",
+                           recipe_kind: str = "Default") -> dict:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.put(
+                self._url(f"models/{model_id}"),
+                headers=self._json_headers(),
+                json={
+                    "projectId": project_id,
+                    "consentId": consent_id,
+                    "trainingSetId": training_set_id,
+                    "voiceName": voice_name,
+                    "locale": locale,
+                    "recipe": {"kind": recipe_kind},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_model(self, model_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                self._url(f"models/{model_id}"),
+                headers=self._auth_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def wait_for_model(self, model_id: str,
+                              poll_interval: int = 60,
+                              timeout: int = 14400) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            model = await self.get_model(model_id)
+            status = model.get("status", "")
+            logger.info("azure_model_poll", model_id=model_id, status=status)
+            if status in ("Succeeded", "Failed"):
+                if status == "Failed":
+                    raise RuntimeError(f"Model training failed: {model}")
+                return model
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError(f"Model training timed out after {timeout}s")
+
+    async def deploy_endpoint(self, endpoint_id: str, project_id: str,
+                               model_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.put(
+                self._url(f"endpoints/{endpoint_id}"),
+                headers=self._json_headers(),
+                json={"projectId": project_id, "modelId": model_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_endpoint(self, endpoint_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                self._url(f"endpoints/{endpoint_id}"),
+                headers=self._auth_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def wait_for_endpoint(self, endpoint_id: str,
+                                 poll_interval: int = 15,
+                                 timeout: int = 600) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            endpoint = await self.get_endpoint(endpoint_id)
+            status = endpoint.get("status", "")
+            if status in ("Succeeded", "Failed"):
+                if status == "Failed":
+                    raise RuntimeError(f"Endpoint deployment failed: {endpoint}")
+                return endpoint
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError(f"Endpoint deployment timed out after {timeout}s")
+
 
 class AzureSpeechProvider(TTSProvider):
-    """Azure AI Speech — cloud TTS with SSML and Custom Neural Voice."""
+    """Azure AI Speech — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training."""
 
     def __init__(self) -> None:
         self._speech_config = None
@@ -34,10 +285,14 @@ class AzureSpeechProvider(TTSProvider):
         super().configure(config)
         self._speech_config = None
 
+    def _get_key_and_region(self) -> tuple[str, str]:
+        key = self.get_config_value("subscription_key", settings.azure_speech_key)
+        region = self.get_config_value("region", settings.azure_speech_region)
+        return key, region
+
     def _get_config(self):
         if self._speech_config is None:
-            subscription_key = self.get_config_value('subscription_key', settings.azure_speech_key)
-            region = self.get_config_value('region', settings.azure_speech_region)
+            subscription_key, region = self._get_key_and_region()
             if not subscription_key:
                 raise ValueError("AZURE_SPEECH_KEY not configured")
             try:
@@ -55,6 +310,16 @@ class AzureSpeechProvider(TTSProvider):
                 raise ImportError("pip install azure-cognitiveservices-speech")
         return self._speech_config
 
+    def _cnv_client(self) -> AzureCNVClient:
+        key, region = self._get_key_and_region()
+        if not key:
+            raise ValueError("AZURE_SPEECH_KEY not configured for Custom Voice")
+        return AzureCNVClient(key, region)
+
+    @staticmethod
+    def _to_locale(lang: str) -> str:
+        return _LOCALE_MAP.get(lang, f"{lang}-{lang.upper()}" if len(lang) == 2 else lang)
+
     async def synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AudioResult:
@@ -62,19 +327,54 @@ class AzureSpeechProvider(TTSProvider):
 
         config = self._get_config()
         output_file = self.prepare_output_path(prefix="azure")
-
         audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_file))
-        synthesizer = speechsdk.SpeechSynthesizer(
-            speech_config=config, audio_config=audio_config
-        )
 
         logger.info("azure_synthesize_started", voice_id=voice_id, text_length=len(text), ssml=settings_.ssml)
         start = time.perf_counter()
 
-        if settings_.ssml:
+        # Personal Voice — voice_id is "pv:<speakerProfileId>"
+        if voice_id.startswith("pv:"):
+            speaker_profile_id = voice_id[3:]
+            ssml = (
+                '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+                'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="en-US">'
+                '<voice name="DragonLatestNeural">'
+                f'<mstts:ttsembedding speakerProfileId="{xml_escape(speaker_profile_id)}"/>'
+                f"{xml_escape(text)}"
+                "</voice></speak>"
+            )
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=config, audio_config=audio_config
+            )
+            result = await run_sync(synthesizer.speak_ssml_async(ssml).get)
+
+        # Professional Voice — voice_id is "cnv:<voiceName>:<endpointId>"
+        elif voice_id.startswith("cnv:"):
+            parts = voice_id[4:].split(":", 1)
+            voice_name = parts[0]
+            endpoint_id = parts[1] if len(parts) > 1 else None
+            if endpoint_id:
+                config.endpoint_id = endpoint_id
+            config.speech_synthesis_voice_name = voice_name
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=config, audio_config=audio_config
+            )
+            if settings_.ssml:
+                result = await run_sync(synthesizer.speak_ssml_async(text).get)
+            else:
+                result = await run_sync(synthesizer.speak_text_async(text).get)
+
+        # Standard voice (existing behaviour)
+        elif settings_.ssml:
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=config, audio_config=audio_config
+            )
             result = await run_sync(synthesizer.speak_ssml_async(text).get)
         else:
             config.speech_synthesis_voice_name = voice_id or "en-US-JennyNeural"
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=config, audio_config=audio_config
+            )
             result = await run_sync(synthesizer.speak_text_async(text).get)
 
         elapsed = time.perf_counter() - start
@@ -103,15 +403,138 @@ class AzureSpeechProvider(TTSProvider):
     async def clone_voice(
         self, samples: list[ProviderAudioSample], config: CloneConfig
     ) -> VoiceModel:
-        raise NotImplementedError(
-            "Azure Custom Neural Voice requires portal setup. "
-            "Create your CNV project at speech.microsoft.com"
+        """Clone a voice using Azure Personal Voice.
+
+        Requires at least 2 audio samples: the first is used as the consent
+        recording and the remaining as voice prompts (5-90 s each).
+        """
+        if len(samples) < 2:
+            raise ValueError(
+                "Azure Personal Voice requires at least 2 audio samples: "
+                "1 consent recording + 1 voice prompt (5-90 seconds)"
+            )
+
+        cnv = self._cnv_client()
+        tag = uuid.uuid4().hex[:8]
+        project_id = f"atlasvox-pv-{tag}"
+        consent_id = f"consent-{tag}"
+        pv_id = f"pv-{tag}"
+        locale = self._to_locale(config.language)
+        company = self.get_config_value("company_name", settings.azure_cnv_company_name)
+        talent = config.name or "Voice Talent"
+
+        logger.info(
+            "azure_pv_clone_start",
+            project_id=project_id,
+            sample_count=len(samples),
+            locale=locale,
+        )
+
+        # 1. Project
+        await cnv.get_or_create_project(project_id, kind="PersonalVoice",
+                                         description=f"Atlas Vox — {config.name}")
+
+        # 2. Consent (first sample)
+        await cnv.create_consent(consent_id, project_id, talent, company,
+                                  samples[0].file_path, locale=locale)
+
+        # 3. Create personal voice (remaining samples)
+        prompt_files = [s.file_path for s in samples[1:]]
+        await cnv.create_personal_voice(pv_id, project_id, consent_id, prompt_files)
+
+        # 4. Poll until ready
+        voice_data = await cnv.wait_for_personal_voice(pv_id)
+        speaker_profile_id = voice_data.get("speakerProfileId", "")
+        if not speaker_profile_id:
+            raise RuntimeError("Azure Personal Voice did not return a speakerProfileId")
+
+        logger.info(
+            "azure_pv_clone_complete",
+            project_id=project_id,
+            speaker_profile_id=speaker_profile_id,
+        )
+
+        return VoiceModel(
+            model_id=pv_id,
+            provider_model_id=f"pv:{speaker_profile_id}",
+            metrics={
+                "method": "personal_voice",
+                "project_id": project_id,
+                "consent_id": consent_id,
+                "locale": locale,
+            },
         )
 
     async def fine_tune(
         self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
-        raise NotImplementedError("Azure CNV fine-tuning is managed via Azure portal")
+        """Train a Professional Voice using Azure Custom Neural Voice.
+
+        This is a long-running operation (hours). Requires 20+ audio samples
+        with the first used as consent.
+        """
+        if len(samples) < 3:
+            raise ValueError(
+                "Azure Professional Voice requires at least 3 audio samples: "
+                "1 consent recording + 2 training utterances (20+ recommended)"
+            )
+
+        cnv = self._cnv_client()
+        tag = uuid.uuid4().hex[:8]
+        project_id = f"atlasvox-pro-{tag}"
+        consent_id = f"consent-{tag}"
+        ts_id = f"ts-{tag}"
+        cnv_model_id = f"model-{tag}"
+        endpoint_id = f"ep-{tag}"
+        voice_name = f"AtlasVox{tag}"
+        locale = "en-US"
+        company = self.get_config_value("company_name", settings.azure_cnv_company_name)
+
+        logger.info(
+            "azure_pro_train_start",
+            project_id=project_id,
+            sample_count=len(samples),
+            voice_name=voice_name,
+        )
+
+        # 1. Project
+        await cnv.get_or_create_project(project_id, kind="ProfessionalVoice",
+                                         description="Atlas Vox Professional Voice")
+
+        # 2. Consent
+        await cnv.create_consent(consent_id, project_id, "Voice Talent", company,
+                                  samples[0].file_path, locale=locale)
+
+        # 3. Training set + data
+        await cnv.create_training_set(ts_id, project_id)
+        train_files = [s.file_path for s in samples[1:]]
+        await cnv.upload_training_data(ts_id, train_files)
+
+        # 4. Train model
+        await cnv.create_model(cnv_model_id, project_id, consent_id, ts_id,
+                               voice_name, locale=locale)
+        await cnv.wait_for_model(cnv_model_id)
+
+        # 5. Deploy endpoint
+        await cnv.deploy_endpoint(endpoint_id, project_id, cnv_model_id)
+        await cnv.wait_for_endpoint(endpoint_id)
+
+        logger.info(
+            "azure_pro_train_complete",
+            voice_name=voice_name,
+            endpoint_id=endpoint_id,
+        )
+
+        return VoiceModel(
+            model_id=cnv_model_id,
+            provider_model_id=f"cnv:{voice_name}:{endpoint_id}",
+            metrics={
+                "method": "professional_voice",
+                "project_id": project_id,
+                "endpoint_id": endpoint_id,
+                "voice_name": voice_name,
+            },
+        )
 
     async def list_voices(self) -> list[VoiceInfo]:
         """List Azure English neural voices.
@@ -380,21 +803,16 @@ class AzureSpeechProvider(TTSProvider):
         ]
 
     async def get_capabilities(self) -> ProviderCapabilities:
-        # Azure Custom Neural Voice (CNV) requires setup through the Azure Speech
-        # Studio portal (https://speech.microsoft.com) and cannot be initiated
-        # programmatically via the Speech SDK.  supports_cloning is therefore
-        # always False here; the clone_voice() method raises NotImplementedError
-        # with instructions for the portal workflow.
         return ProviderCapabilities(
-            supports_cloning=False,
-            supports_fine_tuning=False,
+            supports_cloning=True,          # Azure Personal Voice
+            supports_fine_tuning=True,      # Azure Professional Voice (CNV)
             supports_streaming=True,
             supports_ssml=True,
             supports_zero_shot=False,
             supports_batch=True,
             requires_gpu=False,
             gpu_mode="none",
-            min_samples_for_cloning=0,
+            min_samples_for_cloning=2,      # 1 consent + 1 voice prompt
             max_text_length=10000,
             supported_languages=["en", "es", "fr", "de", "it", "pt", "zh", "ja",
                                  "ko", "ar", "ru", "nl", "pl", "sv", "tr", "hi"],

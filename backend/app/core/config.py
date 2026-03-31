@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     # Provider: Azure
     azure_speech_key: str = ""
     azure_speech_region: str = "eastus"
+    azure_cnv_company_name: str = "Atlas Vox"
 
     # Provider: Coqui XTTS
     coqui_xtts_gpu_mode: str = "host_cpu"

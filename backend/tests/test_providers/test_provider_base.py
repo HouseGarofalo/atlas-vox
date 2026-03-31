@@ -78,6 +78,16 @@ class TestProviderCapabilities:
         assert caps.gpu_mode == "none"  # Cloud provider
 
     @pytest.mark.asyncio
+    async def test_azure_capabilities(self):
+        provider = provider_registry.get_provider("azure_speech")
+        caps = await provider.get_capabilities()
+        assert caps.supports_cloning is True  # Personal Voice
+        assert caps.supports_fine_tuning is True  # Professional Voice
+        assert caps.supports_ssml is True
+        assert caps.gpu_mode == "none"  # Cloud provider
+        assert caps.min_samples_for_cloning == 2
+
+    @pytest.mark.asyncio
     async def test_piper_capabilities(self):
         provider = provider_registry.get_provider("piper")
         caps = await provider.get_capabilities()
