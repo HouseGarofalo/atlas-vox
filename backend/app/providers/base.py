@@ -26,6 +26,9 @@ class ProviderCapabilities:
     supports_ssml: bool = False
     supports_zero_shot: bool = False
     supports_batch: bool = False
+    supports_word_boundaries: bool = False
+    supports_pronunciation_assessment: bool = False
+    supports_transcription: bool = False
     requires_gpu: bool = False
     gpu_mode: str = "none"  # none, docker_gpu, host_cpu, configurable
     min_samples_for_cloning: int = 0
@@ -77,6 +80,29 @@ class VoiceInfo:
     gender: str | None = None
     description: str | None = None
     preview_url: str | None = None
+    is_hd: bool = False
+    supports_emotion: bool = False
+
+
+@dataclass
+class WordBoundary:
+    """Word timing from synthesis — for subtitle/karaoke features."""
+
+    text: str
+    offset_ms: int
+    duration_ms: int
+    word_index: int
+
+
+@dataclass
+class PronunciationScore:
+    """Pronunciation quality assessment result."""
+
+    accuracy_score: float
+    fluency_score: float
+    completeness_score: float
+    pronunciation_score: float
+    word_scores: list[dict] | None = None
 
 
 @dataclass
@@ -191,3 +217,19 @@ class TTSProvider(ABC):
         )
         raise NotImplementedError("Streaming not supported by this provider")
         yield  # Make it an async generator
+
+    async def synthesize_with_word_boundaries(
+        self, text: str, voice_id: str, settings: SynthesisSettings
+    ) -> tuple[AudioResult, list[WordBoundary]]:
+        """Synthesis with word timing data (optional)."""
+        raise NotImplementedError("Word boundaries not supported by this provider")
+
+    async def transcribe(self, audio_path: Path, locale: str = "en-US") -> str:
+        """Transcribe audio to text (optional — for training pipeline)."""
+        raise NotImplementedError("Transcription not supported by this provider")
+
+    async def assess_pronunciation(
+        self, audio_path: Path, reference_text: str, locale: str = "en-US"
+    ) -> PronunciationScore:
+        """Assess pronunciation quality of an audio sample (optional)."""
+        raise NotImplementedError("Pronunciation assessment not supported by this provider")

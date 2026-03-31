@@ -14,6 +14,14 @@ class SynthesisRequest(BaseModel):
     volume: float = Field(1.0, ge=0.0, le=2.0)
     output_format: str = "wav"  # wav, mp3, ogg
     ssml: bool = False  # If true, text is treated as SSML
+    include_word_boundaries: bool = False
+
+
+class WordBoundaryItem(BaseModel):
+    text: str
+    offset_ms: int
+    duration_ms: int
+    word_index: int
 
 
 class SynthesisResponse(BaseModel):
@@ -23,6 +31,7 @@ class SynthesisResponse(BaseModel):
     latency_ms: int
     profile_id: str
     provider_name: str
+    word_boundaries: list[WordBoundaryItem] | None = None
 
 
 class BatchSynthesisRequest(BaseModel):

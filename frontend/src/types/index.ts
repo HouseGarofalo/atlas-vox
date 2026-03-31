@@ -32,6 +32,9 @@ export interface ProviderCapabilities {
   supports_ssml: boolean;
   supports_zero_shot: boolean;
   supports_batch: boolean;
+  supports_word_boundaries: boolean;
+  supports_pronunciation_assessment: boolean;
+  supports_transcription: boolean;
   requires_gpu: boolean;
   gpu_mode: string;
   min_samples_for_cloning: number;
@@ -116,6 +119,8 @@ export interface AudioSample {
   sample_rate: number | null;
   file_size_bytes: number | null;
   preprocessed: boolean;
+  transcript: string | null;
+  transcript_source: string | null;
   created_at: string;
 }
 

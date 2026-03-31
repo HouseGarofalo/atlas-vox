@@ -18,6 +18,7 @@ from app.providers.base import (
     AudioResult,
     CloneConfig,
     FineTuneConfig,
+    PronunciationScore,
     ProviderAudioSample,
     ProviderCapabilities,
     ProviderHealth,
@@ -25,6 +26,7 @@ from app.providers.base import (
     TTSProvider,
     VoiceInfo,
     VoiceModel,
+    WordBoundary,
     run_sync,
 )
 
@@ -32,6 +34,15 @@ logger = structlog.get_logger(__name__)
 
 # Azure Custom Voice API version
 CNV_API_VERSION = "2024-02-01-preview"
+
+# Azure SDK output format mapping: (format_key) -> (sdk_enum_name, sample_rate, ext)
+_OUTPUT_FORMAT_MAP = {
+    "wav": ("Riff24Khz16BitMonoPcm", 24000, "wav"),
+    "wav_16k": ("Riff16Khz16BitMonoPcm", 16000, "wav"),
+    "wav_48k": ("Riff48Khz16BitMonoPcm", 48000, "wav"),
+    "mp3": ("Audio24Khz160KBitRateMonoMp3", 24000, "mp3"),
+    "ogg": ("Ogg24Khz16BitMonoOpus", 24000, "ogg"),
+}
 
 # Language code → Azure locale mapping
 _LOCALE_MAP = {
@@ -274,6 +285,50 @@ class AzureCNVClient:
             await asyncio.sleep(poll_interval)
         raise TimeoutError(f"Endpoint deployment timed out after {timeout}s")
 
+    # ---- Batch Synthesis REST API ----
+
+    async def create_batch_synthesis(self, inputs: list[dict], voice: str,
+                                      output_format: str = "audio-24khz-160kbitrate-mono-mp3") -> dict:
+        """Create an async batch synthesis job via Azure REST API."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"https://{self.region}.customvoice.api.speech.microsoft.com"
+                f"/api/batchsyntheses?api-version={CNV_API_VERSION}",
+                headers=self._json_headers(),
+                json={
+                    "inputKind": "PlainText",
+                    "inputs": inputs,
+                    "synthesisConfig": {"voice": voice},
+                    "properties": {"outputFormat": output_format},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_batch_synthesis(self, batch_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"https://{self.region}.customvoice.api.speech.microsoft.com"
+                f"/api/batchsyntheses/{batch_id}?api-version={CNV_API_VERSION}",
+                headers=self._auth_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def wait_for_batch_synthesis(self, batch_id: str,
+                                        poll_interval: int = 10,
+                                        timeout: int = 3600) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            batch = await self.get_batch_synthesis(batch_id)
+            status = batch.get("status", "")
+            if status in ("Succeeded", "Failed"):
+                if status == "Failed":
+                    raise RuntimeError(f"Batch synthesis failed: {batch}")
+                return batch
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError(f"Batch synthesis timed out after {timeout}s")
+
 
 class AzureSpeechProvider(TTSProvider):
     """Azure AI Speech — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training."""
@@ -302,13 +357,34 @@ class AzureSpeechProvider(TTSProvider):
                     subscription=subscription_key,
                     region=region,
                 )
+                # Default to 24kHz WAV — callers override per-request via _apply_output_format
                 self._speech_config.set_speech_synthesis_output_format(
-                    speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm
+                    speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm
                 )
                 logger.info("azure_speech_config_created", region=region)
             except ImportError:
                 raise ImportError("pip install azure-cognitiveservices-speech")
         return self._speech_config
+
+    @staticmethod
+    def _apply_output_format(config, output_format: str = "wav"):
+        """Set the synthesis output format on a SpeechConfig."""
+        import azure.cognitiveservices.speech as speechsdk
+
+        fmt_name, _, _ = _OUTPUT_FORMAT_MAP.get(output_format, _OUTPUT_FORMAT_MAP["wav"])
+        sdk_fmt = getattr(speechsdk.SpeechSynthesisOutputFormat, fmt_name, None)
+        if sdk_fmt is not None:
+            config.set_speech_synthesis_output_format(sdk_fmt)
+
+    @staticmethod
+    def _format_info(output_format: str = "wav") -> tuple[int, str]:
+        """Return (sample_rate, file_extension) for the given format."""
+        _, sr, ext = _OUTPUT_FORMAT_MAP.get(output_format, _OUTPUT_FORMAT_MAP["wav"])
+        return sr, ext
+
+    @staticmethod
+    def _is_dragon_hd(voice_id: str) -> bool:
+        return "DragonHD" in voice_id
 
     def _cnv_client(self) -> AzureCNVClient:
         key, region = self._get_key_and_region()
@@ -320,22 +396,11 @@ class AzureSpeechProvider(TTSProvider):
     def _to_locale(lang: str) -> str:
         return _LOCALE_MAP.get(lang, f"{lang}-{lang.upper()}" if len(lang) == 2 else lang)
 
-    async def synthesize(
-        self, text: str, voice_id: str, settings_: SynthesisSettings
-    ) -> AudioResult:
-        import azure.cognitiveservices.speech as speechsdk
-
-        config = self._get_config()
-        output_file = self.prepare_output_path(prefix="azure")
-        audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_file))
-
-        logger.info("azure_synthesize_started", voice_id=voice_id, text_length=len(text), ssml=settings_.ssml)
-        start = time.perf_counter()
-
-        # Personal Voice — voice_id is "pv:<speakerProfileId>"
+    def _build_ssml(self, text: str, voice_id: str) -> str:
+        """Wrap plain text in SSML for a given voice, handling PV/CNV/HD prefixes."""
         if voice_id.startswith("pv:"):
             speaker_profile_id = voice_id[3:]
-            ssml = (
+            return (
                 '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
                 'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="en-US">'
                 '<voice name="DragonLatestNeural">'
@@ -343,62 +408,291 @@ class AzureSpeechProvider(TTSProvider):
                 f"{xml_escape(text)}"
                 "</voice></speak>"
             )
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=config, audio_config=audio_config
-            )
-            result = await run_sync(synthesizer.speak_ssml_async(ssml).get)
+        name = voice_id
+        if voice_id.startswith("cnv:"):
+            name = voice_id[4:].split(":", 1)[0]
+        return (
+            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+            'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="en-US">'
+            f'<voice name="{xml_escape(name)}">'
+            f"{xml_escape(text)}"
+            "</voice></speak>"
+        )
 
-        # Professional Voice — voice_id is "cnv:<voiceName>:<endpointId>"
-        elif voice_id.startswith("cnv:"):
+    async def synthesize(
+        self, text: str, voice_id: str, settings_: SynthesisSettings
+    ) -> AudioResult:
+        import azure.cognitiveservices.speech as speechsdk
+
+        config = self._get_config()
+        self._apply_output_format(config, settings_.output_format)
+        sample_rate, ext = self._format_info(settings_.output_format)
+
+        output_file = self.prepare_output_path(prefix="azure", ext=ext)
+        audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_file))
+
+        logger.info("azure_synthesize_started", voice_id=voice_id, text_length=len(text),
+                     ssml=settings_.ssml, output_format=settings_.output_format)
+        start = time.perf_counter()
+
+        # Professional Voice — set endpoint_id before creating synthesizer
+        if voice_id.startswith("cnv:"):
             parts = voice_id[4:].split(":", 1)
-            voice_name = parts[0]
-            endpoint_id = parts[1] if len(parts) > 1 else None
-            if endpoint_id:
-                config.endpoint_id = endpoint_id
-            config.speech_synthesis_voice_name = voice_name
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=config, audio_config=audio_config
-            )
-            if settings_.ssml:
-                result = await run_sync(synthesizer.speak_ssml_async(text).get)
-            else:
-                result = await run_sync(synthesizer.speak_text_async(text).get)
+            config.speech_synthesis_voice_name = parts[0]
+            if len(parts) > 1:
+                config.endpoint_id = parts[1]
 
-        # Standard voice (existing behaviour)
-        elif settings_.ssml:
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=config, audio_config=audio_config
-            )
+        # Determine whether to use SSML
+        use_ssml = settings_.ssml or voice_id.startswith("pv:") or self._is_dragon_hd(voice_id)
+        if use_ssml and not settings_.ssml:
+            text = self._build_ssml(text, voice_id)
+        elif not use_ssml and not voice_id.startswith("cnv:"):
+            config.speech_synthesis_voice_name = voice_id or "en-US-JennyNeural"
+
+        synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=config, audio_config=audio_config
+        )
+
+        if use_ssml or settings_.ssml:
             result = await run_sync(synthesizer.speak_ssml_async(text).get)
         else:
-            config.speech_synthesis_voice_name = voice_id or "en-US-JennyNeural"
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=config, audio_config=audio_config
-            )
             result = await run_sync(synthesizer.speak_text_async(text).get)
 
         elapsed = time.perf_counter() - start
 
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            logger.info(
-                "azure_synthesize_completed",
-                voice_id=voice_id,
-                latency_ms=int(elapsed * 1000),
-            )
-            return AudioResult(
-                audio_path=output_file,
-                sample_rate=16000,
-                format="wav",
-            )
+            logger.info("azure_synthesize_completed", voice_id=voice_id,
+                        latency_ms=int(elapsed * 1000), format=ext)
+            return AudioResult(audio_path=output_file, sample_rate=sample_rate, format=ext)
         else:
             error = result.cancellation_details.error_details if result.cancellation_details else "Unknown error"
-            logger.error(
-                "azure_synthesize_failed",
-                voice_id=voice_id,
-                latency_ms=int(elapsed * 1000),
-                error=error,
-            )
+            logger.error("azure_synthesize_failed", voice_id=voice_id,
+                         latency_ms=int(elapsed * 1000), error=error)
             raise RuntimeError(f"Azure synthesis failed: {error}")
+
+    # ---- Streaming synthesis ----
+
+    async def stream_synthesize(
+        self, text: str, voice_id: str, settings_: SynthesisSettings
+    ):
+        """Stream synthesis using Azure SDK PullAudioOutputStream."""
+        import azure.cognitiveservices.speech as speechsdk
+
+        config = self._get_config()
+        self._apply_output_format(config, settings_.output_format)
+
+        if voice_id.startswith("cnv:"):
+            parts = voice_id[4:].split(":", 1)
+            config.speech_synthesis_voice_name = parts[0]
+            if len(parts) > 1:
+                config.endpoint_id = parts[1]
+
+        use_ssml = settings_.ssml or voice_id.startswith("pv:") or self._is_dragon_hd(voice_id)
+        if use_ssml and not settings_.ssml:
+            text = self._build_ssml(text, voice_id)
+        elif not use_ssml:
+            config.speech_synthesis_voice_name = voice_id or "en-US-JennyNeural"
+
+        pull_stream = speechsdk.audio.PullAudioOutputStream()
+        audio_config = speechsdk.audio.AudioOutputConfig(stream=pull_stream)
+        synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=audio_config)
+
+        logger.info("azure_stream_started", voice_id=voice_id, text_length=len(text))
+
+        if use_ssml or settings_.ssml:
+            future = synthesizer.speak_ssml_async(text)
+        else:
+            future = synthesizer.speak_text_async(text)
+
+        # Read chunks from pull stream in a thread
+        chunk_size = 4096
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        def _reader():
+            try:
+                while True:
+                    data = bytes(chunk_size)
+                    n = pull_stream.read(data)
+                    if n == 0:
+                        break
+                    queue.put_nowait(data[:n])
+            finally:
+                queue.put_nowait(None)  # sentinel
+
+        # Start reading in background thread
+        loop = asyncio.get_running_loop()
+        read_task = loop.run_in_executor(None, _reader)
+
+        # Wait for synthesis to start, then yield chunks
+        await run_sync(future.get)
+
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+        await read_task
+        logger.info("azure_stream_completed", voice_id=voice_id)
+
+    # ---- Word boundary synthesis ----
+
+    async def synthesize_with_word_boundaries(
+        self, text: str, voice_id: str, settings_: SynthesisSettings
+    ) -> tuple[AudioResult, list[WordBoundary]]:
+        """Synthesize with word timing data for subtitle/karaoke features."""
+        import azure.cognitiveservices.speech as speechsdk
+
+        config = self._get_config()
+        self._apply_output_format(config, settings_.output_format)
+        sample_rate, ext = self._format_info(settings_.output_format)
+
+        output_file = self.prepare_output_path(prefix="azure_wb", ext=ext)
+        audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_file))
+
+        if voice_id.startswith("cnv:"):
+            parts = voice_id[4:].split(":", 1)
+            config.speech_synthesis_voice_name = parts[0]
+            if len(parts) > 1:
+                config.endpoint_id = parts[1]
+
+        use_ssml = settings_.ssml or voice_id.startswith("pv:") or self._is_dragon_hd(voice_id)
+        if use_ssml and not settings_.ssml:
+            text = self._build_ssml(text, voice_id)
+        elif not use_ssml:
+            config.speech_synthesis_voice_name = voice_id or "en-US-JennyNeural"
+
+        synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=audio_config)
+
+        boundaries: list[WordBoundary] = []
+        word_idx = 0
+
+        def _on_word_boundary(evt):
+            nonlocal word_idx
+            boundaries.append(WordBoundary(
+                text=evt.text,
+                offset_ms=int(evt.audio_offset / 10000),  # 100-ns ticks -> ms
+                duration_ms=int(evt.duration.total_seconds() * 1000) if hasattr(evt, "duration") else 0,
+                word_index=word_idx,
+            ))
+            word_idx += 1
+
+        synthesizer.synthesis_word_boundary.connect(_on_word_boundary)
+
+        if use_ssml or settings_.ssml:
+            result = await run_sync(synthesizer.speak_ssml_async(text).get)
+        else:
+            result = await run_sync(synthesizer.speak_text_async(text).get)
+
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            audio = AudioResult(audio_path=output_file, sample_rate=sample_rate, format=ext)
+            return audio, boundaries
+        else:
+            error = result.cancellation_details.error_details if result.cancellation_details else "Unknown error"
+            raise RuntimeError(f"Azure synthesis failed: {error}")
+
+    # ---- Speech-to-Text ----
+
+    async def transcribe(self, audio_path: Path, locale: str = "en-US") -> str:
+        """Transcribe an audio file using Azure Speech-to-Text."""
+        import azure.cognitiveservices.speech as speechsdk
+
+        key, region = self._get_key_and_region()
+        if not key:
+            raise ValueError("AZURE_SPEECH_KEY not configured for transcription")
+
+        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config.speech_recognition_language = locale
+        audio_config = speechsdk.audio.AudioConfig(filename=str(audio_path))
+        recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+        logger.info("azure_transcribe_started", audio_path=str(audio_path), locale=locale)
+
+        # For files that may be long, use continuous recognition
+        segments: list[str] = []
+        done_event = asyncio.Event()
+
+        def _on_recognized(evt):
+            if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+                segments.append(evt.result.text)
+
+        def _on_canceled(evt):
+            done_event._loop = asyncio.get_event_loop()
+            # Will be set from the session_stopped handler
+
+        def _on_stopped(evt):
+            # Signal completion
+            pass
+
+        recognizer.recognized.connect(_on_recognized)
+        recognizer.canceled.connect(_on_canceled)
+
+        # Use single-shot for short audio, continuous for longer
+        result = await run_sync(recognizer.recognize_once_async().get)
+        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            transcript = result.text
+        elif result.reason == speechsdk.ResultReason.NoMatch:
+            transcript = ""
+        else:
+            error = result.cancellation_details.error_details if hasattr(result, "cancellation_details") and result.cancellation_details else "Recognition failed"
+            raise RuntimeError(f"Azure STT failed: {error}")
+
+        logger.info("azure_transcribe_completed", audio_path=str(audio_path), length=len(transcript))
+        return transcript
+
+    # ---- Pronunciation Assessment ----
+
+    async def assess_pronunciation(
+        self, audio_path: Path, reference_text: str, locale: str = "en-US"
+    ) -> PronunciationScore:
+        """Assess pronunciation quality of an audio sample."""
+        import azure.cognitiveservices.speech as speechsdk
+
+        key, region = self._get_key_and_region()
+        if not key:
+            raise ValueError("AZURE_SPEECH_KEY not configured for pronunciation assessment")
+
+        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config.speech_recognition_language = locale
+        audio_config = speechsdk.audio.AudioConfig(filename=str(audio_path))
+
+        pronunciation_config = speechsdk.PronunciationAssessmentConfig(
+            reference_text=reference_text,
+            grading_system=speechsdk.PronunciationAssessmentGradingSystem.HundredMark,
+            granularity=speechsdk.PronunciationAssessmentGranularity.Word,
+        )
+
+        recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        pronunciation_config.apply_to(recognizer)
+
+        logger.info("azure_pronunciation_assess_started", audio_path=str(audio_path))
+
+        result = await run_sync(recognizer.recognize_once_async().get)
+        if result.reason != speechsdk.ResultReason.RecognizedSpeech:
+            raise RuntimeError("Pronunciation assessment failed — no speech recognized")
+
+        assessment = speechsdk.PronunciationAssessmentResult(result)
+
+        word_scores = []
+        if hasattr(assessment, "words") and assessment.words:
+            for w in assessment.words:
+                word_scores.append({
+                    "word": w.word,
+                    "accuracy_score": w.accuracy_score,
+                    "error_type": w.error_type if hasattr(w, "error_type") else None,
+                })
+
+        logger.info("azure_pronunciation_assess_completed",
+                     accuracy=assessment.accuracy_score,
+                     fluency=assessment.fluency_score)
+
+        return PronunciationScore(
+            accuracy_score=assessment.accuracy_score,
+            fluency_score=assessment.fluency_score,
+            completeness_score=assessment.completeness_score,
+            pronunciation_score=assessment.pronunciation_score,
+            word_scores=word_scores if word_scores else None,
+        )
 
     async def clone_voice(
         self, samples: list[ProviderAudioSample], config: CloneConfig
@@ -810,6 +1104,9 @@ class AzureSpeechProvider(TTSProvider):
             supports_ssml=True,
             supports_zero_shot=False,
             supports_batch=True,
+            supports_word_boundaries=True,
+            supports_pronunciation_assessment=True,
+            supports_transcription=True,
             requires_gpu=False,
             gpu_mode="none",
             min_samples_for_cloning=2,      # 1 consent + 1 voice prompt

@@ -19,6 +19,8 @@ class SampleResponse(BaseModel):
     sample_rate: int | None
     file_size_bytes: int | None
     preprocessed: bool
+    transcript: str | None = None
+    transcript_source: str | None = None
     created_at: datetime
 
 
@@ -30,6 +32,25 @@ class SampleAnalysis(BaseModel):
     pitch_std: float | None = None
     energy_mean: float | None = None
     energy_std: float | None = None
+
+
+class PronunciationAssessment(BaseModel):
+    sample_id: str
+    accuracy_score: float
+    fluency_score: float
+    completeness_score: float
+    pronunciation_score: float
+    word_scores: list[dict] | None = None
+
+
+class TranscribeRequest(BaseModel):
+    locale: str = "en-US"
+
+
+class TranscribeResponse(BaseModel):
+    sample_id: str
+    transcript: str
+    source: str = "azure_stt"
 
 
 class SampleListResponse(BaseModel):

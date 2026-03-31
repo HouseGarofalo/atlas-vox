@@ -26,6 +26,9 @@ class AudioSample(Base):
     preprocessed: Mapped[bool] = mapped_column(default=False)
     preprocessed_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: pitch, energy, spectral
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_source: Mapped[str | None] = mapped_column(String(20), nullable=True)  # manual, azure_stt
+    pronunciation_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: accuracy, fluency, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Relationships

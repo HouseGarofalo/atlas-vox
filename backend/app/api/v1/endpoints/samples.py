@@ -13,7 +13,14 @@ from app.core.config import settings
 from app.core.dependencies import CurrentUser, DbSession
 from app.models.audio_sample import AudioSample
 from app.models.voice_profile import VoiceProfile
-from app.schemas.sample import SampleAnalysis, SampleListResponse, SampleResponse
+from app.schemas.sample import (
+    PronunciationAssessment,
+    SampleAnalysis,
+    SampleListResponse,
+    SampleResponse,
+    TranscribeRequest,
+    TranscribeResponse,
+)
 from app.services.audio_processor import analyze_audio
 
 logger = structlog.get_logger(__name__)
@@ -244,3 +251,89 @@ async def trigger_preprocessing(
     logger.info("preprocessing_queued", profile_id=profile_id, task_id=task.id, count=len(unprocessed))
 
     return {"message": f"Preprocessing queued for {len(unprocessed)} samples", "task_id": task.id}
+
+
+@router.post("/{sample_id}/transcribe", response_model=TranscribeResponse)
+async def transcribe_sample(
+    profile_id: str, sample_id: str,
+    data: TranscribeRequest,
+    db: DbSession, user: CurrentUser,
+) -> TranscribeResponse:
+    """Transcribe a sample using the profile's provider STT (Azure Speech-to-Text)."""
+    profile = await _get_profile_or_404(db, profile_id)
+    sample = await _get_sample_or_404(db, profile_id, sample_id)
+
+    from app.services.provider_registry import provider_registry
+
+    provider = provider_registry.get_provider(profile.provider_name)
+    caps = await provider.get_capabilities()
+    if not caps.supports_transcription:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Provider '{profile.provider_name}' does not support transcription",
+        )
+
+    try:
+        transcript = await provider.transcribe(Path(sample.file_path), locale=data.locale)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    sample.transcript = transcript
+    sample.transcript_source = "azure_stt"
+    await db.flush()
+
+    logger.info("sample_transcribed", sample_id=sample_id, length=len(transcript))
+    return TranscribeResponse(sample_id=sample.id, transcript=transcript)
+
+
+@router.post("/{sample_id}/assess", response_model=PronunciationAssessment)
+async def assess_sample(
+    profile_id: str, sample_id: str,
+    db: DbSession, user: CurrentUser,
+    reference_text: str | None = Query(None, description="Reference text for assessment. Uses stored transcript if omitted."),
+    locale: str = Query("en-US"),
+) -> PronunciationAssessment:
+    """Assess pronunciation quality of a sample using Azure Pronunciation Assessment."""
+    profile = await _get_profile_or_404(db, profile_id)
+    sample = await _get_sample_or_404(db, profile_id, sample_id)
+
+    from app.services.provider_registry import provider_registry
+
+    provider = provider_registry.get_provider(profile.provider_name)
+    caps = await provider.get_capabilities()
+    if not caps.supports_pronunciation_assessment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Provider '{profile.provider_name}' does not support pronunciation assessment",
+        )
+
+    ref_text = reference_text or sample.transcript
+    if not ref_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reference text required — provide it or transcribe the sample first",
+        )
+
+    try:
+        score = await provider.assess_pronunciation(Path(sample.file_path), ref_text, locale=locale)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    import json as _json
+    sample.pronunciation_json = _json.dumps({
+        "accuracy_score": score.accuracy_score,
+        "fluency_score": score.fluency_score,
+        "completeness_score": score.completeness_score,
+        "pronunciation_score": score.pronunciation_score,
+    })
+    await db.flush()
+
+    logger.info("sample_assessed", sample_id=sample_id, accuracy=score.accuracy_score)
+    return PronunciationAssessment(
+        sample_id=sample.id,
+        accuracy_score=score.accuracy_score,
+        fluency_score=score.fluency_score,
+        completeness_score=score.completeness_score,
+        pronunciation_score=score.pronunciation_score,
+        word_scores=score.word_scores,
+    )

@@ -88,10 +88,12 @@ async def stream_synthesis(
             speed=data.speed,
             pitch=data.pitch,
         )
+        mime_map = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg"}
+        media_type = mime_map.get(data.output_format, "audio/wav")
         logger.info("stream_synthesis_started", profile_id=data.profile_id)
         return StreamingResponse(
             audio_stream,
-            media_type="audio/wav",
+            media_type=media_type,
             headers={"Transfer-Encoding": "chunked"},
         )
     except ValueError as e:
