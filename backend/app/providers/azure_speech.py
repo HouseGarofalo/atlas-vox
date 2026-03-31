@@ -190,11 +190,21 @@ class AzureCNVClient:
 
     async def upload_training_data(self, training_set_id: str,
                                     audio_files: list[Path],
+                                    transcripts: dict[str, str] | None = None,
                                     kind: str = "IndividualUtterances") -> dict:
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for af in audio_files:
                 zf.write(af, af.name)
+            # Include transcript script file if transcripts provided
+            if transcripts:
+                script_lines = []
+                for af in audio_files:
+                    text = transcripts.get(af.stem, transcripts.get(af.name, ""))
+                    if text:
+                        script_lines.append(f"{af.stem}\t{text}")
+                if script_lines:
+                    zf.writestr("script.txt", "\n".join(script_lines))
         zip_buf.seek(0)
 
         async with httpx.AsyncClient(timeout=120) as client:
@@ -799,10 +809,15 @@ class AzureSpeechProvider(TTSProvider):
         await cnv.create_consent(consent_id, project_id, "Voice Talent", company,
                                   samples[0].file_path, locale=locale)
 
-        # 3. Training set + data
+        # 3. Training set + data (include transcripts when available)
         await cnv.create_training_set(ts_id, project_id)
-        train_files = [s.file_path for s in samples[1:]]
-        await cnv.upload_training_data(ts_id, train_files)
+        train_samples = samples[1:]
+        train_files = [s.file_path for s in train_samples]
+        transcripts = {
+            s.file_path.stem: s.transcript
+            for s in train_samples if s.transcript
+        } or None
+        await cnv.upload_training_data(ts_id, train_files, transcripts=transcripts)
 
         # 4. Train model
         await cnv.create_model(cnv_model_id, project_id, consent_id, ts_id,

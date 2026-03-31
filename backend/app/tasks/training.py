@@ -94,6 +94,7 @@ async def _load_job_and_samples(db, job_id: str, task):
             file_path=path,
             duration_seconds=s.duration_seconds,
             sample_rate=s.sample_rate,
+            transcript=getattr(s, "transcript", None),
         ))
 
     if not provider_samples:

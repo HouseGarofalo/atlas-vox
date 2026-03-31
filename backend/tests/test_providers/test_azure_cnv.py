@@ -459,3 +459,248 @@ class TestTrainingPipelineIntegration:
         caps = await mock_provider.get_capabilities()
         # training_service checks: supports_cloning or supports_fine_tuning
         assert caps.supports_cloning or caps.supports_fine_tuning
+
+
+# ---------------------------------------------------------------------------
+# Output format resolution
+# ---------------------------------------------------------------------------
+
+class TestOutputFormats:
+    def test_format_info_wav(self):
+        sr, ext = AzureSpeechProvider._format_info("wav")
+        assert sr == 24000
+        assert ext == "wav"
+
+    def test_format_info_mp3(self):
+        sr, ext = AzureSpeechProvider._format_info("mp3")
+        assert sr == 24000
+        assert ext == "mp3"
+
+    def test_format_info_ogg(self):
+        sr, ext = AzureSpeechProvider._format_info("ogg")
+        assert sr == 24000
+        assert ext == "ogg"
+
+    def test_format_info_wav_48k(self):
+        sr, ext = AzureSpeechProvider._format_info("wav_48k")
+        assert sr == 48000
+        assert ext == "wav"
+
+    def test_format_info_unknown_defaults_to_wav(self):
+        sr, ext = AzureSpeechProvider._format_info("flac")
+        assert sr == 24000
+        assert ext == "wav"
+
+
+# ---------------------------------------------------------------------------
+# HD voice detection
+# ---------------------------------------------------------------------------
+
+class TestHDVoiceDetection:
+    def test_dragon_hd_detected(self):
+        assert AzureSpeechProvider._is_dragon_hd("en-US-Ava:DragonHDLatestNeural") is True
+
+    def test_regular_voice_not_hd(self):
+        assert AzureSpeechProvider._is_dragon_hd("en-US-JennyNeural") is False
+
+    def test_personal_voice_not_hd(self):
+        assert AzureSpeechProvider._is_dragon_hd("pv:spk-123") is False
+
+    def test_cnv_voice_not_hd(self):
+        assert AzureSpeechProvider._is_dragon_hd("cnv:MyVoice:ep-1") is False
+
+
+# ---------------------------------------------------------------------------
+# SSML construction
+# ---------------------------------------------------------------------------
+
+class TestSSMLConstruction:
+    def test_personal_voice_ssml(self):
+        provider = AzureSpeechProvider()
+        ssml = provider._build_ssml("Hello", "pv:spk-xyz")
+        assert 'speakerProfileId="spk-xyz"' in ssml
+        assert "DragonLatestNeural" in ssml
+        assert "Hello" in ssml
+
+    def test_cnv_voice_ssml(self):
+        provider = AzureSpeechProvider()
+        ssml = provider._build_ssml("Hello", "cnv:MyVoice:ep-1")
+        assert 'name="MyVoice"' in ssml
+        assert "Hello" in ssml
+
+    def test_standard_voice_ssml(self):
+        provider = AzureSpeechProvider()
+        ssml = provider._build_ssml("Hello", "en-US-JennyNeural")
+        assert 'name="en-US-JennyNeural"' in ssml
+
+    def test_xml_escaping(self):
+        provider = AzureSpeechProvider()
+        ssml = provider._build_ssml("A & B <tag>", "en-US-JennyNeural")
+        assert "&amp;" in ssml
+        assert "&lt;" in ssml
+
+
+# ---------------------------------------------------------------------------
+# Extended capabilities
+# ---------------------------------------------------------------------------
+
+class TestExtendedCapabilities:
+    @pytest.mark.asyncio
+    async def test_word_boundaries_supported(self):
+        provider = AzureSpeechProvider()
+        caps = await provider.get_capabilities()
+        assert caps.supports_word_boundaries is True
+
+    @pytest.mark.asyncio
+    async def test_pronunciation_assessment_supported(self):
+        provider = AzureSpeechProvider()
+        caps = await provider.get_capabilities()
+        assert caps.supports_pronunciation_assessment is True
+
+    @pytest.mark.asyncio
+    async def test_transcription_supported(self):
+        provider = AzureSpeechProvider()
+        caps = await provider.get_capabilities()
+        assert caps.supports_transcription is True
+
+
+# ---------------------------------------------------------------------------
+# Transcription
+# ---------------------------------------------------------------------------
+
+class TestTranscription:
+    @pytest.mark.asyncio
+    async def test_transcribe_rejects_empty_key(self, tmp_path: Path):
+        provider = AzureSpeechProvider()
+        provider.configure({"subscription_key": "", "region": "eastus"})
+        wav = _make_wav(tmp_path / "test.wav")
+        with pytest.raises(ValueError, match="AZURE_SPEECH_KEY"):
+            await provider.transcribe(wav)
+
+    @pytest.mark.asyncio
+    async def test_transcribe_success(self, tmp_path: Path):
+        provider = AzureSpeechProvider()
+        provider.configure({"subscription_key": "k", "region": "eastus"})
+        wav = _make_wav(tmp_path / "test.wav")
+
+        COMPLETED = "RecognizedSpeech"
+        mock_result = MagicMock()
+        mock_result.reason = COMPLETED
+        mock_result.text = "Hello world"
+
+        mock_sdk = MagicMock()
+        mock_sdk.ResultReason.RecognizedSpeech = COMPLETED
+        mock_sdk.SpeechConfig.return_value = MagicMock()
+        mock_sdk.audio.AudioConfig.return_value = MagicMock()
+
+        mock_recognizer = MagicMock()
+        mock_future = MagicMock()
+        mock_future.get = MagicMock(return_value=mock_result)
+        mock_recognizer.recognize_once_async.return_value = mock_future
+        mock_sdk.SpeechRecognizer.return_value = mock_recognizer
+
+        mock_azure = MagicMock()
+        mock_azure.cognitiveservices.speech = mock_sdk
+
+        async def fake_run_sync(fn, *a, **kw):
+            return fn()
+
+        with patch("app.providers.azure_speech.run_sync", side_effect=fake_run_sync), \
+             patch.dict("sys.modules", {
+                 "azure": mock_azure,
+                 "azure.cognitiveservices": mock_azure.cognitiveservices,
+                 "azure.cognitiveservices.speech": mock_sdk,
+             }):
+            transcript = await provider.transcribe(wav, locale="en-US")
+
+        assert transcript == "Hello world"
+
+
+# ---------------------------------------------------------------------------
+# Pronunciation Assessment
+# ---------------------------------------------------------------------------
+
+class TestPronunciationAssessment:
+    @pytest.mark.asyncio
+    async def test_assess_rejects_empty_key(self, tmp_path: Path):
+        provider = AzureSpeechProvider()
+        provider.configure({"subscription_key": "", "region": "eastus"})
+        wav = _make_wav(tmp_path / "test.wav")
+        with pytest.raises(ValueError, match="AZURE_SPEECH_KEY"):
+            await provider.assess_pronunciation(wav, "Hello")
+
+    @pytest.mark.asyncio
+    async def test_assess_success(self, tmp_path: Path):
+        provider = AzureSpeechProvider()
+        provider.configure({"subscription_key": "k", "region": "eastus"})
+        wav = _make_wav(tmp_path / "test.wav")
+
+        COMPLETED = "RecognizedSpeech"
+        mock_result = MagicMock()
+        mock_result.reason = COMPLETED
+
+        mock_assessment = MagicMock()
+        mock_assessment.accuracy_score = 95.0
+        mock_assessment.fluency_score = 90.0
+        mock_assessment.completeness_score = 100.0
+        mock_assessment.pronunciation_score = 92.0
+        mock_assessment.words = []
+
+        mock_sdk = MagicMock()
+        mock_sdk.ResultReason.RecognizedSpeech = COMPLETED
+        mock_sdk.PronunciationAssessmentConfig.return_value = MagicMock()
+        mock_sdk.PronunciationAssessmentGradingSystem.HundredMark = "HundredMark"
+        mock_sdk.PronunciationAssessmentGranularity.Word = "Word"
+        mock_sdk.PronunciationAssessmentResult.return_value = mock_assessment
+        mock_sdk.SpeechConfig.return_value = MagicMock()
+        mock_sdk.audio.AudioConfig.return_value = MagicMock()
+
+        mock_recognizer = MagicMock()
+        mock_future = MagicMock()
+        mock_future.get = MagicMock(return_value=mock_result)
+        mock_recognizer.recognize_once_async.return_value = mock_future
+        mock_sdk.SpeechRecognizer.return_value = mock_recognizer
+
+        mock_azure = MagicMock()
+        mock_azure.cognitiveservices.speech = mock_sdk
+
+        async def fake_run_sync(fn, *a, **kw):
+            return fn()
+
+        with patch("app.providers.azure_speech.run_sync", side_effect=fake_run_sync), \
+             patch.dict("sys.modules", {
+                 "azure": mock_azure,
+                 "azure.cognitiveservices": mock_azure.cognitiveservices,
+                 "azure.cognitiveservices.speech": mock_sdk,
+             }):
+            score = await provider.assess_pronunciation(wav, "Hello world")
+
+        assert score.accuracy_score == 95.0
+        assert score.fluency_score == 90.0
+        assert score.pronunciation_score == 92.0
+
+
+# ---------------------------------------------------------------------------
+# Batch synthesis client
+# ---------------------------------------------------------------------------
+
+class TestBatchSynthesisClient:
+    @pytest.mark.asyncio
+    async def test_wait_for_batch_raises_on_timeout(self):
+        client = AzureCNVClient("key", "eastus")
+        client.get_batch_synthesis = AsyncMock(return_value={"status": "Running"})
+
+        with patch("app.providers.azure_speech.asyncio.sleep", new_callable=AsyncMock), \
+             patch("app.providers.azure_speech.time.time") as mock_time:
+            mock_time.side_effect = [0, 10]
+            with pytest.raises(TimeoutError, match="timed out"):
+                await client.wait_for_batch_synthesis("batch-1", poll_interval=0, timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_batch_raises_on_failure(self):
+        client = AzureCNVClient("key", "eastus")
+        client.get_batch_synthesis = AsyncMock(return_value={"status": "Failed", "error": "bad input"})
+
+        with patch("app.providers.azure_speech.asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(RuntimeError, match="Batch synthesis failed"):
+                await client.wait_for_batch_synthesis("batch-1", poll_interval=0, timeout=60)

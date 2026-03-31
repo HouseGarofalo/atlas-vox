@@ -51,6 +51,7 @@ async def synthesize_text(
             volume=data.volume,
             output_format=data.output_format,
             ssml=data.ssml,
+            include_word_boundaries=data.include_word_boundaries,
         )
         latency_ms = int((time.perf_counter() - t_start) * 1000)
         logger.info(
@@ -87,6 +88,7 @@ async def stream_synthesis(
             profile_id=data.profile_id,
             speed=data.speed,
             pitch=data.pitch,
+            output_format=data.output_format,
         )
         mime_map = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg"}
         media_type = mime_map.get(data.output_format, "audio/wav")

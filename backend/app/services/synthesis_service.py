@@ -128,6 +128,7 @@ async def synthesize(
     volume: float = 1.0,
     output_format: str = "wav",
     ssml: bool = False,
+    include_word_boundaries: bool = False,
 ) -> dict:
     """Synthesize text using a voice profile's provider.
 
@@ -160,8 +161,19 @@ async def synthesize(
     # Split long text into chunks
     chunks = _split_text(text)
 
+    word_boundaries = None
+
     try:
-        if len(chunks) == 1:
+        # Word boundary synthesis (single-chunk only)
+        if include_word_boundaries and len(chunks) == 1:
+            capabilities = await provider.get_capabilities()
+            if capabilities.supports_word_boundaries:
+                result, word_boundaries = await provider.synthesize_with_word_boundaries(
+                    chunks[0], voice_id, synth_settings
+                )
+            else:
+                result = await provider.synthesize(chunks[0], voice_id, synth_settings)
+        elif len(chunks) == 1:
             result = await provider.synthesize(chunks[0], voice_id, synth_settings)
         else:
             # Synthesize chunks and concatenate
@@ -239,7 +251,7 @@ async def synthesize(
     filename = Path(result.audio_path).name
     audio_url = f"/api/v1/audio/{filename}"
 
-    return {
+    resp = {
         "id": history.id,
         "audio_url": audio_url,
         "duration_seconds": result.duration_seconds,
@@ -247,6 +259,13 @@ async def synthesize(
         "profile_id": profile_id,
         "provider_name": profile.provider_name,
     }
+    if word_boundaries:
+        resp["word_boundaries"] = [
+            {"text": wb.text, "offset_ms": wb.offset_ms,
+             "duration_ms": wb.duration_ms, "word_index": wb.word_index}
+            for wb in word_boundaries
+        ]
+    return resp
 
 
 async def stream_synthesize(
@@ -255,6 +274,7 @@ async def stream_synthesize(
     profile_id: str,
     speed: float = 1.0,
     pitch: float = 0.0,
+    output_format: str = "wav",
 ) -> AsyncIterator[bytes]:
     """Stream synthesis — yields audio chunks as they're generated."""
     profile = await _resolve_profile(db, profile_id)
@@ -265,6 +285,7 @@ async def stream_synthesize(
         profile_id=profile_id,
         text_length=len(text),
         provider=profile.provider_name,
+        output_format=output_format,
     )
 
     capabilities = await provider.get_capabilities()
@@ -272,7 +293,7 @@ async def stream_synthesize(
         raise ValueError(f"Provider '{profile.provider_name}' does not support streaming")
 
     voice_id = await _resolve_voice_id(db, profile)
-    synth_settings = SynthesisSettings(speed=speed, pitch=pitch)
+    synth_settings = SynthesisSettings(speed=speed, pitch=pitch, output_format=output_format)
     chunk_index = 0
     async for chunk in provider.stream_synthesize(text, voice_id, synth_settings):
         logger.debug("stream_chunk_sent", profile_id=profile_id, chunk_index=chunk_index, chunk_bytes=len(chunk))

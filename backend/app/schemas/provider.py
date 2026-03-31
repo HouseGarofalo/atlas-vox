@@ -15,6 +15,9 @@ class ProviderCapabilitiesSchema(BaseModel):
     supports_ssml: bool = False
     supports_zero_shot: bool = False
     supports_batch: bool = False
+    supports_word_boundaries: bool = False
+    supports_pronunciation_assessment: bool = False
+    supports_transcription: bool = False
     requires_gpu: bool = False
     gpu_mode: str = "none"
     min_samples_for_cloning: int = 0

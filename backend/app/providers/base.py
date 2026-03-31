@@ -64,6 +64,7 @@ class ProviderAudioSample:
     file_path: Path
     duration_seconds: float | None = None
     sample_rate: int | None = None
+    transcript: str | None = None
 
 
 # Backward-compatible alias — prefer ProviderAudioSample in new code.

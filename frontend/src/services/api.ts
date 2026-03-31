@@ -99,6 +99,14 @@ class ApiClient {
   preprocessSamples(profileId: string) {
     return this.request<{ profile_id: string; processed: number; skipped: number; message?: string; task_id?: string }>(`/profiles/${profileId}/samples/preprocess`, { method: "POST" });
   }
+  transcribeSample(profileId: string, sampleId: string, locale = "en-US") {
+    return this.request<{ sample_id: string; transcript: string; source: string }>(`/profiles/${profileId}/samples/${sampleId}/transcribe`, { method: "POST", body: JSON.stringify({ locale }) });
+  }
+  assessSample(profileId: string, sampleId: string, referenceText?: string, locale = "en-US") {
+    const qs = new URLSearchParams({ locale });
+    if (referenceText) qs.set("reference_text", referenceText);
+    return this.request<{ sample_id: string; accuracy_score: number; fluency_score: number; completeness_score: number; pronunciation_score: number; word_scores?: { word: string; accuracy_score: number; error_type?: string }[] }>(`/profiles/${profileId}/samples/${sampleId}/assess?${qs}`, { method: "POST" });
+  }
 
   // Training
   startTraining(profileId: string, data: { provider_name?: string; config?: Record<string, unknown> }) {
@@ -119,8 +127,8 @@ class ApiClient {
   }
 
   // Synthesis
-  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean }) {
-    return this.request<{ id: string; audio_url: string; duration_seconds: number | null; latency_ms: number; profile_id: string; provider_name: string }>("/synthesize", { method: "POST", body: JSON.stringify(data) });
+  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; include_word_boundaries?: boolean }) {
+    return this.request<{ id: string; audio_url: string; duration_seconds: number | null; latency_ms: number; profile_id: string; provider_name: string; word_boundaries?: { text: string; offset_ms: number; duration_ms: number; word_index: number }[] }>("/synthesize", { method: "POST", body: JSON.stringify(data) });
   }
   batchSynthesize(data: { lines: string[]; profile_id: string; preset_id?: string; speed?: number }) {
     return this.request<{ id: string; audio_url: string; duration_seconds: number | null; latency_ms: number; profile_id: string; provider_name: string }[]>("/synthesize/batch", { method: "POST", body: JSON.stringify(data) });
