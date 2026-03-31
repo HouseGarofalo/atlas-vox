@@ -165,7 +165,9 @@ async def _score_version_quality(
         from app.providers.base import SynthesisSettings
 
         settings_obj = SynthesisSettings(output_format="wav")
-        audio_result = await provider.synthesize(TEST_SENTENCE, settings_obj)
+        # Use the trained voice for the test — provider_model_id from the version
+        voice_id = version.provider_model_id or "default"
+        audio_result = await provider.synthesize(TEST_SENTENCE, voice_id, settings_obj)
         synthesized_path = audio_result.audio_path
 
         original_paths = [s.file_path for s in provider_samples]
