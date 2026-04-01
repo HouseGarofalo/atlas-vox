@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Music, Cpu, History, AlertTriangle, Play, Pause, Search, CheckCircle } from "lucide-react";
+import { Music, Cpu, History, AlertTriangle, Play, Pause, Search, CheckCircle, Wand2 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
@@ -47,6 +47,8 @@ export default function TrainingStudioPage() {
   const [checkingQuality, setCheckingQuality] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
   const [loadingReadiness, setLoadingReadiness] = useState(false);
+  const [enhancing, setEnhancing] = useState<string | null>(null);
+  const [enhancingAll, setEnhancingAll] = useState(false);
   const { progress } = useTrainingProgress(activeJobId);
 
   useEffect(() => {
@@ -114,6 +116,43 @@ export default function TrainingStudioPage() {
     } finally {
       setCheckingQuality(null);
     }
+  };
+
+  const handleEnhance = async (sampleId: string) => {
+    setEnhancing(sampleId);
+    try {
+      const result = await api.enhanceSample(selectedProfile, sampleId);
+      if (result.enhanced) {
+        toast.success("Sample enhanced successfully");
+        await loadSamples();
+      } else {
+        toast.info(result.message || "Sample was not enhanced");
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Enhancement failed";
+      toast.error(message);
+    } finally {
+      setEnhancing(null);
+    }
+  };
+
+  const handleEnhanceAll = async () => {
+    if (samples.length === 0) return;
+    setEnhancingAll(true);
+    let enhanced = 0;
+    let failed = 0;
+    for (const sample of samples) {
+      try {
+        const result = await api.enhanceSample(selectedProfile, sample.id);
+        if (result.enhanced) enhanced++;
+      } catch {
+        failed++;
+      }
+    }
+    await loadSamples();
+    setEnhancingAll(false);
+    if (enhanced > 0) toast.success(`Enhanced ${enhanced} sample(s)`);
+    if (failed > 0) toast.error(`${failed} sample(s) failed to enhance`);
   };
 
   const handlePlaySample = (sampleId: string, _filename: string) => {
@@ -214,6 +253,9 @@ export default function TrainingStudioPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)] px-2">
                     <span>Total: {samples.reduce((sum, s) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
+                    <Button variant="secondary" size="sm" onClick={handleEnhanceAll} disabled={enhancingAll}>
+                      <Wand2 className="h-3.5 w-3.5" /> {enhancingAll ? "Enhancing..." : "Enhance All"}
+                    </Button>
                   </div>
                   {samples.map((s) => (
                     <div key={s.id} className="rounded border border-[var(--color-border)]">
@@ -239,6 +281,20 @@ export default function TrainingStudioPage() {
                         <span className="text-xs text-[var(--color-text-secondary)] uppercase hidden sm:inline">{s.format}</span>
                         <span className="text-xs text-[var(--color-text-secondary)]">{s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "Pending"}</span>
                         <Badge status={s.preprocessed ? "ready" : "pending"} />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEnhance(s.id)}
+                          disabled={enhancing === s.id}
+                          aria-label="Enhance sample"
+                          title="Enhance (audio isolation)"
+                        >
+                          {enhancing === s.id ? (
+                            <span className="text-xs">...</span>
+                          ) : (
+                            <Wand2 className="h-3 w-3" />
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

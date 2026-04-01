@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     api_keys,
     audio,
+    audio_tools,
     compare,
     health,
     presets,
@@ -25,6 +26,7 @@ api_router.include_router(health.router)
 api_router.include_router(profiles.router)
 api_router.include_router(providers.router)
 api_router.include_router(samples.router)
+api_router.include_router(audio_tools.router)
 api_router.include_router(training.router)
 api_router.include_router(synthesis.router)
 api_router.include_router(compare.router)

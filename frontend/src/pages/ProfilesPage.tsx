@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare } from "lucide-react";
+import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -22,9 +22,17 @@ export default function ProfilesPage() {
   const { providers, fetchProviders } = useProviderStore();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
-  const [createMode, setCreateMode] = useState<"choose" | "training">("choose");
+  const [createMode, setCreateMode] = useState<"choose" | "training" | "design">("choose");
   const [form, setForm] = useState({ name: "", description: "", language: "en", provider_name: "" });
   const [compareProfile, setCompareProfile] = useState<VoiceProfile | null>(null);
+
+  // Voice Design state
+  const [designDescription, setDesignDescription] = useState("");
+  const [designText, setDesignText] = useState("");
+  const [designPreviews, setDesignPreviews] = useState<{ voice_id: string; audio_base64: string }[]>([]);
+  const [designLoading, setDesignLoading] = useState(false);
+  const [designPlaying, setDesignPlaying] = useState<string | null>(null);
+  const [designCreating, setDesignCreating] = useState(false);
 
   useEffect(() => {
     fetchProfiles();
@@ -57,6 +65,49 @@ export default function ProfilesPage() {
     } catch (e: any) {
       logger.error("profile_delete_error", { profile_id: id, error: e.message });
       toast.error(e.message);
+    }
+  };
+
+  const handleGeneratePreviews = async () => {
+    if (!designDescription.trim()) { toast.error("Enter a voice description"); return; }
+    logger.info("voice_design_start", { description: designDescription });
+    setDesignLoading(true);
+    setDesignPreviews([]);
+    try {
+      const result = await api.designVoice(designDescription, designText || undefined);
+      setDesignPreviews(result.previews);
+      if (result.previews.length === 0) toast.info("No previews generated. Try a different description.");
+      else toast.success(`${result.previews.length} preview(s) generated`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Voice design failed";
+      logger.error("voice_design_error", { error: message });
+      toast.error(message);
+    } finally {
+      setDesignLoading(false);
+    }
+  };
+
+  const handleUseDesignedVoice = async (voiceId: string) => {
+    setDesignCreating(true);
+    try {
+      await createProfile({
+        name: designDescription.slice(0, 60) || "Designed Voice",
+        description: designDescription,
+        language: "en",
+        provider_name: "elevenlabs",
+        voice_id: voiceId,
+      });
+      toast.success("Profile created from designed voice");
+      setShowCreate(false);
+      setCreateMode("choose");
+      setDesignDescription("");
+      setDesignText("");
+      setDesignPreviews([]);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to create profile";
+      toast.error(message);
+    } finally {
+      setDesignCreating(false);
     }
   };
 
@@ -118,13 +169,14 @@ export default function ProfilesPage() {
         open={showCreate}
         onClose={() => { logger.info("modal_close"); setShowCreate(false); setCreateMode("choose"); }}
         title="Create Voice Profile"
+        wide
       >
         {createMode === "choose" ? (
           <div className="space-y-4">
             <p className="text-sm text-[var(--color-text-secondary)]">
               Choose how to create your voice profile:
             </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <button
                 onClick={() => {
                   setShowCreate(false);
@@ -135,7 +187,7 @@ export default function ProfilesPage() {
               >
                 <Library className="h-8 w-8 text-primary-500" />
                 <div className="text-center">
-                  <h3 className="font-semibold text-[var(--color-text)]">Use Library Voice</h3>
+                  <h3 className="font-semibold text-[var(--color-text)]">Library Voice</h3>
                   <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
                     Pick a pre-built voice from the library. Instantly ready for synthesis.
                   </p>
@@ -159,10 +211,111 @@ export default function ProfilesPage() {
                   </p>
                 </div>
               </button>
+              <button
+                onClick={() => {
+                  setCreateMode("design");
+                  setDesignDescription("");
+                  setDesignText("");
+                  setDesignPreviews([]);
+                }}
+                className="flex flex-col items-center gap-3 rounded-lg border-2 border-[var(--color-border)] p-6 transition-colors hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950"
+              >
+                <Sparkles className="h-8 w-8 text-violet-500" />
+                <div className="text-center">
+                  <h3 className="font-semibold text-[var(--color-text)]">Design Voice (AI)</h3>
+                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                    Describe a voice in natural language and generate it with AI.
+                  </p>
+                </div>
+              </button>
             </div>
             <div className="flex justify-end pt-2">
               <Button variant="secondary" onClick={() => { setShowCreate(false); setCreateMode("choose"); }}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        ) : createMode === "design" ? (
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-[var(--color-text)]">Voice Description</label>
+              <textarea
+                value={designDescription}
+                onChange={(e) => setDesignDescription(e.target.value)}
+                placeholder="A warm, friendly female voice with a British accent"
+                rows={3}
+                className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <Input
+              label="Preview Text (optional)"
+              value={designText}
+              onChange={(e) => setDesignText(e.target.value)}
+              placeholder="Hello, this is a preview of the designed voice."
+            />
+            <Button onClick={handleGeneratePreviews} disabled={designLoading || !designDescription.trim()}>
+              {designLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" /> Generate Previews
+                </>
+              )}
+            </Button>
+
+            {designPreviews.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-[var(--color-text)]">Generated Previews</p>
+                {designPreviews.map((preview, idx) => (
+                  <div
+                    key={preview.voice_id}
+                    className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] p-3"
+                  >
+                    <button
+                      onClick={() => {
+                        if (designPlaying === preview.voice_id) {
+                          setDesignPlaying(null);
+                        } else {
+                          setDesignPlaying(preview.voice_id);
+                        }
+                      }}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white hover:bg-primary-600 transition-colors"
+                    >
+                      {designPlaying === preview.voice_id ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5 ml-0.5" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">Voice {idx + 1}</p>
+                      <p className="text-xs text-[var(--color-text-secondary)] truncate">{preview.voice_id}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleUseDesignedVoice(preview.voice_id)}
+                      disabled={designCreating}
+                    >
+                      Use This Voice
+                    </Button>
+                    {designPlaying === preview.voice_id && (
+                      <audio
+                        src={`data:audio/mpeg;base64,${preview.audio_base64}`}
+                        autoPlay
+                        onEnded={() => setDesignPlaying(null)}
+                        className="hidden"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setCreateMode("choose")}>
+                Back
               </Button>
             </div>
           </div>

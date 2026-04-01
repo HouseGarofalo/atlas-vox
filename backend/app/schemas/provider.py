@@ -65,6 +65,10 @@ class ProviderListResponse(BaseModel):
 class ElevenLabsConfig(BaseModel):
     api_key: str = ""
     model_id: str = "eleven_multilingual_v2"
+    stability: float = 0.5
+    similarity_boost: float = 0.75
+    style: float = 0.0
+    use_speaker_boost: bool = False
 
 
 class AzureSpeechConfig(BaseModel):
@@ -154,6 +158,12 @@ _AZURE_REGION_OPTIONS = [
     "australiaeast", "australiasoutheast", "australiacentral",
 ]
 
+_ELEVENLABS_MODEL_OPTIONS = [
+    "eleven_multilingual_v2",
+    "eleven_turbo_v2_5",
+    "eleven_flash_v2_5",
+]
+
 PROVIDER_FIELD_DEFINITIONS: dict[str, list[ProviderFieldSchema]] = {
     "elevenlabs": [
         ProviderFieldSchema(
@@ -161,8 +171,26 @@ PROVIDER_FIELD_DEFINITIONS: dict[str, list[ProviderFieldSchema]] = {
             required=True, is_secret=True,
         ),
         ProviderFieldSchema(
-            name="model_id", field_type="text", label="Model ID",
+            name="model_id", field_type="select", label="Model",
+            options=_ELEVENLABS_MODEL_OPTIONS,
             default="eleven_multilingual_v2",
+        ),
+        ProviderFieldSchema(
+            name="stability", field_type="text", label="Stability (0.0–1.0)",
+            default="0.5",
+        ),
+        ProviderFieldSchema(
+            name="similarity_boost", field_type="text", label="Similarity Boost (0.0–1.0)",
+            default="0.75",
+        ),
+        ProviderFieldSchema(
+            name="style", field_type="text", label="Style Exaggeration (0.0–1.0)",
+            default="0.0",
+        ),
+        ProviderFieldSchema(
+            name="use_speaker_boost", field_type="select", label="Speaker Boost",
+            options=["false", "true"],
+            default="false",
         ),
     ],
     "azure_speech": [

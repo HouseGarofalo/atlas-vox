@@ -12,7 +12,7 @@ interface SynthesisState {
   comparisonResults: ComparisonResult[];
   loading: boolean;
   error: string | null;
-  synthesize: (data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean }) => Promise<SynthesisResult>;
+  synthesize: (data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; voice_settings?: Record<string, unknown> }) => Promise<SynthesisResult>;
   compare: (data: { text: string; profile_ids: string[]; speed?: number; pitch?: number }) => Promise<void>;
   fetchHistory: (limit?: number) => Promise<void>;
 }

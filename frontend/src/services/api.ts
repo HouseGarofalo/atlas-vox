@@ -127,7 +127,7 @@ class ApiClient {
   }
 
   // Synthesis
-  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; include_word_boundaries?: boolean }) {
+  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; include_word_boundaries?: boolean; voice_settings?: Record<string, unknown> }) {
     return this.request<{ id: string; audio_url: string; duration_seconds: number | null; latency_ms: number; profile_id: string; provider_name: string; word_boundaries?: { text: string; offset_ms: number; duration_ms: number; word_index: number }[] }>("/synthesize", { method: "POST", body: JSON.stringify(data) });
   }
   batchSynthesize(data: { lines: string[]; profile_id: string; preset_id?: string; speed?: number }) {
@@ -232,6 +232,37 @@ class ApiClient {
 
   getTrainingReadiness(profileId: string) {
     return this.request<{ ready: boolean; score: number; sample_count: number; total_duration: number; issues: { code: string; severity: string; message: string }[]; recommendations: string[] }>(`/profiles/${profileId}/samples/readiness`);
+  }
+
+  // Audio Tools
+  enhanceSample(profileId: string, sampleId: string) {
+    return this.request<{ enhanced: boolean; message: string }>("/audio-tools/isolate", {
+      method: "POST",
+      body: JSON.stringify({ profile_id: profileId, sample_id: sampleId }),
+    });
+  }
+
+  speechToSpeech(audio: File, voiceId: string, provider: string) {
+    const form = new FormData();
+    form.append("audio", audio);
+    return this.request<{ audio_url: string; duration_seconds: number | null }>(
+      `/audio-tools/speech-to-speech?voice_id=${encodeURIComponent(voiceId)}&provider=${encodeURIComponent(provider)}`,
+      { method: "POST", body: form },
+    );
+  }
+
+  designVoice(description: string, text?: string) {
+    return this.request<{ previews: { voice_id: string; audio_base64: string }[] }>(
+      "/audio-tools/design-voice",
+      { method: "POST", body: JSON.stringify({ description, text }) },
+    );
+  }
+
+  generateSoundEffect(description: string, duration?: number) {
+    return this.request<{ audio_url: string }>("/audio-tools/sound-effect", {
+      method: "POST",
+      body: JSON.stringify({ description, duration_seconds: duration || 5.0 }),
+    });
   }
 
   // Audio URL helper
