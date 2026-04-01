@@ -236,7 +236,7 @@ class ApiClient {
 
   // Audio Tools
   enhanceSample(profileId: string, sampleId: string) {
-    return this.request<{ enhanced: boolean; message: string }>("/audio-tools/isolate", {
+    return this.request<{ output_filename: string; audio_url: string }>("/audio-tools/isolate", {
       method: "POST",
       body: JSON.stringify({ profile_id: profileId, sample_id: sampleId }),
     });

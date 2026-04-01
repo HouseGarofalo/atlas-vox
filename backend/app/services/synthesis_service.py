@@ -129,6 +129,7 @@ async def synthesize(
     output_format: str = "wav",
     ssml: bool = False,
     include_word_boundaries: bool = False,
+    voice_settings: dict | None = None,
 ) -> dict:
     """Synthesize text using a voice profile's provider.
 
@@ -154,6 +155,13 @@ async def synthesize(
         synth_settings = await _apply_preset(db, preset_id, synth_settings)
 
     provider = provider_registry.get_provider(profile.provider_name)
+
+    # Apply per-request voice_settings as runtime config overrides
+    if voice_settings:
+        current_config = dict(provider._runtime_config or {})
+        current_config.update(voice_settings)
+        provider.configure(current_config)
+
     voice_id = await _resolve_voice_id(db, profile)
 
     start = time.perf_counter()

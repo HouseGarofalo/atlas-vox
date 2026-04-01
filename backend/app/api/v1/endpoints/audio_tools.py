@@ -202,11 +202,15 @@ async def speech_to_speech(
     )
 
 
+class DesignVoiceRequest(BaseModel):
+    description: str
+    text: str = ""
+
+
 @router.post("/design-voice", response_model=DesignVoiceResponse)
 async def design_voice(
+    body: DesignVoiceRequest,
     user: CurrentUser,
-    description: str = Query(..., description="Natural-language description of the desired voice"),
-    text: str = Query("", description="Optional sample text for preview"),
 ) -> DesignVoiceResponse:
     """Generate voice previews from a natural-language description.
 
@@ -214,10 +218,10 @@ async def design_voice(
     and base64-encoded audio for immediate playback.
     """
     provider = _require_elevenlabs_provider()
-    logger.info("design_voice_requested", description=description[:80])
+    logger.info("design_voice_requested", description=body.description[:80])
 
     try:
-        result = await provider.design_voice(description=description, text=text)
+        result = await provider.design_voice(description=body.description, text=body.text)
     except Exception as exc:
         logger.error("design_voice_failed", error=str(exc))
         raise HTTPException(
@@ -229,17 +233,23 @@ async def design_voice(
     return DesignVoiceResponse(previews=result.get("previews", []))
 
 
+class SoundEffectRequest(BaseModel):
+    description: str
+    duration_seconds: float = 5.0
+
+
 @router.post("/sound-effect", response_model=SoundEffectResponse)
 async def generate_sound_effect(
+    body: SoundEffectRequest,
     user: CurrentUser,
-    description: str = Query(..., description="Text description of the desired sound effect"),
-    duration: float = Query(5.0, ge=1.0, le=22.0, description="Duration in seconds (1–22)"),
 ) -> SoundEffectResponse:
     """Generate a sound effect MP3 from a text description.
 
     Uses ElevenLabs Sound Effects API. Duration must be between 1 and 22 seconds.
     """
     provider = _require_elevenlabs_provider()
+    description = body.description
+    duration = body.duration_seconds
     logger.info("sound_effect_requested", description=description[:80], duration=duration)
 
     try:

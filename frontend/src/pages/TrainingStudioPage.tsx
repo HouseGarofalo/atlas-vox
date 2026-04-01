@@ -121,13 +121,9 @@ export default function TrainingStudioPage() {
   const handleEnhance = async (sampleId: string) => {
     setEnhancing(sampleId);
     try {
-      const result = await api.enhanceSample(selectedProfile, sampleId);
-      if (result.enhanced) {
-        toast.success("Sample enhanced successfully");
-        await loadSamples();
-      } else {
-        toast.info(result.message || "Sample was not enhanced");
-      }
+      await api.enhanceSample(selectedProfile, sampleId);
+      toast.success("Sample enhanced successfully");
+      await loadSamples();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Enhancement failed";
       toast.error(message);
@@ -143,8 +139,8 @@ export default function TrainingStudioPage() {
     let failed = 0;
     for (const sample of samples) {
       try {
-        const result = await api.enhanceSample(selectedProfile, sample.id);
-        if (result.enhanced) enhanced++;
+        await api.enhanceSample(selectedProfile, sample.id);
+        enhanced++;
       } catch {
         failed++;
       }

@@ -15,6 +15,7 @@ class SynthesisRequest(BaseModel):
     output_format: str = "wav"  # wav, mp3, ogg
     ssml: bool = False  # If true, text is treated as SSML
     include_word_boundaries: bool = False
+    voice_settings: dict | None = None  # Provider-specific voice tuning (e.g., stability, similarity_boost)
 
 
 class WordBoundaryItem(BaseModel):
