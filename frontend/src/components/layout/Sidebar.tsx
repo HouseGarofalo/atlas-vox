@@ -13,6 +13,8 @@ import {
   Palette,
   HelpCircle,
   Shield,
+  Clock,
+  BookOpen,
   Menu,
   X,
 } from "lucide-react";
@@ -30,6 +32,8 @@ const navItems = [
   { to: "/synthesis", icon: AudioLines, label: "Synthesis Lab" },
   { to: "/audio-design", icon: Wand2, label: "Audio Design" },
   { to: "/compare", icon: GitCompareArrows, label: "Comparison" },
+  { to: "/history", icon: Clock, label: "History" },
+  { to: "/pronunciation", icon: BookOpen, label: "Pronunciation" },
   { to: "/providers", icon: Settings2, label: "Providers" },
   { to: "/api-keys", icon: Key, label: "API Keys" },
   { to: "/settings", icon: Settings, label: "Settings" },

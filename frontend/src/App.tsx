@@ -22,6 +22,8 @@ const DocsPage = lazy(() => import("./pages/DocsPage"));
 const DesignSystemPage = lazy(() => import("./pages/DesignSystemPage"));
 const HealingPage = lazy(() => import("./pages/HealingPage"));
 const AudioDesignPage = lazy(() => import("./pages/AudioDesignPage"));
+const HistoryPage = lazy(() => import("./pages/HistoryPage"));
+const PronunciationPage = lazy(() => import("./pages/PronunciationPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 function App() {
@@ -49,6 +51,8 @@ function App() {
           <Route path="admin" element={<Navigate to="/providers" replace />} />
           <Route path="design" element={<Page component={DesignSystemPage} />} />
           <Route path="healing" element={<Page component={HealingPage} />} />
+          <Route path="history" element={<Page component={HistoryPage} />} />
+          <Route path="pronunciation" element={<Page component={PronunciationPage} />} />
           <Route path="*" element={<Page component={NotFoundPage} />} />
         </Route>
       </Routes>
