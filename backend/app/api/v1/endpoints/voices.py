@@ -20,7 +20,7 @@ router = APIRouter(prefix="/voices", tags=["voices"])
 
 @router.get("")
 async def list_all_voices(
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=1000, le=5000),
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
     """Aggregate voices from all available providers into a single list."""
@@ -45,10 +45,11 @@ async def list_all_voices(
         except Exception as exc:
             logger.warning("voice_list_failed", provider=name, error=str(exc))
             continue
+    total = len(voices)
     paginated = voices[offset : offset + limit]
-    logger.info("list_all_voices_returned", total=len(voices), count=len(paginated))
+    logger.info("list_all_voices_returned", total=total, count=len(paginated))
     return JSONResponse(
-        content={"voices": paginated, "count": len(paginated)},
+        content={"voices": paginated, "count": len(paginated), "total": total},
         headers={"Cache-Control": "public, max-age=300"},
     )
 

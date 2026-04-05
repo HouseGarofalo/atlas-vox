@@ -112,13 +112,13 @@ describe('Sidebar', () => {
     expect(screen.getByText('Help')).toBeInTheDocument();
   });
 
-  it('renders Docs navigation item', () => {
+  it('renders Audio Design navigation item', () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Docs')).toBeInTheDocument();
+    expect(screen.getByText('Audio Design')).toBeInTheDocument();
   });
 
   it('renders mobile menu toggle button', () => {

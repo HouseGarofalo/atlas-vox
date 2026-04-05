@@ -72,10 +72,14 @@ export default function ComparisonPage() {
             {comparisonResults.map((r: ComparisonResult) => (
               <div key={r.profile_id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <h3 className="font-semibold">{r.profile_name}</h3>
+                  <h3 className="font-semibold">{r.profile_name || "Unknown Profile"}</h3>
                   <span className="text-xs text-[var(--color-text-secondary)]">{r.provider_name} &middot; {r.latency_ms}ms</span>
                 </div>
-                {r.audio_url && <AudioPlayer src={r.audio_url} />}
+                {r.audio_url ? (
+                  <AudioPlayer src={r.audio_url} />
+                ) : (
+                  <p className="text-sm text-red-500">Synthesis failed for this profile</p>
+                )}
               </div>
             ))}
           </div>

@@ -21,6 +21,7 @@ const DocsPage = lazy(() => import("./pages/DocsPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const DesignSystemPage = lazy(() => import("./pages/DesignSystemPage"));
 const HealingPage = lazy(() => import("./pages/HealingPage"));
+const AudioDesignPage = lazy(() => import("./pages/AudioDesignPage"));
 
 function App() {
   useEffect(() => {
@@ -70,6 +71,14 @@ function App() {
             element={
               <Suspense fallback={<PageLoader />}>
                 <SynthesisLabPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="audio-design"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <AudioDesignPage />
               </Suspense>
             }
           />

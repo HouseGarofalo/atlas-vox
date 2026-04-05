@@ -1,0 +1,214 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - img [ref=e6]
+        - generic [ref=e7]: Atlas Vox
+      - navigation [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+        - link "Voice Profiles" [ref=e15] [cursor=pointer]:
+          - /url: /profiles
+          - img [ref=e16]
+          - text: Voice Profiles
+        - link "Voice Library" [ref=e19] [cursor=pointer]:
+          - /url: /library
+          - img [ref=e20]
+          - text: Voice Library
+        - link "Training Studio" [ref=e22] [cursor=pointer]:
+          - /url: /training
+          - img [ref=e23]
+          - text: Training Studio
+        - link "Synthesis Lab" [ref=e26] [cursor=pointer]:
+          - /url: /synthesis
+          - img [ref=e27]
+          - text: Synthesis Lab
+        - link "Audio Design" [ref=e28] [cursor=pointer]:
+          - /url: /audio-design
+          - img [ref=e29]
+          - text: Audio Design
+        - link "Comparison" [ref=e32] [cursor=pointer]:
+          - /url: /compare
+          - img [ref=e33]
+          - text: Comparison
+        - link "Providers" [ref=e40] [cursor=pointer]:
+          - /url: /providers
+          - img [ref=e41]
+          - text: Providers
+        - link "API Keys" [ref=e44] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e45]
+          - text: API Keys
+        - link "Settings" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - text: Settings
+        - link "Design System" [ref=e53] [cursor=pointer]:
+          - /url: /design
+          - img [ref=e54]
+          - text: Design System
+        - link "Self-Healing" [ref=e60] [cursor=pointer]:
+          - /url: /healing
+          - img [ref=e61]
+          - text: Self-Healing
+        - link "Help" [ref=e63] [cursor=pointer]:
+          - /url: /help
+          - img [ref=e64]
+          - text: Help
+    - generic [ref=e67]:
+      - banner [ref=e68]:
+        - generic [ref=e69]:
+          - link "Design System" [ref=e70] [cursor=pointer]:
+            - /url: /design
+            - img [ref=e71]
+          - button "Toggle theme" [ref=e75] [cursor=pointer]:
+            - img [ref=e76]
+      - main [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - heading "Audio Design Studio" [level=1] [ref=e83]
+              - paragraph [ref=e84]: Import, enhance, trim, join, and export audio files
+            - button "Import Audio" [ref=e210] [cursor=pointer]:
+              - img [ref=e87]
+              - text: Import Audio
+          - generic [ref=e90]:
+            - button "Drop audio files here or click to browse" [ref=e211] [cursor=pointer]:
+              - img [ref=e212]
+              - paragraph [ref=e215]: Drop audio files here
+              - paragraph [ref=e216]: WAV, MP3, OGG, FLAC, M4A supported
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - button "Processing Engine Maximize panel" [expanded] [ref=e96] [cursor=pointer]:
+                  - img [ref=e98]
+                  - img [ref=e101]
+                  - heading "Processing Engine" [level=3] [ref=e107]
+                  - button "Maximize panel" [ref=e108]:
+                    - img [ref=e109]
+                - generic [ref=e115]:
+                  - generic [ref=e116] [cursor=pointer]:
+                    - radio "Local (Built-in) Noise reduction, normalize, trim, gain" [ref=e117]
+                    - generic [ref=e118]:
+                      - generic [ref=e119]: Local (Built-in)
+                      - generic [ref=e120]: Noise reduction, normalize, trim, gain
+                  - generic [ref=e121] [cursor=pointer]:
+                    - radio "ElevenLabs Unknown AI isolation, voice conversion, voice design, SFX" [checked] [active] [ref=e217]
+                    - generic [ref=e123]:
+                      - generic [ref=e124]:
+                        - generic [ref=e125]: ElevenLabs
+                        - generic "Unknown" [ref=e218]
+                      - generic [ref=e126]: AI isolation, voice conversion, voice design, SFX
+              - generic [ref=e127]:
+                - button "Effects Chain Apply Maximize panel" [expanded] [ref=e128] [cursor=pointer]:
+                  - img [ref=e130]
+                  - img [ref=e133]
+                  - heading "Effects Chain" [level=3] [ref=e136]
+                  - button "Apply" [disabled] [ref=e138]
+                  - button "Maximize panel" [ref=e139]:
+                    - img [ref=e140]
+                - generic [ref=e146]:
+                  - generic [ref=e147]:
+                    - generic [ref=e148] [cursor=pointer]:
+                      - checkbox "Enable noise reduction" [checked] [ref=e149]
+                      - generic [ref=e150]: noise reduction
+                    - generic [ref=e219]:
+                      - generic [ref=e220]:
+                        - generic [ref=e221]: Strength
+                        - generic [ref=e222]: 50%
+                      - slider "Strength" [ref=e223] [cursor=pointer]: "0.5"
+                  - generic [ref=e152] [cursor=pointer]:
+                    - checkbox "Enable normalize" [ref=e153]
+                    - generic [ref=e154]: normalize
+                  - generic [ref=e156] [cursor=pointer]:
+                    - checkbox "Enable trim silence" [ref=e157]
+                    - generic [ref=e158]: trim silence
+                  - generic [ref=e159]:
+                    - generic [ref=e160] [cursor=pointer]:
+                      - checkbox "Enable gain" [checked] [ref=e161]
+                      - generic [ref=e162]: gain
+                    - generic [ref=e224]:
+                      - generic [ref=e225]:
+                        - generic [ref=e226]: Gain
+                        - generic [ref=e227]: 0 dB
+                      - slider "Gain" [ref=e228] [cursor=pointer]: "0"
+              - generic [ref=e229]:
+                - button "ElevenLabs Tools Maximize panel" [expanded] [ref=e230] [cursor=pointer]:
+                  - img [ref=e232]
+                  - img [ref=e235]
+                  - heading "ElevenLabs Tools" [level=3] [ref=e237]
+                  - button "Maximize panel" [ref=e238]:
+                    - img [ref=e239]
+                - generic [ref=e245]:
+                  - generic [ref=e246]:
+                    - button "Run AI audio isolation on selected clip" [disabled] [ref=e247]:
+                      - img [ref=e248]
+                      - text: Audio Isolation
+                    - paragraph [ref=e251]: Remove background noise using AI
+                  - generic [ref=e252]:
+                    - text: Speech-to-Speech
+                    - textbox "Target ElevenLabs voice ID for speech-to-speech conversion" [ref=e253]:
+                      - /placeholder: Target ElevenLabs voice ID
+                    - button "Convert Voice" [disabled] [ref=e254]:
+                      - img [ref=e255]
+                      - text: Convert Voice
+                  - generic [ref=e258]:
+                    - text: Voice Design
+                    - textbox "Natural language voice description for AI voice generation" [ref=e259]:
+                      - /placeholder: Describe the voice you want...
+                    - button "Design Voice" [disabled] [ref=e260]:
+                      - img [ref=e261]
+                      - text: Design Voice
+                  - generic [ref=e263]:
+                    - text: Sound Effects
+                    - textbox "Text description for AI sound effect generation" [ref=e264]:
+                      - /placeholder: Describe the sound effect...
+                    - generic [ref=e265]:
+                      - generic [ref=e266]:
+                        - generic [ref=e267]: Duration
+                        - generic [ref=e268]: 5s
+                      - slider "Duration" [ref=e269] [cursor=pointer]: "5"
+                    - button "Generate SFX" [disabled] [ref=e270]:
+                      - img [ref=e271]
+                      - text: Generate SFX
+              - generic [ref=e163]:
+                - button "Analyze Maximize panel" [expanded] [ref=e164] [cursor=pointer]:
+                  - img [ref=e166]
+                  - img [ref=e169]
+                  - heading "Analyze" [level=3] [ref=e172]
+                  - button "Maximize panel" [ref=e173]:
+                    - img [ref=e174]
+                - generic [ref=e179]:
+                  - button "Run quality and spectral analysis on selected clip" [disabled] [ref=e180]:
+                    - img [ref=e181]
+                    - text: Run Quality Analysis
+                  - paragraph [ref=e183]: SNR, RMS, clipping, silence ratio, pitch, spectral analysis
+              - generic [ref=e184]:
+                - button "Export Maximize panel" [expanded] [ref=e185] [cursor=pointer]:
+                  - img [ref=e187]
+                  - img [ref=e190]
+                  - heading "Export" [level=3] [ref=e193]
+                  - button "Maximize panel" [ref=e194]:
+                    - img [ref=e195]
+                - generic [ref=e201]:
+                  - generic [ref=e202]:
+                    - text: Format
+                    - combobox "Format" [ref=e203]:
+                      - option "WAV (lossless)" [selected]
+                      - option "MP3"
+                      - option "OGG Vorbis"
+                      - option "FLAC (lossless)"
+                  - generic [ref=e204]:
+                    - text: Sample Rate
+                    - combobox "Sample Rate" [ref=e205]:
+                      - option "Original" [selected]
+                      - option "8 kHz (telephone)"
+                      - option "16 kHz (speech)"
+                      - option "22.05 kHz"
+                      - option "44.1 kHz (CD)"
+                      - option "48 kHz (studio)"
+                  - button "Export Audio" [disabled] [ref=e206]:
+                    - img [ref=e207]
+                    - text: Export Audio

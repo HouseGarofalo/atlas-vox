@@ -1,1 +1,2 @@
 - [Atlas Vox TTS Provider Research](tts_provider_research.md) — Deep research on all 9 TTS providers: voices, APIs, cloning, training
+- [Audio Design Studio Library Research](audio_editor_research.md) — wavesurfer.js + Tone.js + ffmpeg.wasm stack for audio editor page

@@ -76,7 +76,7 @@ export default function TrainingStudioPage() {
   }, [progress?.state]);
 
   const loadSamples = async () => {
-    try { const { samples: s } = await api.listSamples(selectedProfile); setSamples(s); } catch { /* empty */ }
+    try { const { samples: s } = await api.listSamples(selectedProfile); setSamples(s); } catch { setSamples([]); }
   };
 
   const loadReadiness = useCallback(async () => {

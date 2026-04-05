@@ -1,0 +1,335 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - img [ref=e6]
+        - generic [ref=e7]: Atlas Vox
+      - navigation [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+        - link "Voice Profiles" [ref=e15] [cursor=pointer]:
+          - /url: /profiles
+          - img [ref=e16]
+          - text: Voice Profiles
+        - link "Voice Library" [ref=e19] [cursor=pointer]:
+          - /url: /library
+          - img [ref=e20]
+          - text: Voice Library
+        - link "Training Studio" [ref=e22] [cursor=pointer]:
+          - /url: /training
+          - img [ref=e23]
+          - text: Training Studio
+        - link "Synthesis Lab" [ref=e26] [cursor=pointer]:
+          - /url: /synthesis
+          - img [ref=e27]
+          - text: Synthesis Lab
+        - link "Audio Design" [ref=e28] [cursor=pointer]:
+          - /url: /audio-design
+          - img [ref=e29]
+          - text: Audio Design
+        - link "Comparison" [ref=e32] [cursor=pointer]:
+          - /url: /compare
+          - img [ref=e33]
+          - text: Comparison
+        - link "Providers" [ref=e40] [cursor=pointer]:
+          - /url: /providers
+          - img [ref=e41]
+          - text: Providers
+        - link "API Keys" [ref=e44] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e45]
+          - text: API Keys
+        - link "Settings" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - text: Settings
+        - link "Design System" [ref=e53] [cursor=pointer]:
+          - /url: /design
+          - img [ref=e54]
+          - text: Design System
+        - link "Self-Healing" [ref=e60] [cursor=pointer]:
+          - /url: /healing
+          - img [ref=e61]
+          - text: Self-Healing
+        - link "Help" [ref=e63] [cursor=pointer]:
+          - /url: /help
+          - img [ref=e64]
+          - text: Help
+    - generic [ref=e67]:
+      - banner [ref=e68]:
+        - generic [ref=e69]:
+          - link "Design System" [ref=e70] [cursor=pointer]:
+            - /url: /design
+            - img [ref=e71]
+          - button "Toggle theme" [ref=e75] [cursor=pointer]:
+            - img [ref=e76]
+      - main [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - heading "Providers" [level=1] [ref=e83]
+              - paragraph [ref=e84]: Configure, test, and manage TTS providers
+            - button "Refresh All" [ref=e85] [cursor=pointer]:
+              - img [ref=e86]
+              - text: Refresh All
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - generic [ref=e93]:
+                - img "kokoro logo" [ref=e94]
+                - link "Kokoro" [ref=e99] [cursor=pointer]:
+                  - /url: https://github.com/hexgrad/kokoro
+                  - text: Kokoro
+                  - img [ref=e100]
+                - generic [ref=e104]: pending
+              - generic [ref=e105]:
+                - generic [ref=e106]: open-source
+                - generic [ref=e107]: local
+              - paragraph [ref=e108]: Lightweight, fast TTS with 54 built-in voices. CPU-only, no GPU required.
+              - generic [ref=e109]: "GPU: none82M parameters, ONNX runtime"
+              - generic [ref=e110]:
+                - switch "Disable Kokoro" [checked] [ref=e111] [cursor=pointer]
+                - generic [ref=e113]:
+                  - button "Edit" [ref=e114] [cursor=pointer]:
+                    - img [ref=e115]
+                    - text: Edit
+                  - button "Health Check" [ref=e118] [cursor=pointer]:
+                    - img [ref=e119]
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - img "coqui_xtts logo" [ref=e123]
+                - link "Coqui XTTS v2" [ref=e135] [cursor=pointer]:
+                  - /url: https://github.com/coqui-ai/TTS
+                  - text: Coqui XTTS v2
+                  - img [ref=e136]
+                - generic [ref=e140]: pending
+              - generic [ref=e141]:
+                - generic [ref=e142]: open-source
+                - generic [ref=e143]: local
+              - paragraph [ref=e144]: State-of-the-art voice cloning from just 6 seconds of audio. Multilingual support for 16 languages.
+              - generic [ref=e146]: Streaming
+              - generic [ref=e147]: "GPU: host_cpuXTTS v2, ~1.5B parameters"
+              - generic [ref=e148]:
+                - switch "Disable Coqui XTTS v2" [checked] [ref=e149] [cursor=pointer]
+                - generic [ref=e151]:
+                  - button "Edit" [ref=e152] [cursor=pointer]:
+                    - img [ref=e153]
+                    - text: Edit
+                  - button "Health Check" [ref=e156] [cursor=pointer]:
+                    - img [ref=e157]
+            - generic [ref=e159]:
+              - generic [ref=e160]:
+                - img "piper logo" [ref=e161]
+                - link "Piper" [ref=e170] [cursor=pointer]:
+                  - /url: https://github.com/rhasspy/piper
+                  - text: Piper
+                  - img [ref=e171]
+                - generic [ref=e175]: pending
+              - generic [ref=e176]:
+                - generic [ref=e177]: open-source
+                - generic [ref=e178]: local
+              - paragraph [ref=e179]: Fast, local TTS optimized for Raspberry Pi and Home Assistant. ONNX-based with many pre-trained voices.
+              - generic [ref=e180]: "GPU: noneONNX VITS models, various sizes"
+              - generic [ref=e181]:
+                - switch "Disable Piper" [checked] [ref=e182] [cursor=pointer]
+                - generic [ref=e184]:
+                  - button "Edit" [ref=e185] [cursor=pointer]:
+                    - img [ref=e186]
+                    - text: Edit
+                  - button "Health Check" [ref=e189] [cursor=pointer]:
+                    - img [ref=e190]
+            - generic [ref=e192]:
+              - generic [ref=e193]:
+                - img "elevenlabs logo" [ref=e194]:
+                  - generic [ref=e196]: XI
+                - link "ElevenLabs" [ref=e199] [cursor=pointer]:
+                  - /url: https://elevenlabs.io
+                  - text: ElevenLabs
+                  - img [ref=e200]
+                - generic [ref=e204]: pending
+              - generic [ref=e205]:
+                - generic [ref=e206]: freemium
+                - generic [ref=e207]: cloud
+              - paragraph [ref=e208]: Industry-leading cloud TTS with natural, expressive voices. Instant voice cloning and multilingual support.
+              - generic [ref=e209]:
+                - generic [ref=e210]: Cloning
+                - generic [ref=e211]: Streaming
+              - generic [ref=e212]: "GPU: noneProprietary, cloud-hosted"
+              - generic [ref=e213]:
+                - switch "Disable ElevenLabs" [checked] [ref=e214] [cursor=pointer]
+                - generic [ref=e216]:
+                  - button "Close" [active] [ref=e384] [cursor=pointer]:
+                    - img [ref=e218]
+                    - text: Close
+                  - button "Health Check" [ref=e221] [cursor=pointer]:
+                    - img [ref=e222]
+            - generic [ref=e386]:
+              - generic [ref=e387]:
+                - heading "elevenlabs logo ElevenLabs Configuration" [level=3] [ref=e388]:
+                  - img "elevenlabs logo" [ref=e389]:
+                    - generic [ref=e391]: XI
+                  - text: ElevenLabs Configuration
+                - button "Close" [ref=e392] [cursor=pointer]
+              - generic [ref=e393]:
+                - generic [ref=e394]:
+                  - paragraph [ref=e395]: Industry-leading cloud TTS with natural, expressive voices. Instant voice cloning and multilingual support.
+                  - link "Website" [ref=e396] [cursor=pointer]:
+                    - /url: https://elevenlabs.io
+                    - text: Website
+                    - img [ref=e397]
+                - generic [ref=e401]:
+                  - heading "Configuration" [level=4] [ref=e402]
+                  - generic [ref=e403]:
+                    - generic [ref=e404]:
+                      - generic [ref=e405]:
+                        - text: API Key
+                        - generic [ref=e406]: "*"
+                      - generic [ref=e407]:
+                        - textbox [ref=e408]
+                        - button "Show value" [ref=e409] [cursor=pointer]:
+                          - img [ref=e410]
+                    - generic [ref=e413]:
+                      - generic [ref=e414]: Model
+                      - combobox [ref=e415]:
+                        - 'option "Default: eleven_multilingual_v2"'
+                        - option "eleven_multilingual_v2" [selected]
+                        - option "eleven_turbo_v2_5"
+                        - option "eleven_flash_v2_5"
+                    - generic [ref=e416]:
+                      - generic [ref=e417]: Stability (0.0–1.0)
+                      - textbox "0.5" [ref=e418]
+                    - generic [ref=e419]:
+                      - generic [ref=e420]: Similarity Boost (0.0–1.0)
+                      - textbox "0.75" [ref=e421]
+                    - generic [ref=e422]:
+                      - generic [ref=e423]: Style Exaggeration (0.0–1.0)
+                      - textbox "0.0" [ref=e424]: "0"
+                    - generic [ref=e425]:
+                      - generic [ref=e426]: Speaker Boost
+                      - combobox [ref=e427]:
+                        - 'option "Default: false"'
+                        - option "false" [selected]
+                        - option "true"
+                - generic [ref=e428]:
+                  - button "Save" [disabled] [ref=e429]
+                  - button "Health Check" [ref=e430] [cursor=pointer]
+                - generic [ref=e431]:
+                  - heading "Test Synthesis" [level=4] [ref=e432]
+                  - generic [ref=e433]:
+                    - textbox "Enter test text..." [ref=e434]: Hello, this is a test of the text to speech system.
+                    - button "Test" [ref=e435] [cursor=pointer]
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - img "azure_speech logo" [ref=e226]
+                - link "Azure AI Speech" [ref=e232] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/en-us/products/ai-services/text-to-speech
+                  - text: Azure AI Speech
+                  - img [ref=e233]
+                - generic [ref=e237]: pending
+              - generic [ref=e238]:
+                - generic [ref=e239]: paid
+                - generic [ref=e240]: cloud
+              - paragraph [ref=e241]: Microsoft Azure Cognitive Services TTS with neural voices, SSML support, and enterprise reliability.
+              - generic [ref=e242]:
+                - generic [ref=e243]: Cloning
+                - generic [ref=e244]: Streaming
+                - generic [ref=e245]: SSML
+                - generic [ref=e246]: Fine-tune
+              - generic [ref=e247]: "GPU: noneAzure Neural TTS"
+              - generic [ref=e248]:
+                - switch "Disable Azure AI Speech" [checked] [ref=e249] [cursor=pointer]
+                - generic [ref=e251]:
+                  - button "Edit" [ref=e252] [cursor=pointer]:
+                    - img [ref=e253]
+                    - text: Edit
+                  - button "Health Check" [ref=e256] [cursor=pointer]:
+                    - img [ref=e257]
+            - generic [ref=e259]:
+              - generic [ref=e260]:
+                - img "styletts2 logo" [ref=e261]:
+                  - generic [ref=e263]: S2
+                - link "StyleTTS2" [ref=e268] [cursor=pointer]:
+                  - /url: https://github.com/yl4579/StyleTTS2
+                  - text: StyleTTS2
+                  - img [ref=e269]
+                - generic [ref=e273]: pending
+              - generic [ref=e274]:
+                - generic [ref=e275]: open-source
+                - generic [ref=e276]: local
+              - paragraph [ref=e277]: Style diffusion and adversarial training for expressive, human-level TTS. Zero-shot voice transfer.
+              - generic [ref=e278]: "GPU: host_cpu~200M parameters"
+              - generic [ref=e279]:
+                - switch "Disable StyleTTS2" [checked] [ref=e280] [cursor=pointer]
+                - generic [ref=e282]:
+                  - button "Edit" [ref=e283] [cursor=pointer]:
+                    - img [ref=e284]
+                    - text: Edit
+                  - button "Health Check" [ref=e287] [cursor=pointer]:
+                    - img [ref=e288]
+            - generic [ref=e290]:
+              - generic [ref=e291]:
+                - img "cosyvoice logo" [ref=e292]
+                - link "CosyVoice" [ref=e298] [cursor=pointer]:
+                  - /url: https://github.com/FunAudioLLM/CosyVoice
+                  - text: CosyVoice
+                  - img [ref=e299]
+                - generic [ref=e303]: pending
+              - generic [ref=e304]:
+                - generic [ref=e305]: open-source
+                - generic [ref=e306]: local
+              - paragraph [ref=e307]: Alibaba's multilingual TTS with natural prosody. Supports 9 languages with streaming output.
+              - generic [ref=e309]: Streaming
+              - generic [ref=e310]: "GPU: host_cpuCosyVoice-300M-SFT"
+              - generic [ref=e311]:
+                - switch "Disable CosyVoice" [checked] [ref=e312] [cursor=pointer]
+                - generic [ref=e314]:
+                  - button "Edit" [ref=e315] [cursor=pointer]:
+                    - img [ref=e316]
+                    - text: Edit
+                  - button "Health Check" [ref=e319] [cursor=pointer]:
+                    - img [ref=e320]
+            - generic [ref=e322]:
+              - generic [ref=e323]:
+                - img "dia logo" [ref=e324]
+                - link "Nari-labs Dia" [ref=e330] [cursor=pointer]:
+                  - /url: https://github.com/nari-labs/dia
+                  - text: Nari-labs Dia
+                  - img [ref=e331]
+                - generic [ref=e335]: pending
+              - generic [ref=e336]:
+                - generic [ref=e337]: open-source
+                - generic [ref=e338]: local
+              - paragraph [ref=e339]: Nari Labs dialogue TTS with 1.6B parameters. Generates natural multi-speaker conversations with non-verbal sounds.
+              - generic [ref=e340]: "GPU: host_cpu1.6B parameters"
+              - generic [ref=e341]:
+                - switch "Disable Nari-labs Dia" [checked] [ref=e342] [cursor=pointer]
+                - generic [ref=e344]:
+                  - button "Edit" [ref=e345] [cursor=pointer]:
+                    - img [ref=e346]
+                    - text: Edit
+                  - button "Health Check" [ref=e349] [cursor=pointer]:
+                    - img [ref=e350]
+            - generic [ref=e352]:
+              - generic [ref=e353]:
+                - img "dia2 logo" [ref=e354]
+                - link "Nari-labs Dia2" [ref=e360] [cursor=pointer]:
+                  - /url: https://github.com/nari-labs/dia
+                  - text: Nari-labs Dia2
+                  - img [ref=e361]
+                - generic [ref=e365]: pending
+              - generic [ref=e366]:
+                - generic [ref=e367]: open-source
+                - generic [ref=e368]: local
+              - paragraph [ref=e369]: Next-gen dialogue model from Nari Labs with 2B parameters. Streaming support for real-time conversation generation.
+              - generic [ref=e371]: Streaming
+              - generic [ref=e372]: "GPU: host_cpu2B parameters"
+              - generic [ref=e373]:
+                - switch "Disable Nari-labs Dia2" [checked] [ref=e374] [cursor=pointer]
+                - generic [ref=e376]:
+                  - button "Edit" [ref=e377] [cursor=pointer]:
+                    - img [ref=e378]
+                    - text: Edit
+                  - button "Health Check" [ref=e381] [cursor=pointer]:
+                    - img [ref=e382]

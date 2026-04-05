@@ -134,7 +134,7 @@ export default function SynthesisLabPage() {
         selectedProfileData.voice_id || profileId,
         selectedProfileData.provider_name,
       );
-      setStsResult(result);
+      setStsResult({ audio_url: result.audio_url, duration_seconds: null });
       logger.info("sts_complete", { audio_url: result.audio_url });
       toast.success("Speech-to-Speech conversion complete");
     } catch (e: unknown) {

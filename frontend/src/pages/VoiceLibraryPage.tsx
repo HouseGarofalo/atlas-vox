@@ -386,6 +386,7 @@ function languageLabel(code: string): string {
     "en-PH": "English (PH)",
     "en-HK": "English (HK)",
     "en-KE": "English (KE)",
+    "en-NG": "English (NG)",
     es: "Spanish",
     fr: "French",
     de: "German",

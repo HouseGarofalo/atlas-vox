@@ -24,7 +24,7 @@ const PRICING_COLORS: Record<string, string> = {
 /* ---------- page ---------- */
 
 export default function ProvidersPage() {
-  const { providers, loading, fetchProviders, checkAllHealth, checkHealth } = useProviderStore();
+  const { providers, loading, error, fetchProviders, checkAllHealth, checkHealth } = useProviderStore();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +60,13 @@ export default function ProvidersPage() {
       {/* Card grid */}
       {loading && !providers.length ? (
         <p className="text-[var(--color-text-secondary)]">Loading...</p>
+      ) : error && !providers.length ? (
+        <Card className="py-8 text-center space-y-3">
+          <p className="text-sm text-red-600 dark:text-red-400">Failed to load providers: {error}</p>
+          <Button variant="secondary" onClick={() => fetchProviders()}>
+            <Loader2 className="h-4 w-4 mr-2" /> Retry
+          </Button>
+        </Card>
       ) : providers.length === 0 ? (
         <Card className="py-12 text-center">
           <p className="text-[var(--color-text-secondary)]">No providers found.</p>

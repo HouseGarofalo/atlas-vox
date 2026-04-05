@@ -67,3 +67,22 @@ async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
         filename=safe_name,
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
+
+
+@router.get("/audio/design/{filename}")
+async def serve_audio_design(filename: str, user: CurrentUser) -> FileResponse:
+    """Serve audio files from the Audio Design Studio working directory."""
+    safe_name = Path(filename).name
+    file_path = Path(settings.storage_path) / "audio-design" / safe_name
+
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio design file not found")
+
+    ext = file_path.suffix.lstrip(".")
+    media_type = MIME_TYPES.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=safe_name,
+    )

@@ -176,3 +176,147 @@ async def analyze_audio(path: Path) -> AudioAnalysis:
         rms_db=result.rms_db,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Audio Design Studio helpers
+# ---------------------------------------------------------------------------
+
+
+def _trim_sync(input_path: Path, output_path: Path, start: float, end: float) -> Path:
+    """Trim audio to [start, end] seconds."""
+    import librosa
+    import soundfile as sf
+
+    y, sr = librosa.load(str(input_path), sr=None, mono=True)
+    start_sample = int(start * sr)
+    end_sample = int(end * sr)
+    end_sample = min(end_sample, len(y))
+    if start_sample >= end_sample:
+        raise ValueError(f"Invalid trim range: {start}s - {end}s (duration {len(y) / sr:.2f}s)")
+
+    y_trimmed = y[start_sample:end_sample]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(output_path), y_trimmed, sr, subtype="PCM_16")
+    logger.info("audio_trimmed", input=str(input_path), start=start, end=end, output=str(output_path))
+    return output_path
+
+
+def _concat_sync(input_paths: list[Path], output_path: Path, crossfade_ms: int = 0) -> Path:
+    """Concatenate multiple audio files, optionally with crossfade."""
+    import librosa
+    import soundfile as sf
+
+    segments: list[np.ndarray] = []
+    target_sr: int | None = None
+
+    for p in input_paths:
+        y, sr = librosa.load(str(p), sr=None, mono=True)
+        if target_sr is None:
+            target_sr = sr
+        elif sr != target_sr:
+            y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+        segments.append(y)
+
+    if not segments or target_sr is None:
+        raise ValueError("No audio segments to concatenate")
+
+    if crossfade_ms > 0 and len(segments) > 1:
+        crossfade_samples = int(crossfade_ms / 1000.0 * target_sr)
+        result = segments[0]
+        for seg in segments[1:]:
+            overlap = min(crossfade_samples, len(result), len(seg))
+            if overlap > 0:
+                fade_out = np.linspace(1.0, 0.0, overlap)
+                fade_in = np.linspace(0.0, 1.0, overlap)
+                result[-overlap:] = result[-overlap:] * fade_out + seg[:overlap] * fade_in
+                result = np.concatenate([result, seg[overlap:]])
+            else:
+                result = np.concatenate([result, seg])
+    else:
+        result = np.concatenate(segments)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(output_path), result, target_sr, subtype="PCM_16")
+    logger.info("audio_concatenated", file_count=len(input_paths), output=str(output_path))
+    return output_path
+
+
+def _apply_gain_sync(input_path: Path, output_path: Path, gain_db: float) -> Path:
+    """Apply gain (volume adjustment) in dB."""
+    import librosa
+    import soundfile as sf
+
+    y, sr = librosa.load(str(input_path), sr=None, mono=True)
+    gain_linear = 10 ** (gain_db / 20.0)
+    y = y * gain_linear
+    y = np.clip(y, -1.0, 1.0)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(output_path), y, sr, subtype="PCM_16")
+    logger.info("audio_gain_applied", gain_db=gain_db, output=str(output_path))
+    return output_path
+
+
+def _convert_format_sync(input_path: Path, output_path: Path, target_format: str, target_sr: int | None = None) -> Path:
+    """Convert audio to a different format and/or sample rate."""
+    from pydub import AudioSegment
+
+    audio = AudioSegment.from_file(str(input_path))
+
+    if target_sr:
+        audio = audio.set_frame_rate(target_sr)
+
+    audio = audio.set_channels(1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    format_map = {"wav": "wav", "mp3": "mp3", "ogg": "ogg", "flac": "flac"}
+    fmt = format_map.get(target_format.lower(), "wav")
+    sf_path = output_path.with_suffix(f".{fmt}")
+    audio.export(str(sf_path), format=fmt)
+    logger.info("audio_format_converted", format=fmt, sample_rate=target_sr, output=str(sf_path))
+    return sf_path
+
+
+def _get_audio_info_sync(path: Path) -> dict:
+    """Get audio file metadata without full analysis."""
+    import librosa
+
+    y, sr = librosa.load(str(path), sr=None, mono=True)
+    return {
+        "duration_seconds": round(len(y) / sr, 3),
+        "sample_rate": sr,
+        "channels": 1,
+        "format": path.suffix.lstrip(".").lower(),
+        "file_size_bytes": path.stat().st_size,
+    }
+
+
+async def trim_audio(input_path: Path, output_path: Path, start: float, end: float) -> Path:
+    """Trim audio to [start, end] seconds (async)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_trim_sync, input_path, output_path, start, end))
+
+
+async def concat_audio(input_paths: list[Path], output_path: Path, crossfade_ms: int = 0) -> Path:
+    """Concatenate multiple audio files (async)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_concat_sync, input_paths, output_path, crossfade_ms))
+
+
+async def apply_gain(input_path: Path, output_path: Path, gain_db: float) -> Path:
+    """Apply gain adjustment (async)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_apply_gain_sync, input_path, output_path, gain_db))
+
+
+async def convert_format(input_path: Path, output_path: Path, target_format: str, target_sr: int | None = None) -> Path:
+    """Convert audio format and/or sample rate (async)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_convert_format_sync, input_path, output_path, target_format, target_sr))
+
+
+async def get_audio_info(path: Path) -> dict:
+    """Get audio file metadata (async)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_get_audio_info_sync, path))

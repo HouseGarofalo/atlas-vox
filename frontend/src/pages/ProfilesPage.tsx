@@ -18,7 +18,7 @@ import type { VoiceProfile } from "../types";
 const logger = createLogger("ProfilesPage");
 
 export default function ProfilesPage() {
-  const { profiles, loading, fetchProfiles, createProfile, deleteProfile } = useProfileStore();
+  const { profiles, loading, error, fetchProfiles, createProfile, deleteProfile } = useProfileStore();
   const { providers, fetchProviders } = useProviderStore();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
@@ -138,6 +138,13 @@ export default function ProfilesPage() {
 
       {loading && !profiles.length ? (
         <p className="text-[var(--color-text-secondary)]">Loading...</p>
+      ) : error && !profiles.length ? (
+        <Card className="py-8 text-center space-y-3">
+          <p className="text-sm text-red-600 dark:text-red-400">Failed to load profiles: {error}</p>
+          <Button variant="secondary" onClick={() => fetchProfiles()}>
+            <Loader2 className="h-4 w-4 mr-2" /> Retry
+          </Button>
+        </Card>
       ) : profiles.length === 0 ? (
         <Card className="py-12 text-center">
           <p className="text-[var(--color-text-secondary)]">No profiles yet. Create your first voice profile.</p>

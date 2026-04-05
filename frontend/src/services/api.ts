@@ -158,7 +158,7 @@ class ApiClient {
     return this.request<{ voices: Voice[]; count: number }>(`/providers/${name}/voices`);
   }
   listAllVoices() {
-    return this.request<{ voices: Voice[]; count: number }>("/voices");
+    return this.request<{ voices: Voice[]; count: number; total: number }>("/voices?limit=5000");
   }
   previewVoice(data: { provider: string; voice_id: string; text?: string }) {
     return this.request<{ audio_url: string }>("/voices/preview", { method: "POST", body: JSON.stringify(data) });
@@ -242,11 +242,11 @@ class ApiClient {
     });
   }
 
-  speechToSpeech(audio: File, voiceId: string, provider: string) {
+  speechToSpeech(audio: File, voiceId: string, _provider: string) {
     const form = new FormData();
     form.append("audio", audio);
-    return this.request<{ audio_url: string; duration_seconds: number | null }>(
-      `/audio-tools/speech-to-speech?voice_id=${encodeURIComponent(voiceId)}&provider=${encodeURIComponent(provider)}`,
+    return this.request<{ output_filename: string; audio_url: string }>(
+      `/audio-tools/speech-to-speech?voice_id=${encodeURIComponent(voiceId)}`,
       { method: "POST", body: form },
     );
   }
@@ -259,16 +259,102 @@ class ApiClient {
   }
 
   generateSoundEffect(description: string, duration?: number) {
-    return this.request<{ audio_url: string }>("/audio-tools/sound-effect", {
+    return this.request<{ output_filename: string; audio_url: string }>("/audio-tools/sound-effect", {
       method: "POST",
       body: JSON.stringify({ description, duration_seconds: duration || 5.0 }),
     });
   }
 
-  // Audio URL helper
+  // Audio URL helpers
   audioUrl(filename: string) {
     return `${this.baseUrl}/audio/${filename}`;
   }
+
+  /** Build a full URL from a relative API audio URL (e.g., /api/v1/audio/design/foo.wav). */
+  fullAudioUrl(relativeUrl: string) {
+    return `${this.baseUrl.replace("/api/v1", "")}${relativeUrl}`;
+  }
+
+  // ---------- Audio Design Studio ----------
+
+  audioDesignUpload(file: File) {
+    const form = new FormData();
+    form.append("audio", file);
+    return this.request<{ file: AudioDesignFile; quality: AudioDesignQuality | null }>(
+      "/audio-tools/upload",
+      { method: "POST", body: form },
+    );
+  }
+
+  audioDesignListFiles(skip = 0, limit = 100) {
+    return this.request<{ files: AudioDesignFile[]; count: number; total: number }>(`/audio-tools/files?skip=${skip}&limit=${limit}`);
+  }
+
+  audioDesignDeleteFile(fileId: string) {
+    return this.request<void>(`/audio-tools/files/${fileId}`, { method: "DELETE" });
+  }
+
+  audioDesignTrim(fileId: string, start: number, end: number) {
+    return this.request<{ file: AudioDesignFile }>("/audio-tools/trim", {
+      method: "POST",
+      body: JSON.stringify({ file_id: fileId, start_seconds: start, end_seconds: end }),
+    });
+  }
+
+  audioDesignConcat(fileIds: string[], crossfadeMs = 0) {
+    return this.request<{ file: AudioDesignFile }>("/audio-tools/concat", {
+      method: "POST",
+      body: JSON.stringify({ file_ids: fileIds, crossfade_ms: crossfadeMs }),
+    });
+  }
+
+  audioDesignEffects(fileId: string, effects: { type: string; strength?: number; target_db?: number; threshold_db?: number; gain_db?: number }[]) {
+    return this.request<{ file: AudioDesignFile }>("/audio-tools/effects", {
+      method: "POST",
+      body: JSON.stringify({ file_id: fileId, effects }),
+    });
+  }
+
+  audioDesignExport(fileId: string, format: string, sampleRate: number | null) {
+    return this.request<{ file_id: string; filename: string; audio_url: string; format: string; sample_rate: number; duration_seconds: number; file_size_bytes: number }>("/audio-tools/export", {
+      method: "POST",
+      body: JSON.stringify({ file_id: fileId, format, sample_rate: sampleRate }),
+    });
+  }
+
+  audioDesignAnalyze(fileId: string) {
+    return this.request<{ file_id: string; duration_seconds: number; sample_rate: number; quality: AudioDesignQuality; pitch_mean: number | null; pitch_std: number | null; energy_mean: number | null; energy_std: number | null; spectral_centroid_mean: number | null; rms_db: number | null }>("/audio-tools/analyze", {
+      method: "POST",
+      body: JSON.stringify({ file_id: fileId }),
+    });
+  }
+
+  audioDesignIsolate(fileId: string) {
+    return this.request<{ file: AudioDesignFile }>("/audio-tools/isolate-file", {
+      method: "POST",
+      body: JSON.stringify({ file_id: fileId }),
+    });
+  }
+}
+
+interface AudioDesignFile {
+  file_id: string;
+  filename: string;
+  original_filename: string;
+  duration_seconds: number;
+  sample_rate: number;
+  channels: number;
+  format: string;
+  file_size_bytes: number;
+  audio_url: string;
+}
+
+interface AudioDesignQuality {
+  passed: boolean;
+  score: number;
+  snr_db: number | null;
+  rms_db: number | null;
+  issues: { code: string; severity: string; message: string }[];
 }
 
 export const api = new ApiClient();

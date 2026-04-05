@@ -1,0 +1,135 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - img [ref=e6]
+        - generic [ref=e7]: Atlas Vox
+      - navigation [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+        - link "Voice Profiles" [ref=e15] [cursor=pointer]:
+          - /url: /profiles
+          - img [ref=e16]
+          - text: Voice Profiles
+        - link "Voice Library" [ref=e19] [cursor=pointer]:
+          - /url: /library
+          - img [ref=e20]
+          - text: Voice Library
+        - link "Training Studio" [ref=e22] [cursor=pointer]:
+          - /url: /training
+          - img [ref=e23]
+          - text: Training Studio
+        - link "Synthesis Lab" [ref=e26] [cursor=pointer]:
+          - /url: /synthesis
+          - img [ref=e27]
+          - text: Synthesis Lab
+        - link "Audio Design" [ref=e28] [cursor=pointer]:
+          - /url: /audio-design
+          - img [ref=e29]
+          - text: Audio Design
+        - link "Comparison" [ref=e32] [cursor=pointer]:
+          - /url: /compare
+          - img [ref=e33]
+          - text: Comparison
+        - link "Providers" [ref=e40] [cursor=pointer]:
+          - /url: /providers
+          - img [ref=e41]
+          - text: Providers
+        - link "API Keys" [ref=e44] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e45]
+          - text: API Keys
+        - link "Settings" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - text: Settings
+        - link "Design System" [ref=e53] [cursor=pointer]:
+          - /url: /design
+          - img [ref=e54]
+          - text: Design System
+        - link "Self-Healing" [ref=e60] [cursor=pointer]:
+          - /url: /healing
+          - img [ref=e61]
+          - text: Self-Healing
+        - link "Help" [ref=e63] [cursor=pointer]:
+          - /url: /help
+          - img [ref=e64]
+          - text: Help
+    - generic [ref=e67]:
+      - banner [ref=e68]:
+        - generic [ref=e69]:
+          - link "Design System" [ref=e70] [cursor=pointer]:
+            - /url: /design
+            - img [ref=e71]
+          - button "Toggle theme" [ref=e75] [cursor=pointer]:
+            - img [ref=e76]
+      - main [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - heading "Voice Profiles" [level=1] [ref=e82]
+            - button "New Profile" [ref=e83] [cursor=pointer]:
+              - img [ref=e84]
+              - text: New Profile
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - generic [ref=e88]:
+                - generic [ref=e89]:
+                  - heading "Test Azure Voice" [level=3] [ref=e90]
+                  - paragraph [ref=e91]: azure_speech · en
+                - generic [ref=e92]: pending
+              - generic [ref=e93]:
+                - generic [ref=e94]: 3 samples
+                - generic [ref=e95]: 0 versions
+              - generic [ref=e96]:
+                - button "Train" [ref=e97] [cursor=pointer]:
+                  - img [ref=e98]
+                  - text: Train
+                - button [ref=e101] [cursor=pointer]:
+                  - img [ref=e102]
+            - generic [ref=e105]:
+              - generic [ref=e106]:
+                - generic [ref=e107]:
+                  - heading "test" [level=3] [ref=e108]
+                  - paragraph [ref=e109]: azure_speech · en
+                - generic [ref=e110]: pending
+              - generic [ref=e111]:
+                - generic [ref=e112]: 0 samples
+                - generic [ref=e113]: 0 versions
+              - generic [ref=e114]:
+                - button "Train" [ref=e115] [cursor=pointer]:
+                  - img [ref=e116]
+                  - text: Train
+                - button [ref=e119] [cursor=pointer]:
+                  - img [ref=e120]
+          - generic [ref=e125]:
+            - generic [ref=e126]:
+              - heading "Create Voice Profile" [level=2] [ref=e127]
+              - button "Close" [ref=e128] [cursor=pointer]:
+                - img [ref=e129]
+            - generic [ref=e132]:
+              - generic [ref=e156]:
+                - generic [ref=e157]: Name
+                - textbox "My Custom Voice" [ref=e158]: UAT Test Voice
+              - generic [ref=e159]:
+                - generic [ref=e160]: Description
+                - textbox "Optional description" [active] [ref=e161]: Created during UAT testing
+              - generic [ref=e162]:
+                - generic [ref=e163]: Language
+                - combobox [ref=e164]:
+                  - option "English" [selected]
+                  - option "Spanish"
+                  - option "French"
+                  - option "German"
+                  - option "Chinese"
+                  - option "Japanese"
+              - generic [ref=e165]:
+                - generic [ref=e166]: Provider (supports training)
+                - combobox [ref=e167]:
+                  - option "ElevenLabs"
+                  - option "Azure AI Speech" [selected]
+              - generic [ref=e168]:
+                - button "Back" [ref=e169] [cursor=pointer]
+                - button "Create" [ref=e170] [cursor=pointer]

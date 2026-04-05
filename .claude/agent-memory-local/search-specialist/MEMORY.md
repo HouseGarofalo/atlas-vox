@@ -1,0 +1,1 @@
+- [TTS Competitive Analysis](tts_competitive_analysis.md) — Feature gaps vs. ElevenLabs, Play.ht, Murf, open-source tools; recommendations for batch processing, audio post-processing, analytics, team collaboration

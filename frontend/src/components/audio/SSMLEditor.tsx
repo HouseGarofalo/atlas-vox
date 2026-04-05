@@ -1,5 +1,5 @@
-import { useState, useCallback, lazy, Suspense } from "react";
-import { Code, FileText } from "lucide-react";
+import { useState, useCallback, lazy, Suspense, Component, type ReactNode } from "react";
+import { Code, FileText, AlertTriangle } from "lucide-react";
 import { createLogger } from "../../utils/logger";
 
 const MonacoEditor = lazy(() => import("@monaco-editor/react"));
@@ -19,6 +19,37 @@ const SSML_TEMPLATE = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/syn
     </prosody>
   </voice>
 </speak>`;
+
+/** Catches lazy-load failures and falls back to a plain textarea. */
+class MonacoErrorBoundary extends Component<
+  { children: ReactNode; value: string; onChange: (v: string) => void; minHeight: number },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(err: Error) { logger.error("monaco_load_failed", { error: err.message }); }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            SSML editor unavailable — using plain text editor
+          </div>
+          <textarea
+            value={this.props.value}
+            onChange={(e) => this.props.onChange(e.target.value)}
+            placeholder="Enter SSML markup..."
+            rows={8}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono text-[var(--color-text)] placeholder-[var(--color-text-secondary)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            style={{ minHeight: this.props.minHeight }}
+          />
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function SSMLEditor({ value, onChange, minHeight = 200 }: SSMLEditorProps) {
   const [mode, setMode] = useState<"text" | "ssml">("text");
@@ -50,30 +81,32 @@ export function SSMLEditor({ value, onChange, minHeight = 200 }: SSMLEditorProps
         </button>
       </div>
       {mode === "ssml" ? (
-        <Suspense fallback={
-          <div className="flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]" style={{ minHeight }}>
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-          </div>
-        }>
-          <div className="rounded-lg border border-[var(--color-border)] overflow-hidden" style={{ minHeight }}>
-            <MonacoEditor
-              height={minHeight}
-              language="xml"
-              value={value}
-              onChange={(v) => onChange(v ?? "")}
-              theme="vs-dark"
-              options={{
-                minimap: { enabled: false },
-                lineNumbers: "on",
-                fontSize: 13,
-                wordWrap: "on",
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                tabSize: 2,
-              }}
-            />
-          </div>
-        </Suspense>
+        <MonacoErrorBoundary value={value} onChange={onChange} minHeight={minHeight}>
+          <Suspense fallback={
+            <div className="flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]" style={{ minHeight }}>
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+            </div>
+          }>
+            <div className="rounded-lg border border-[var(--color-border)] overflow-hidden" style={{ minHeight }}>
+              <MonacoEditor
+                height={minHeight}
+                language="xml"
+                value={value}
+                onChange={(v) => onChange(v ?? "")}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  lineNumbers: "on",
+                  fontSize: 13,
+                  wordWrap: "on",
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                }}
+              />
+            </div>
+          </Suspense>
+        </MonacoErrorBoundary>
       ) : (
         <textarea
           value={value}
