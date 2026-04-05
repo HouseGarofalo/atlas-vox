@@ -1,11 +1,10 @@
 """FastAPI endpoints for the self-healing subsystem."""
 
 import structlog
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from sqlalchemy import select, desc
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.dependencies import CurrentUser, DbSession, require_scope
 from app.healing.engine import healing_engine
 from app.healing.models import Incident
 
@@ -15,14 +14,15 @@ router = APIRouter(prefix="/healing", tags=["healing"])
 
 
 @router.get("/status")
-async def get_healing_status():
+async def get_healing_status(user: CurrentUser):
     """Get current self-healing engine status."""
     return healing_engine.get_status()
 
 
 @router.get("/incidents")
 async def list_incidents(
-    db: AsyncSession = Depends(get_db),
+    db: DbSession,
+    user: CurrentUser,
     limit: int = Query(50, ge=1, le=200),
     severity: str | None = Query(None),
     category: str | None = Query(None),
@@ -57,7 +57,7 @@ async def list_incidents(
 
 
 @router.post("/check")
-async def force_health_check():
+async def force_health_check(user: CurrentUser, _admin=require_scope("admin")):
     """Force an immediate health check."""
     snap = await healing_engine.health.check_now()
     return {
@@ -68,7 +68,7 @@ async def force_health_check():
 
 
 @router.post("/toggle")
-async def toggle_healing(enable: bool = Query(...)):
+async def toggle_healing(enable: bool = Query(...), user: CurrentUser = None, _admin=require_scope("admin")):
     """Enable or disable the self-healing engine."""
     if enable and not healing_engine._running:
         await healing_engine.start()
@@ -80,13 +80,13 @@ async def toggle_healing(enable: bool = Query(...)):
 
 
 @router.get("/mcp/status")
-async def get_mcp_status():
+async def get_mcp_status(user: CurrentUser):
     """Get Claude Code MCP bridge status."""
     return healing_engine.mcp_bridge.status
 
 
 @router.post("/mcp/review")
-async def request_review(context: str = Query(..., min_length=10)):
+async def request_review(context: str = Query(..., min_length=10), user: CurrentUser = None, _admin=require_scope("admin")):
     """Request a read-only code review from Claude Code."""
     result = await healing_engine.mcp_bridge.review_code(context)
     return {"context": context, "review": result}

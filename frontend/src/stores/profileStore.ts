@@ -2,38 +2,49 @@ import { create } from "zustand";
 import { api } from "../services/api";
 import type { VoiceProfile } from "../types";
 import { createLogger } from "../utils/logger";
+import { getErrorMessage } from "../utils/errors";
 
 const logger = createLogger("ProfileStore");
+
+const STALE_MS = 30_000; // 30 seconds
 
 interface ProfileState {
   profiles: VoiceProfile[];
   loading: boolean;
   error: string | null;
-  fetchProfiles: () => Promise<void>;
+  lastFetchedAt: number | null;
+  fetchProfiles: (force?: boolean) => Promise<void>;
   createProfile: (data: { name: string; description?: string; language?: string; provider_name: string; voice_id?: string; tags?: string[] }) => Promise<VoiceProfile>;
   updateProfile: (id: string, data: Partial<Pick<VoiceProfile, "name" | "description" | "language" | "provider_name" | "voice_id" | "tags">>) => Promise<void>;
   deleteProfile: (id: string) => Promise<void>;
   activateVersion: (profileId: string, versionId: string) => Promise<void>;
+  reset: () => void;
 }
 
-export const useProfileStore = create<ProfileState>((set) => ({
+export const useProfileStore = create<ProfileState>((set, get) => ({
   profiles: [],
   loading: false,
   error: null,
+  lastFetchedAt: null,
 
-  fetchProfiles: async () => {
+  fetchProfiles: async (force = false) => {
+    const { lastFetchedAt, loading } = get();
+    if (!force && lastFetchedAt && Date.now() - lastFetchedAt < STALE_MS) return;
+    if (loading) return;
     logger.info("fetchProfiles");
     set({ loading: true, error: null });
     try {
       const { profiles } = await api.listProfiles();
       logger.info("fetchProfiles_success", { count: profiles.length });
-      set({ profiles, loading: false });
+      set({ profiles, loading: false, lastFetchedAt: Date.now() });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to fetch profiles";
+      const message = getErrorMessage(e);
       logger.error("fetchProfiles_failed", { error: message });
       set({ error: message, loading: false });
     }
   },
+
+  reset: () => set({ profiles: [], loading: false, error: null, lastFetchedAt: null }),
 
   createProfile: async (data) => {
     logger.info("createProfile", { name: data.name, provider: data.provider_name });

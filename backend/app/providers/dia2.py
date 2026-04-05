@@ -146,27 +146,43 @@ class Dia2Provider(TTSProvider):
             logger.info("dia2_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="dia2", healthy=False, latency_ms=latency, error=str(e))
 
-    def _stream_sync(self, text: str) -> list[bytes]:
-        """Collect all streaming chunks synchronously (runs in a thread)."""
+    def _iter_stream_chunks(self, text: str, queue: "asyncio.Queue[bytes | None]", loop: "asyncio.AbstractEventLoop") -> None:
+        """Iterate Dia2 streaming chunks in a thread, pushing each to the queue."""
         import soundfile as sf
 
         model = self._get_model()
-        chunks = []
-        for chunk in model.generate(text, stream=True):
-            buf = io.BytesIO()
-            sf.write(buf, chunk, model.sample_rate, format="WAV")
-            chunks.append(buf.getvalue())
-        return chunks
+        try:
+            for chunk in model.generate(text, stream=True):
+                buf = io.BytesIO()
+                sf.write(buf, chunk, model.sample_rate, format="WAV")
+                loop.call_soon_threadsafe(queue.put_nowait, buf.getvalue())
+        except Exception as exc:
+            logger.error("dia2_stream_chunk_error", error=str(exc))
+            raise
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
     async def stream_synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AsyncIterator[bytes]:
-        """Stream synthesis without blocking the event loop."""
+        """Stream synthesis — yields audio chunks as the model produces them."""
         import asyncio
 
         if "[S1]" not in text and "[S2]" not in text:
             text = f"[S1] {text}"
 
-        chunks = await asyncio.to_thread(self._stream_sync, text)
-        for chunk in chunks:
-            yield chunk
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        # Run the blocking chunk generator in a thread; it pushes to the queue
+        # as each chunk completes rather than waiting for the full output.
+        future = loop.run_in_executor(None, self._iter_stream_chunks, text, queue, loop)
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            # Ensure the executor task is awaited to surface any exceptions.
+            await future

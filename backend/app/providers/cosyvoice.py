@@ -184,27 +184,48 @@ class CosyVoiceProvider(TTSProvider):
             logger.info("cosyvoice_health_check", healthy=False, latency_ms=latency, error=str(e))
             return ProviderHealth(name="cosyvoice", healthy=False, latency_ms=latency, error=str(e))
 
-    def _stream_sync(self, text: str, voice_id: str) -> list[bytes]:
-        """Collect all streaming chunks synchronously (runs in a thread)."""
+    def _iter_stream_chunks(
+        self,
+        text: str,
+        voice_id: str,
+        queue: "asyncio.Queue[bytes | None]",
+        loop: "asyncio.AbstractEventLoop",
+    ) -> None:
+        """Iterate CosyVoice streaming chunks in a thread, pushing each to the queue."""
         import io
 
         import soundfile as sf
 
         model = self._get_model()
-        chunks = []
-        for chunk_output in model.inference_sft(text, voice_id or "英文女", stream=True):
-            audio = chunk_output["tts_speech"].numpy()
-            buf = io.BytesIO()
-            sf.write(buf, audio.squeeze(), 22050, format="WAV")
-            chunks.append(buf.getvalue())
-        return chunks
+        try:
+            for chunk_output in model.inference_sft(text, voice_id or "英文女", stream=True):
+                audio = chunk_output["tts_speech"].numpy()
+                buf = io.BytesIO()
+                sf.write(buf, audio.squeeze(), 22050, format="WAV")
+                loop.call_soon_threadsafe(queue.put_nowait, buf.getvalue())
+        except Exception as exc:
+            logger.error("cosyvoice_stream_chunk_error", error=str(exc))
+            raise
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
     async def stream_synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AsyncIterator[bytes]:
-        """Stream synthesis without blocking the event loop."""
+        """Stream synthesis — yields audio chunks as the model produces them."""
         import asyncio
 
-        chunks = await asyncio.to_thread(self._stream_sync, text, voice_id)
-        for chunk in chunks:
-            yield chunk
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        future = loop.run_in_executor(
+            None, self._iter_stream_chunks, text, voice_id, queue, loop
+        )
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            await future

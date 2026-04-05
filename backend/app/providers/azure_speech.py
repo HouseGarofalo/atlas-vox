@@ -865,18 +865,17 @@ class AzureSpeechProvider(TTSProvider):
                 voices = []
                 for v in result.voices:
                     locale = v.locale if hasattr(v, "locale") else "en"
-                    # Only return English voices to keep the library focused
-                    if locale.startswith("en"):
-                        gender_str = None
-                        if hasattr(v, "gender"):
-                            gender_str = "Female" if "Female" in str(v.gender) else "Male"
-                        voices.append(VoiceInfo(
-                            voice_id=v.short_name,
-                            name=v.local_name,
-                            language=locale,
-                            gender=gender_str,
-                            description=f"{v.voice_type.name} — {v.gender.name}" if hasattr(v, "gender") else None,
-                        ))
+                    # Return ALL voices (all languages) for the full voice catalog
+                    gender_str = None
+                    if hasattr(v, "gender"):
+                        gender_str = "Female" if "Female" in str(v.gender) else "Male"
+                    voices.append(VoiceInfo(
+                        voice_id=v.short_name,
+                        name=v.local_name,
+                        language=locale,
+                        gender=gender_str,
+                        description=f"{v.voice_type.name} — {v.gender.name}" if hasattr(v, "gender") else None,
+                    ))
                 if voices:
                     logger.info("azure_voices_listed", count=len(voices), source="sdk")
                     return voices

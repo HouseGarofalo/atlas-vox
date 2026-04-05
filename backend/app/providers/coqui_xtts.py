@@ -317,7 +317,8 @@ class CoquiXTTSProvider(TTSProvider):
                 ]:
                     if os.path.isdir(model_dir) and os.path.exists(os.path.join(model_dir, "model.pth")):
                         can_clone = True
-                        can_fine_tune = True
+                        # NOTE: fine_tune() is currently a stub — do not advertise
+                        can_fine_tune = False
                         break
         except ImportError:
             pass

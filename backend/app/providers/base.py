@@ -125,6 +125,7 @@ class SynthesisSettings:
     volume: float = 1.0
     output_format: str = "wav"
     ssml: bool = False
+    voice_settings: dict | None = None  # Per-request provider overrides (thread-safe)
 
 
 @dataclass

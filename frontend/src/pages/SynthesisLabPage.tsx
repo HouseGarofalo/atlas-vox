@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import { Type, Settings, Play, Clock, Smile, Sparkles, Mic, Upload } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -8,6 +8,7 @@ import { Slider } from "../components/ui/Slider";
 import { AudioPlayer } from "../components/audio/AudioPlayer";
 import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
 import { useProfileStore } from "../stores/profileStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useSynthesisStore } from "../stores/synthesisStore";
 import { api } from "../services/api";
 import type { PersonaPreset, SynthesisHistoryItem } from "../types";
@@ -36,6 +37,7 @@ type SynthesisMode = "tts" | "sts";
 
 export default function SynthesisLabPage() {
   const { profiles, fetchProfiles } = useProfileStore();
+  const { defaultProvider, audioFormat } = useSettingsStore();
   const { lastResult, loading, synthesize, fetchHistory, history } = useSynthesisStore();
   const [text, setText] = useState("");
   const [profileId, setProfileId] = useState("");
@@ -45,7 +47,7 @@ export default function SynthesisLabPage() {
   const [pitch, setPitch] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [emotion, setEmotion] = useState("");
-  const [outputFormat, setOutputFormat] = useState("wav");
+  const [outputFormat, setOutputFormat] = useState(audioFormat || "wav");
 
   // ElevenLabs voice settings
   const [stability, setStability] = useState(0.5);
@@ -60,11 +62,28 @@ export default function SynthesisLabPage() {
   const [stsResult, setStsResult] = useState<{ audio_url: string; duration_seconds: number | null } | null>(null);
   const stsInputRef = useRef<HTMLInputElement>(null);
 
+  // Stable blob URL for STS file — revoked on change to prevent memory leaks
+  const stsBlobUrl = useMemo(() => {
+    if (!stsFile) return null;
+    return URL.createObjectURL(stsFile);
+  }, [stsFile]);
+  useEffect(() => {
+    return () => { if (stsBlobUrl) URL.revokeObjectURL(stsBlobUrl); };
+  }, [stsBlobUrl]);
+
   useEffect(() => {
     fetchProfiles();
     fetchHistory(20);
     api.listPresets().then(({ presets: p }) => setPresets(p)).catch(() => {});
   }, []);
+
+  // Auto-select first profile matching the user's default provider
+  useEffect(() => {
+    if (profileId || profiles.length === 0) return;
+    const match = profiles.find((p) => p.provider_name === defaultProvider);
+    if (match) setProfileId(match.id);
+    else if (profiles.length > 0) setProfileId(profiles[0].id);
+  }, [profiles, defaultProvider]);
 
   const profileOptions = profiles.map((p) => ({ value: p.id, label: `${p.name} (${p.provider_name})` }));
   const selectedProfileData = profiles.find((p) => p.id === profileId);
@@ -227,8 +246,8 @@ export default function SynthesisLabPage() {
                       </p>
                     </div>
                   </div>
-                  {stsFile && (
-                    <audio src={URL.createObjectURL(stsFile)} controls className="w-full h-10" />
+                  {stsBlobUrl && (
+                    <audio src={stsBlobUrl} controls className="w-full h-10" />
                   )}
                 </div>
               </CollapsiblePanel>

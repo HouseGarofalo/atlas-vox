@@ -19,28 +19,46 @@ MIME_TYPES = {
     "mp3": "audio/mpeg",
     "ogg": "audio/ogg",
     "flac": "audio/flac",
+    "opus": "audio/opus",
 }
+
+ALLOWED_AUDIO_EXTENSIONS = frozenset(MIME_TYPES.keys())
+
+
+def _safe_audio_path(base_dir: Path, filename: str) -> Path:
+    """Sanitize filename and resolve to a safe path within base_dir.
+
+    Prevents path traversal, blocks non-audio extensions, and verifies
+    the resolved path stays within the expected directory.
+    """
+    clean = Path(filename).name
+    if not clean or ".." in clean or "/" in clean or "\\" in clean:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+    ext = clean.rsplit(".", 1)[-1].lower() if "." in clean else ""
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid audio file type")
+    full = (base_dir / clean).resolve()
+    if not str(full).startswith(str(base_dir.resolve())):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Path traversal detected")
+    return full
 
 
 @router.get("/audio/previews/{filename}")
 async def serve_preview_audio(filename: str, user: CurrentUser) -> FileResponse:
     """Serve cached voice preview files."""
-    safe_name = Path(filename).name
-    file_path = Path(settings.storage_path) / "output" / "previews" / safe_name
-    logger.info("serve_preview_audio_called", filename=safe_name)
+    base_dir = Path(settings.storage_path) / "output" / "previews"
+    file_path = _safe_audio_path(base_dir, filename)
+    logger.info("serve_preview_audio_called", filename=file_path.name)
 
     if not file_path.exists():
-        logger.info("serve_preview_audio_not_found", filename=safe_name)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview audio file not found")
 
     ext = file_path.suffix.lstrip(".")
     media_type = MIME_TYPES.get(ext, "application/octet-stream")
-    logger.info("serve_preview_audio_serving", filename=safe_name, media_type=media_type)
-
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
-        filename=safe_name,
+        filename=file_path.name,
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
 
@@ -48,23 +66,19 @@ async def serve_preview_audio(filename: str, user: CurrentUser) -> FileResponse:
 @router.get("/audio/{filename}")
 async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
     """Serve generated audio files from the output storage directory."""
-    # Sanitize filename — prevent directory traversal
-    safe_name = Path(filename).name
-    file_path = Path(settings.storage_path) / "output" / safe_name
-    logger.info("serve_audio_called", filename=safe_name)
+    base_dir = Path(settings.storage_path) / "output"
+    file_path = _safe_audio_path(base_dir, filename)
+    logger.info("serve_audio_called", filename=file_path.name)
 
     if not file_path.exists():
-        logger.info("serve_audio_not_found", filename=safe_name)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
     ext = file_path.suffix.lstrip(".")
     media_type = MIME_TYPES.get(ext, "application/octet-stream")
-    logger.info("serve_audio_serving", filename=safe_name, media_type=media_type)
-
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
-        filename=safe_name,
+        filename=file_path.name,
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
 
@@ -72,17 +86,16 @@ async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
 @router.get("/audio/design/{filename}")
 async def serve_audio_design(filename: str, user: CurrentUser) -> FileResponse:
     """Serve audio files from the Audio Design Studio working directory."""
-    safe_name = Path(filename).name
-    file_path = Path(settings.storage_path) / "audio-design" / safe_name
+    base_dir = Path(settings.storage_path) / "audio-design"
+    file_path = _safe_audio_path(base_dir, filename)
 
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio design file not found")
 
     ext = file_path.suffix.lstrip(".")
     media_type = MIME_TYPES.get(ext, "application/octet-stream")
-
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
-        filename=safe_name,
+        filename=file_path.name,
     )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import time
+from collections.abc import AsyncIterator
 
 import structlog
 
@@ -184,12 +186,69 @@ class KokoroTTSProvider(TTSProvider):
         logger.info("kokoro_voices_listed", count=len(self._voices), cached=False)
         return self._voices
 
+    def _iter_stream_chunks(
+        self,
+        text: str,
+        voice_id: str,
+        speed: float,
+        queue: "asyncio.Queue[bytes | None]",
+        loop: "asyncio.AbstractEventLoop",
+    ) -> None:
+        """Iterate Kokoro pipeline chunks in a thread, pushing each WAV buffer to the queue.
+
+        The Kokoro pipeline yields (grapheme_str, phoneme_str, audio_ndarray) tuples,
+        one per sentence segment.  We encode each segment independently so the caller
+        receives audio as soon as each segment is ready rather than waiting for the
+        entire generation to complete.
+        """
+        import soundfile as sf
+
+        pipeline = self._get_pipeline()
+        try:
+            for _gs, _ps, audio in pipeline(text, voice=voice_id, speed=speed):
+                buf = io.BytesIO()
+                sf.write(buf, audio, 24000, format="WAV")
+                loop.call_soon_threadsafe(queue.put_nowait, buf.getvalue())
+        except Exception as exc:
+            logger.error("kokoro_stream_chunk_error", error=str(exc))
+            raise
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    async def stream_synthesize(
+        self, text: str, voice_id: str, settings_: SynthesisSettings
+    ) -> AsyncIterator[bytes]:
+        """Stream synthesis — yields one WAV buffer per sentence segment as Kokoro produces it."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        logger.info("kokoro_stream_started", voice_id=voice_id, text_length=len(text))
+        future = loop.run_in_executor(
+            None,
+            self._iter_stream_chunks,
+            text,
+            voice_id,
+            settings_.speed,
+            queue,
+            loop,
+        )
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            await future
+
     async def get_capabilities(self) -> ProviderCapabilities:
-        """Kokoro capabilities: CPU-only, no cloning, no streaming."""
+        """Kokoro capabilities: CPU-only, no cloning, streaming supported."""
         return ProviderCapabilities(
             supports_cloning=False,
             supports_fine_tuning=False,
-            supports_streaming=False,
+            supports_streaming=True,
             supports_ssml=False,
             supports_zero_shot=False,
             supports_batch=True,

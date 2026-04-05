@@ -90,3 +90,17 @@ docker-compose.override.yml
 # Claude Code backups
 .claude-backup/
 frontend/tsconfig.tsbuildinfo
+
+# Claude Code agent memory
+.claude/
+
+# Playwright MCP state
+.playwright-mcp/
+
+# Test artifacts
+e2e-screenshots/
+audit-*.png
+
+# SQLite journal files
+*.db-shm
+*.db-wal

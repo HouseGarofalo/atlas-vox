@@ -162,3 +162,85 @@ export interface ComparisonResult {
   provider_name: string;
   error: string | null;
 }
+
+// --- Healing types (previously local to HealingPage) ---
+
+export interface HealingStatus {
+  enabled: boolean;
+  running: boolean;
+  uptime_seconds: number;
+  incidents_handled: number;
+  health: { healthy: boolean; consecutive_failures: number; checks_count: number };
+  telemetry: { current_error_rate: number; avg_error_rate: number; snapshots_count: number };
+  logs: { errors_last_minute: number; errors_last_5_minutes: number; total_tracked: number };
+  mcp?: { enabled: boolean; fixes_this_hour: number; max_fixes_per_hour: number; total_fixes: number };
+}
+
+export interface HealingIncident {
+  id: string;
+  severity: string;
+  category: string;
+  title: string;
+  description: string | null;
+  action_taken: string | null;
+  action_detail: string | null;
+  outcome: string;
+  resolved_at?: string | null;
+  created_at?: string | null;
+}
+
+// --- Model Version (previously local to ProfilesPage) ---
+
+export interface ModelVersion {
+  id: string;
+  profile_id: string;
+  version_number: number;
+  provider_name: string;
+  created_at: string;
+}
+
+// --- Training quality types (previously local to TrainingStudioPage) ---
+
+export interface QualityIssue {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+export interface QualityResult {
+  passed: boolean;
+  score: number;
+  issues: QualityIssue[];
+  metrics: Record<string, number>;
+}
+
+export interface ReadinessResult {
+  ready: boolean;
+  score: number;
+  sample_count: number;
+  total_duration: number;
+  issues: QualityIssue[];
+  recommendations: string[];
+}
+
+// --- Audio Design types (previously local to audioDesignStore) ---
+
+export interface AudioDesignFile {
+  file_id: string;
+  filename: string;
+  original_filename: string;
+  duration_seconds: number;
+  sample_rate: number;
+  channels: number;
+  format: string;
+  file_size_bytes: number;
+  audio_url: string;
+}
+
+export interface AudioQualityBrief {
+  passed: boolean;
+  score: number;
+  snr_db: number | null;
+  rms_db: number | null;
+  issues: QualityIssue[];
+}

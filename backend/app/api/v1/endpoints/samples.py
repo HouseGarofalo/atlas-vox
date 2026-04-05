@@ -6,11 +6,12 @@ import uuid
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.rate_limit import limiter
 from app.models.audio_sample import AudioSample
 from app.models.voice_profile import VoiceProfile
 from app.schemas.quality import AudioQualityReportSchema, TrainingReadinessSchema
@@ -58,7 +59,9 @@ async def _get_sample_or_404(db: DbSession, profile_id: str, sample_id: str) -> 
 
 
 @router.post("", response_model=list[SampleResponse], status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def upload_samples(
+    request: Request,
     profile_id: str,
     db: DbSession,
     user: CurrentUser,
@@ -278,7 +281,8 @@ async def transcribe_sample(
     try:
         transcript = await provider.transcribe(Path(sample.file_path), locale=data.locale)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        logger.error("transcription_failed", sample_id=sample_id, error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Transcription failed. Check server logs.")
 
     sample.transcript = transcript
     sample.transcript_source = "azure_stt"
@@ -319,7 +323,8 @@ async def assess_sample(
     try:
         score = await provider.assess_pronunciation(Path(sample.file_path), ref_text, locale=locale)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        logger.error("pronunciation_assessment_failed", sample_id=sample_id, error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pronunciation assessment failed. Check server logs.")
 
     import json as _json
     sample.pronunciation_json = _json.dumps({

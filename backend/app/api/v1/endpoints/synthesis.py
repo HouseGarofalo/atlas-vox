@@ -1,6 +1,7 @@
 """Synthesis endpoints — single, stream, batch, history."""
 
 import time
+from pathlib import Path
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -53,6 +54,7 @@ async def synthesize_text(
             ssml=data.ssml,
             include_word_boundaries=data.include_word_boundaries,
             voice_settings=data.voice_settings,
+            version_id=data.version_id,
         )
         latency_ms = int((time.perf_counter() - t_start) * 1000)
         logger.info(
@@ -164,7 +166,7 @@ async def synthesis_history(
             "profile_id": h.profile_id,
             "provider_name": h.provider_name,
             "text": h.text,
-            "audio_url": f"/api/v1/audio/{h.output_path.split('/')[-1]}" if h.output_path else None,
+            "audio_url": f"/api/v1/audio/{Path(h.output_path).name}" if h.output_path else None,
             "output_format": h.output_format,
             "duration_seconds": h.duration_seconds,
             "latency_ms": h.latency_ms,

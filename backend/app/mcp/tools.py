@@ -156,6 +156,35 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "atlas_vox_cancel_training",
+        "description": "Cancel a running training job",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string", "description": "Training job ID to cancel"},
+            },
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "atlas_vox_list_presets",
+        "description": "List all synthesis presets (named parameter configurations)",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "atlas_vox_configure_provider",
+        "description": "Update a TTS provider's configuration (API keys, GPU mode, etc.)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "provider_name": {"type": "string", "description": "Provider to configure"},
+                "config": {"type": "object", "description": "Configuration key-value pairs"},
+                "enabled": {"type": "boolean", "description": "Enable or disable the provider"},
+            },
+            "required": ["provider_name"],
+        },
+    },
 ]
 
 
@@ -388,6 +417,51 @@ async def _provider_status(args: dict) -> Any:
         return results
 
 
+async def _cancel_training(args: dict) -> dict:
+    if err := _check_scope("train"):
+        return err
+    from app.core.database import async_session_factory
+    from app.services.training_service import cancel_job
+
+    async with async_session_factory() as db:
+        result = await cancel_job(db, args["job_id"])
+        await db.commit()
+        return {"job_id": args["job_id"], "cancelled": result}
+
+
+async def _list_presets(args: dict) -> dict:
+    if err := _check_scope("read"):
+        return err
+    from app.core.database import async_session_factory
+    from sqlalchemy import select
+    from app.models.persona_preset import PersonaPreset
+
+    async with async_session_factory() as db:
+        result = await db.execute(select(PersonaPreset))
+        presets = result.scalars().all()
+        return {
+            "presets": [
+                {"id": p.id, "name": p.name, "speed": p.speed, "pitch": p.pitch, "volume": p.volume}
+                for p in presets
+            ],
+            "count": len(presets),
+        }
+
+
+async def _configure_provider(args: dict) -> dict:
+    if err := _check_scope("admin"):
+        return err
+    from app.services.provider_registry import provider_registry
+
+    name = args["provider_name"]
+    config = args.get("config", {})
+
+    if config:
+        provider_registry.apply_config(name, config)
+
+    return {"provider": name, "config_applied": bool(config), "status": "ok"}
+
+
 _HANDLERS = {
     "atlas_vox_synthesize": _synthesize,
     "atlas_vox_list_voices": _list_voices,
@@ -398,4 +472,7 @@ _HANDLERS = {
     "atlas_vox_provider_status": _provider_status,
     "atlas_vox_speak": _speak,
     "atlas_vox_list_available_voices": _list_available_voices,
+    "atlas_vox_cancel_training": _cancel_training,
+    "atlas_vox_list_presets": _list_presets,
+    "atlas_vox_configure_provider": _configure_provider,
 }

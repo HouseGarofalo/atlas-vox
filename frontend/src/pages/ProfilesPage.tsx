@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage } from "../utils/errors";
 import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
@@ -49,9 +50,9 @@ export default function ProfilesPage() {
       setShowCreate(false);
       setCreateMode("choose");
       setForm({ name: "", description: "", language: "en", provider_name: "" });
-    } catch (e: any) {
-      logger.error("profile_create_error", { error: e.message });
-      toast.error(e.message);
+    } catch (e: unknown) {
+      logger.error("profile_create_error", { error: getErrorMessage(e) });
+      toast.error(getErrorMessage(e));
     }
   };
 
@@ -62,9 +63,9 @@ export default function ProfilesPage() {
       await deleteProfile(id);
       toast.success("Profile deleted");
       logger.info("profile_deleted", { profile_id: id });
-    } catch (e: any) {
-      logger.error("profile_delete_error", { profile_id: id, error: e.message });
-      toast.error(e.message);
+    } catch (e: unknown) {
+      logger.error("profile_delete_error", { profile_id: id, error: getErrorMessage(e) });
+      toast.error(getErrorMessage(e));
     }
   };
 
@@ -79,7 +80,7 @@ export default function ProfilesPage() {
       if (result.previews.length === 0) toast.info("No previews generated. Try a different description.");
       else toast.success(`${result.previews.length} preview(s) generated`);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Voice design failed";
+      const message = e instanceof Error ? getErrorMessage(e) : "Voice design failed";
       logger.error("voice_design_error", { error: message });
       toast.error(message);
     } finally {
@@ -104,7 +105,7 @@ export default function ProfilesPage() {
       setDesignText("");
       setDesignPreviews([]);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to create profile";
+      const message = e instanceof Error ? getErrorMessage(e) : "Failed to create profile";
       toast.error(message);
     } finally {
       setDesignCreating(false);
@@ -188,7 +189,7 @@ export default function ProfilesPage() {
                 onClick={() => {
                   setShowCreate(false);
                   setCreateMode("choose");
-                  navigate("/voice-library");
+                  navigate("/library");
                 }}
                 className="flex flex-col items-center gap-3 rounded-lg border-2 border-[var(--color-border)] p-6 transition-colors hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950"
               >
@@ -438,13 +439,8 @@ const ProfileCard = React.memo(function ProfileCard({
   );
 });
 
-interface VersionInfo {
-  id: string;
-  profile_id: string;
-  version_number: number;
-  provider_name: string;
-  created_at: string;
-}
+// VersionInfo type — imported from shared types
+type VersionInfo = import("../types").ModelVersion;
 
 function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile | null; open: boolean; onClose: () => void }) {
   const [versions, setVersions] = useState<VersionInfo[]>([]);
@@ -479,12 +475,11 @@ function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile
 
     for (const versionId of selected) {
       try {
-        // Activate version, synthesize, then we have audio
-        await api.activateVersion(profile.id, versionId);
-        const result = await api.synthesize({ text: testText, profile_id: profile.id });
+        // Pass version_id directly — does NOT change the profile's active version
+        const result = await api.synthesize({ text: testText, profile_id: profile.id, version_id: versionId });
         newResults.push({ version_id: versionId, audio_url: result.audio_url, error: null });
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : "Synthesis failed";
+        const message = e instanceof Error ? getErrorMessage(e) : "Synthesis failed";
         newResults.push({ version_id: versionId, audio_url: null, error: message });
       }
     }

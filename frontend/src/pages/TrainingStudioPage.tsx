@@ -12,26 +12,10 @@ import { useProfileStore } from "../stores/profileStore";
 import { useTrainingStore } from "../stores/trainingStore";
 import { useTrainingProgress } from "../hooks/useWebSocket";
 import { api } from "../services/api";
-import type { AudioSample } from "../types";
+import type { AudioSample, QualityResult, ReadinessResult } from "../types";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger("TrainingStudioPage");
-
-interface QualityResult {
-  passed: boolean;
-  score: number;
-  issues: { code: string; severity: string; message: string }[];
-  metrics: Record<string, number>;
-}
-
-interface ReadinessResult {
-  ready: boolean;
-  score: number;
-  sample_count: number;
-  total_duration: number;
-  issues: { code: string; severity: string; message: string }[];
-  recommendations: string[];
-}
 
 export default function TrainingStudioPage() {
   const [searchParams] = useSearchParams();

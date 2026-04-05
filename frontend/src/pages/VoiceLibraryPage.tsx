@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage } from "../utils/errors";
 import { Loader2, Pause, Play, RefreshCw, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
@@ -103,9 +104,9 @@ export default function VoiceLibraryPage() {
       logger.info("use_voice_profile_created", { profile_id: profile.id });
       toast.success(`Profile "${profile.name}" created — ready for synthesis`);
       navigate("/profiles");
-    } catch (e: any) {
-      logger.error("use_voice_error", { error: e.message });
-      toast.error(e.message);
+    } catch (e: unknown) {
+      logger.error("use_voice_error", { error: getErrorMessage(e) });
+      toast.error(getErrorMessage(e));
     }
   };
 
@@ -274,9 +275,9 @@ const VoiceCard = React.memo(function VoiceCard({
       logger.info("voice_preview_complete", { provider: voice.provider, voice_id: voice.voice_id });
       setPreviewUrl(result.audio_url);
       playAudio(result.audio_url);
-    } catch (e: any) {
-      logger.error("voice_preview_error", { provider: voice.provider, voice_id: voice.voice_id, error: e.message });
-      toast.error(`Preview failed: ${e.message}`);
+    } catch (e: unknown) {
+      logger.error("voice_preview_error", { provider: voice.provider, voice_id: voice.voice_id, error: getErrorMessage(e) });
+      toast.error(`Preview failed: ${getErrorMessage(e)}`);
     } finally {
       setPreviewLoading(false);
     }

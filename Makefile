@@ -21,7 +21,13 @@ docker-down:
 	docker compose -f docker/docker-compose.yml down
 
 docker-reset:
+	@echo "WARNING: This will DELETE all data (database, storage, Redis)."
+	@echo "Run 'make backup' first if you want to preserve data."
+	@bash -c 'read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1'
 	docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml down -v
+
+backup:
+	@bash scripts/backup-db.sh
 
 # Testing
 test:

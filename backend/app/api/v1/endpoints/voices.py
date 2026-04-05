@@ -5,11 +5,13 @@ import hashlib
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.dependencies import CurrentUser
+from app.core.rate_limit import limiter
 from app.providers.base import SynthesisSettings
 from app.services.provider_registry import PROVIDER_DISPLAY_NAMES, provider_registry
 
@@ -20,6 +22,7 @@ router = APIRouter(prefix="/voices", tags=["voices"])
 
 @router.get("")
 async def list_all_voices(
+    user: CurrentUser,
     limit: int = Query(default=1000, le=5000),
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
@@ -67,7 +70,8 @@ DEFAULT_PREVIEW_TEXT = "Hello, this is a preview of my voice."
 
 
 @router.post("/preview")
-async def preview_voice(data: VoicePreviewRequest) -> dict:
+@limiter.limit("10/minute")
+async def preview_voice(request: Request, data: VoicePreviewRequest, user: CurrentUser) -> dict:
     """Synthesize a short preview for a voice and return the audio URL.
 
     Results are cached — if a preview file already exists it is returned

@@ -6,12 +6,11 @@ import time
 from datetime import UTC, datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.dependencies import CurrentUser, DbSession, require_scope
 from app.models.provider import Provider
 from app.schemas.provider import (
     PROVIDER_CONFIG_SCHEMAS,
@@ -33,7 +32,7 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 
 
 @router.get("", response_model=ProviderListResponse)
-async def list_providers() -> ProviderListResponse:
+async def list_providers(user: CurrentUser) -> ProviderListResponse:
     """List all known TTS providers with implementation status."""
     logger.info("list_providers_called")
     providers = []
@@ -65,7 +64,7 @@ async def list_providers() -> ProviderListResponse:
 
 
 @router.get("/{name}")
-async def get_provider(name: str) -> ProviderResponse:
+async def get_provider(name: str, user: CurrentUser) -> ProviderResponse:
     """Get details for a specific provider."""
     logger.info("get_provider_called", provider=name)
     known = {p["name"]: p for p in provider_registry.list_all_known()}
@@ -96,7 +95,7 @@ async def get_provider(name: str) -> ProviderResponse:
 
 
 @router.post("/{name}/health", response_model=ProviderHealthSchema)
-async def check_provider_health(name: str) -> ProviderHealthSchema:
+async def check_provider_health(name: str, user: CurrentUser) -> ProviderHealthSchema:
     """Run a health check on a provider."""
     logger.info("check_provider_health_called", provider=name)
     available = provider_registry.list_available()
@@ -112,7 +111,7 @@ async def check_provider_health(name: str) -> ProviderHealthSchema:
 
 
 @router.get("/{name}/voices")
-async def list_provider_voices(name: str) -> dict:
+async def list_provider_voices(name: str, user: CurrentUser) -> dict:
     """List available voices for a provider."""
     logger.info("list_provider_voices_called", provider=name)
     available = provider_registry.list_available()
@@ -137,7 +136,7 @@ async def list_provider_voices(name: str) -> dict:
 
 @router.get("/{name}/config", response_model=ProviderConfigResponse)
 async def get_provider_config(
-    name: str, db: AsyncSession = Depends(get_db)
+    name: str, db: DbSession, user: CurrentUser,
 ) -> ProviderConfigResponse:
     """Get the configuration for a provider, including its schema for UI rendering."""
     logger.info("get_provider_config_called", provider=name)
@@ -199,7 +198,9 @@ class ProviderConfigUpdateRequest(BaseModel):
 async def update_provider_config(
     name: str,
     body: ProviderConfigUpdateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: DbSession,
+    user: CurrentUser,
+    _admin=require_scope("admin"),
 ) -> ProviderConfigResponse:
     """Update the configuration for a provider."""
     if name not in PROVIDER_DISPLAY_NAMES:
@@ -275,7 +276,7 @@ async def update_provider_config(
 
 
 @router.post("/{name}/test", response_model=ProviderTestResponse)
-async def test_provider(name: str, body: ProviderTestRequest) -> ProviderTestResponse:
+async def test_provider(name: str, body: ProviderTestRequest, user: CurrentUser) -> ProviderTestResponse:
     """Test a provider by running a quick synthesis."""
     logger.info("test_provider_called", provider=name, text_length=len(body.text))
     available = provider_registry.list_available()

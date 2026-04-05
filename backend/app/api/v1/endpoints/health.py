@@ -2,21 +2,17 @@
 
 
 from pathlib import Path
-from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.dependencies import DbSession
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-
-DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.get("/health")

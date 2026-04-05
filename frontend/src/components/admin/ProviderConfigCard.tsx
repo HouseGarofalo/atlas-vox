@@ -92,7 +92,7 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
     logger.info("toggle_enabled", { provider: provider.name, enabled: !provider.enabled });
     try {
       await saveProviderConfig(provider.name, { enabled: !provider.enabled });
-    } catch (e: any) {
+    } catch (e: unknown) {
       logger.error("toggle_enabled_error", { provider: provider.name, error: String(e) });
     }
   }, [provider.name, provider.enabled, saveProviderConfig]);
@@ -112,7 +112,7 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
       setSavedRecently(true);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSavedRecently(false), 2000);
-    } catch (e: any) {
+    } catch (e: unknown) {
       logger.error("save_config_error", { provider: provider.name, error: String(e) });
     }
   }, [dirtyFields, formValues, provider.name, saveProviderConfig]);

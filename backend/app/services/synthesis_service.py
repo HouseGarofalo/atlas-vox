@@ -19,15 +19,32 @@ from app.models.synthesis_history import SynthesisHistory
 from app.models.voice_profile import VoiceProfile
 from app.providers.base import AudioResult, SynthesisSettings
 from app.services.provider_registry import provider_registry
+from app.services.ssml_sanitizer import sanitize_ssml
 
 logger = structlog.get_logger(__name__)
 
-# Max chars per chunk for long text splitting
-CHUNK_MAX_CHARS = 1000
+# Provider-specific character limits for text chunking
+PROVIDER_CHAR_LIMITS: dict[str, int] = {
+    "elevenlabs": 5000,
+    "azure_speech": 3000,  # Conservative; Azure handles ~10 min of audio
+    "kokoro": 2000,
+    "coqui_xtts": 1500,
+    "piper": 2000,
+    "styletts2": 1000,
+    "cosyvoice": 1500,
+    "dia": 1000,
+    "dia2": 1000,
+}
+CHUNK_MAX_CHARS_DEFAULT = 1500
 
 
-def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
-    """Split long text at sentence boundaries."""
+def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS_DEFAULT) -> list[str]:
+    """Split long text at paragraph/sentence boundaries.
+
+    Respects a configurable max_chars limit. First tries to split on paragraph
+    breaks (double newline), then falls back to sentence boundaries, then word
+    boundaries for very long sentences.
+    """
     if len(text) <= max_chars:
         return [text]
 
@@ -35,8 +52,13 @@ def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
 
     chunks: list[str] = []
     current = ""
-    # Split on sentence-ending punctuation
-    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    # First split on paragraph breaks, then sentence boundaries within each
+    paragraphs = re.split(r"\n\s*\n", text)
+    sentences: list[str] = []
+    for para in paragraphs:
+        para_sentences = re.split(r"(?<=[.!?])\s+", para.strip())
+        sentences.extend(para_sentences)
 
     for sentence in sentences:
         if len(current) + len(sentence) + 1 <= max_chars:
@@ -44,7 +66,7 @@ def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
         else:
             if current:
                 chunks.append(current)
-            # Handle very long sentences
+            # Handle very long sentences by splitting on words
             if len(sentence) > max_chars:
                 words = sentence.split()
                 current = ""
@@ -73,15 +95,32 @@ async def _resolve_profile(db: AsyncSession, profile_id: str) -> VoiceProfile:
     return profile
 
 
-async def _resolve_voice_id(db: AsyncSession, profile: VoiceProfile) -> str:
+async def _resolve_voice_id(
+    db: AsyncSession, profile: VoiceProfile, version_id: str | None = None,
+) -> str:
     """Determine the voice_id to use for synthesis.
 
     Priority:
+      0. explicit version_id  — for non-destructive version comparison
       1. profile.voice_id  — pre-built voice from provider library
       2. active version's provider_model_id  — trained/cloned voice
       3. "default"  — provider fallback
     """
-    if profile.voice_id:
+    # If a specific version_id is requested (e.g., version comparison),
+    # use it directly without changing the profile's active version.
+    if version_id:
+        from app.models.model_version import ModelVersion
+        ver_result = await db.execute(
+            select(ModelVersion).where(ModelVersion.id == version_id)
+        )
+        version = ver_result.scalar_one_or_none()
+        if version and version.provider_model_id:
+            voice_id = version.provider_model_id
+            source = "explicit_version"
+        else:
+            voice_id = "default"
+            source = "default"
+    elif profile.voice_id:
         voice_id = profile.voice_id
         source = "profile_voice_id"
     elif profile.active_version_id:
@@ -130,11 +169,16 @@ async def synthesize(
     ssml: bool = False,
     include_word_boundaries: bool = False,
     voice_settings: dict | None = None,
+    version_id: str | None = None,
 ) -> dict:
     """Synthesize text using a voice profile's provider.
 
     Handles text chunking for long input and concatenates results.
     """
+    # Sanitize SSML before sending to any provider
+    if ssml:
+        text = sanitize_ssml(text)
+
     profile = await _resolve_profile(db, profile_id)
 
     logger.info(
@@ -150,24 +194,25 @@ async def synthesize(
     synth_settings = SynthesisSettings(
         speed=speed, pitch=pitch, volume=volume,
         output_format=output_format, ssml=ssml,
+        voice_settings=voice_settings,
     )
     if preset_id:
         synth_settings = await _apply_preset(db, preset_id, synth_settings)
 
     provider = provider_registry.get_provider(profile.provider_name)
 
-    # Apply per-request voice_settings as runtime config overrides
-    if voice_settings:
-        current_config = dict(provider._runtime_config or {})
-        current_config.update(voice_settings)
-        provider.configure(current_config)
+    # voice_settings are passed per-request to synthesize() — NOT applied to
+    # the shared provider singleton to avoid race conditions under concurrent use.
+    # The provider's synthesize() method applies them locally.
 
-    voice_id = await _resolve_voice_id(db, profile)
+    voice_id = await _resolve_voice_id(db, profile, version_id=version_id)
 
     start = time.perf_counter()
 
     # Split long text into chunks
-    chunks = _split_text(text)
+    # Use provider-specific chunk limit for optimal quality
+    chunk_limit = PROVIDER_CHAR_LIMITS.get(profile.provider_name, CHUNK_MAX_CHARS_DEFAULT)
+    chunks = _split_text(text, max_chars=chunk_limit)
 
     word_boundaries = None
 

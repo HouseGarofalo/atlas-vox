@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { getErrorMessage } from "../utils/errors";
 import { Activity, AlertTriangle, CheckCircle, XCircle, RefreshCw, Shield, ShieldAlert, ShieldCheck, Cpu, Clock, Zap, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/ui/Button";
@@ -6,31 +7,11 @@ import { Badge } from "../components/ui/Badge";
 import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
 import { api } from "../services/api";
 import { createLogger } from "../utils/logger";
+import type { HealingStatus, HealingIncident } from "../types";
 
 const logger = createLogger("HealingPage");
 
-interface HealingStatus {
-  enabled: boolean;
-  running: boolean;
-  uptime_seconds: number;
-  incidents_handled: number;
-  health: { healthy: boolean; consecutive_failures: number; checks_count: number };
-  telemetry: { current_error_rate: number; avg_error_rate: number; snapshots_count: number };
-  logs: { errors_last_minute: number; errors_last_5_minutes: number; total_tracked: number };
-  mcp?: { enabled: boolean; fixes_this_hour: number; max_fixes_per_hour: number; total_fixes: number };
-}
-
-interface Incident {
-  id: string;
-  severity: string;
-  category: string;
-  title: string;
-  description: string | null;
-  action_taken: string | null;
-  action_detail: string | null;
-  outcome: string;
-  created_at: string;
-}
+type Incident = HealingIncident;
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
@@ -59,8 +40,8 @@ export default function HealingPage() {
       ]);
       setStatus(s);
       setIncidents(i.incidents);
-    } catch (e: any) {
-      logger.error("fetch_error", { error: e.message });
+    } catch (e: unknown) {
+      logger.error("fetch_error", { error: getErrorMessage(e) });
     } finally {
       setLoading(false);
     }
@@ -83,8 +64,8 @@ export default function HealingPage() {
       const result = await api.forceHealthCheck();
       toast.success(result.healthy ? "System healthy" : "Issues detected");
       await fetchData();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e));
     }
   };
 
@@ -94,8 +75,8 @@ export default function HealingPage() {
       const result = await api.toggleHealing(!status.enabled);
       toast.success(result.enabled ? "Self-healing enabled" : "Self-healing disabled");
       await fetchData();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e));
     }
   };
 
@@ -248,7 +229,7 @@ export default function HealingPage() {
                     )}
                     <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--color-text-secondary)]">
                       {incident.action_taken && <span>Action: {incident.action_taken}</span>}
-                      <span>{new Date(incident.created_at).toLocaleString()}</span>
+                      {incident.created_at && <span>{new Date(incident.created_at).toLocaleString()}</span>}
                     </div>
                   </div>
                 </div>

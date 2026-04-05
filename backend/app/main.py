@@ -107,9 +107,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # --- Telemetry endpoint ---
+from app.core.dependencies import CurrentUser  # noqa: E402
+
 @app.get("/api/v1/telemetry", tags=["telemetry"])
-async def get_telemetry() -> dict:
-    """Return in-process telemetry metrics snapshot."""
+async def get_telemetry(user: CurrentUser) -> dict:
+    """Return in-process telemetry metrics snapshot (requires auth)."""
     return telemetry.snapshot()
 
 

@@ -65,4 +65,13 @@ python3 -c "import numpy; v = tuple(map(int, numpy.__version__.split('.')[:2]));
     echo "[init-models] numpy fixed: $(python3 -c 'import numpy; print(numpy.__version__)')"
 }
 
+# ---------------------------------------------------------------------------
+# Run database migrations (Alembic) — safe to run on every startup
+# ---------------------------------------------------------------------------
+
+if [ -f "/app/alembic.ini" ]; then
+    echo "[init-models] Running database migrations..."
+    python3 -m alembic upgrade head 2>/dev/null || echo "[init-models] Alembic migration skipped (may not be configured)."
+fi
+
 echo "[init-models] Model initialization complete."

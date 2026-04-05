@@ -229,6 +229,12 @@ async def speech_to_speech(
     tmp_path = tmp_dir / f"sts_input_{uuid.uuid4().hex[:12]}.{ext}"
 
     content = await audio.read()
+    max_s2s_bytes = 50 * 1024 * 1024  # 50MB limit for speech-to-speech
+    if len(content) > max_s2s_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum {max_s2s_bytes // (1024 * 1024)}MB for speech-to-speech.",
+        )
     tmp_path.write_bytes(content)
 
     provider = _require_elevenlabs_provider()

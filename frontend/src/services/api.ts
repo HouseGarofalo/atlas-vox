@@ -127,7 +127,7 @@ class ApiClient {
   }
 
   // Synthesis
-  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; include_word_boundaries?: boolean; voice_settings?: Record<string, unknown> }) {
+  synthesize(data: { text: string; profile_id: string; preset_id?: string; speed?: number; pitch?: number; volume?: number; output_format?: string; ssml?: boolean; include_word_boundaries?: boolean; voice_settings?: Record<string, unknown>; version_id?: string }) {
     return this.request<{ id: string; audio_url: string; duration_seconds: number | null; latency_ms: number; profile_id: string; provider_name: string; word_boundaries?: { text: string; offset_ms: number; duration_ms: number; word_index: number }[] }>("/synthesize", { method: "POST", body: JSON.stringify(data) });
   }
   batchSynthesize(data: { lines: string[]; profile_id: string; preset_id?: string; speed?: number }) {
