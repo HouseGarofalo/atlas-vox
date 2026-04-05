@@ -10,5 +10,10 @@ from app.models.training_job import TrainingJob  # noqa: F401
 from app.models.voice_profile import VoiceProfile  # noqa: F401
 from app.models.webhook import Webhook  # noqa: F401
 
+# Phase E models
+from app.models.pronunciation_entry import PronunciationEntry  # noqa: F401
+from app.models.usage_event import UsageEvent  # noqa: F401
+from app.models.voice_favorite import VoiceFavorite  # noqa: F401
+
 # Self-healing models
 from app.healing.models import Incident  # noqa: F401

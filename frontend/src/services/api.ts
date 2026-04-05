@@ -335,6 +335,74 @@ class ApiClient {
       body: JSON.stringify({ file_id: fileId }),
     });
   }
+
+  // Pronunciation Dictionary (E1)
+  listPronunciation(params?: { language?: string; profile_id?: string; search?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.language) qs.set("language", params.language);
+    if (params?.profile_id) qs.set("profile_id", params.profile_id);
+    if (params?.search) qs.set("search", params.search);
+    return this.request<{ entries: PronunciationEntry[]; count: number }>(`/pronunciation?${qs}`);
+  }
+  createPronunciation(data: { word: string; ipa: string; language?: string; profile_id?: string }) {
+    return this.request<PronunciationEntry>("/pronunciation", { method: "POST", body: JSON.stringify(data) });
+  }
+  updatePronunciation(id: string, data: { word?: string; ipa?: string; language?: string }) {
+    return this.request<PronunciationEntry>(`/pronunciation/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  }
+  deletePronunciation(id: string) {
+    return this.request<void>(`/pronunciation/${id}`, { method: "DELETE" });
+  }
+
+  // Usage Analytics (E2)
+  getUsage(params?: { days?: number; provider?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.days) qs.set("days", String(params.days));
+    if (params?.provider) qs.set("provider", params.provider);
+    return this.request<UsageAnalytics>(`/usage?${qs}`);
+  }
+
+  // Voice Favorites (E7)
+  listFavorites(collection?: string) {
+    const qs = collection ? `?collection=${encodeURIComponent(collection)}` : "";
+    return this.request<{ favorites: VoiceFavoriteItem[]; count: number }>(`/favorites${qs}`);
+  }
+  addFavorite(data: { provider: string; voice_id: string; collection_name?: string }) {
+    return this.request<VoiceFavoriteItem>("/favorites", { method: "POST", body: JSON.stringify(data) });
+  }
+  removeFavorite(id: string) {
+    return this.request<void>(`/favorites/${id}`, { method: "DELETE" });
+  }
+  listCollections() {
+    return this.request<{ collections: string[] }>("/favorites/collections");
+  }
+}
+
+interface PronunciationEntry {
+  id: string;
+  word: string;
+  ipa: string;
+  language: string;
+  profile_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface UsageAnalytics {
+  period_days: number;
+  total_characters: number;
+  total_requests: number;
+  total_estimated_cost_usd: number;
+  by_provider: Record<string, { characters: number; requests: number; cost_usd: number; avg_latency_ms: number }>;
+  daily: Record<string, { characters: number; requests: number; cost_usd: number }>;
+}
+
+interface VoiceFavoriteItem {
+  id: string;
+  provider: string;
+  voice_id: string;
+  collection_name: string | null;
+  created_at: string;
 }
 
 interface AudioDesignFile {

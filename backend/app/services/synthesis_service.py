@@ -85,6 +85,37 @@ def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS_DEFAULT) -> list[str
     return chunks
 
 
+async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> str:
+    """Replace words matching pronunciation dictionary entries with SSML phoneme tags.
+
+    Looks up global entries (profile_id IS NULL) and profile-specific entries.
+    Only applies if there are matching entries — returns original text otherwise.
+    """
+    from sqlalchemy import or_
+    from app.models.pronunciation_entry import PronunciationEntry
+
+    result = await db.execute(
+        select(PronunciationEntry).where(
+            or_(
+                PronunciationEntry.profile_id.is_(None),
+                PronunciationEntry.profile_id == profile_id,
+            )
+        )
+    )
+    entries = result.scalars().all()
+    if not entries:
+        return text
+
+    # Apply replacements (case-insensitive word boundary matching)
+    for entry in entries:
+        # Use word boundary regex for accurate replacement
+        pattern = re.compile(rf"\b{re.escape(entry.word)}\b", re.IGNORECASE)
+        replacement = f'<phoneme alphabet="ipa" ph="{entry.ipa}">{entry.word}</phoneme>'
+        text = pattern.sub(replacement, text)
+
+    return text
+
+
 async def _resolve_profile(db: AsyncSession, profile_id: str) -> VoiceProfile:
     result = await db.execute(
         select(VoiceProfile).where(VoiceProfile.id == profile_id)
@@ -174,10 +205,15 @@ async def synthesize(
     """Synthesize text using a voice profile's provider.
 
     Handles text chunking for long input and concatenates results.
+    Applies pronunciation dictionary entries as SSML phoneme tags.
     """
     # Sanitize SSML before sending to any provider
     if ssml:
         text = sanitize_ssml(text)
+
+    # Apply pronunciation dictionary (global + profile-specific entries)
+    if not ssml:
+        text = await _apply_pronunciation(db, text, profile_id)
 
     profile = await _resolve_profile(db, profile_id)
 
@@ -298,6 +334,18 @@ async def synthesize(
         }),
     )
     db.add(history)
+
+    # Track usage for analytics (E2)
+    from app.models.usage_event import UsageEvent
+    usage = UsageEvent(
+        provider_name=profile.provider_name,
+        profile_id=profile_id,
+        voice_id=voice_id,
+        characters=len(text),
+        duration_ms=latency_ms,
+        event_type="synthesis",
+    )
+    db.add(usage)
     await db.flush()
 
     # Build audio URL

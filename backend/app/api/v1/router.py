@@ -9,13 +9,16 @@ from app.api.v1.endpoints import (
     audio,
     audio_tools,
     compare,
+    favorites,
     health,
     presets,
     profiles,
+    pronunciation,
     providers,
     samples,
     synthesis,
     training,
+    usage,
     voices,
     webhooks,
 )
@@ -35,3 +38,6 @@ api_router.include_router(presets.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(voices.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(pronunciation.router)
+api_router.include_router(usage.router)
+api_router.include_router(favorites.router)
