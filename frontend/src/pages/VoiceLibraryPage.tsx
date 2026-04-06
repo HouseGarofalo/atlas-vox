@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { VirtuosoGrid } from "react-virtuoso";
 import { getErrorMessage } from "../utils/errors";
 import { Loader2, Pause, Play, RefreshCw, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -8,6 +9,7 @@ import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
 import ProviderLogo from "../components/providers/ProviderLogo";
+import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { useVoiceLibraryStore } from "../stores/voiceLibraryStore";
 import { useProfileStore } from "../stores/profileStore";
 import { api } from "../services/api";
@@ -221,17 +223,24 @@ export default function VoiceLibraryPage() {
         </p>
       )}
 
-      {/* Voice grid */}
+      {/* Voice grid — virtualized for performance with 300+ voices */}
       {displayed.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {displayed.map((voice) => (
-            <VoiceCard
-              key={`${voice.provider}-${voice.voice_id}`}
-              voice={voice}
-              onUse={() => handleUseVoice(voice)}
-            />
-          ))}
-        </div>
+        <VirtuosoGrid
+          totalCount={displayed.length}
+          overscan={200}
+          useWindowScroll
+          listClassName="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          itemContent={(index) => {
+            const voice = displayed[index];
+            return (
+              <VoiceCard
+                key={`${voice.provider}-${voice.voice_id}`}
+                voice={voice}
+                onUse={() => handleUseVoice(voice)}
+              />
+            );
+          }}
+        />
       )}
     </div>
   );
@@ -247,21 +256,19 @@ const VoiceCard = React.memo(function VoiceCard({
   const gender = voice.gender || inferGender(voice);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { isPlaying, currentUrl, toggle, stop } = useAudioPlayer();
+  const isThisPlaying = isPlaying && currentUrl === previewUrl;
 
   const handlePreview = async () => {
-    // If already playing, stop
-    if (isPlaying && audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsPlaying(false);
+    // If already playing this voice, toggle pause
+    if (isThisPlaying) {
+      stop();
       return;
     }
 
     // If we already have a URL, play it
     if (previewUrl) {
-      playAudio(previewUrl);
+      toggle(previewUrl);
       return;
     }
 
@@ -275,28 +282,13 @@ const VoiceCard = React.memo(function VoiceCard({
       });
       logger.info("voice_preview_complete", { provider: voice.provider, voice_id: voice.voice_id });
       setPreviewUrl(result.audio_url);
-      playAudio(result.audio_url);
+      toggle(result.audio_url);
     } catch (e: unknown) {
       logger.error("voice_preview_error", { provider: voice.provider, voice_id: voice.voice_id, error: getErrorMessage(e) });
       toast.error(`Preview failed: ${getErrorMessage(e)}`);
     } finally {
       setPreviewLoading(false);
     }
-  };
-
-  const playAudio = (url: string) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onended = () => setIsPlaying(false);
-    audio.onerror = () => {
-      setIsPlaying(false);
-      toast.error("Failed to play audio");
-    };
-    audio.play();
-    setIsPlaying(true);
   };
 
   return (
@@ -340,12 +332,12 @@ const VoiceCard = React.memo(function VoiceCard({
         >
           {previewLoading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : isPlaying ? (
+          ) : isThisPlaying ? (
             <Pause className="h-3.5 w-3.5" />
           ) : (
             <Play className="h-3.5 w-3.5" />
           )}
-          {previewLoading ? "..." : isPlaying ? "Stop" : "Preview"}
+          {previewLoading ? "..." : isThisPlaying ? "Stop" : "Preview"}
         </Button>
         <Button size="sm" className="flex-1" onClick={onUse}>
           <UserPlus className="h-3.5 w-3.5" />
