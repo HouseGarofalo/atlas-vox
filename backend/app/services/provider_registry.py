@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.core.encryption import ENC_PREFIX, decrypt_value
 from app.models.provider import Provider
 from app.providers.azure_speech import AzureSpeechProvider
 from app.providers.base import ProviderCapabilities, ProviderHealth, TTSProvider
@@ -167,6 +168,20 @@ async def load_provider_configs() -> None:
             try:
                 config = json.loads(p.config_json)
                 if config:  # skip empty dicts
+                    # Decrypt any values that carry the enc: prefix
+                    for key, val in config.items():
+                        if isinstance(val, str) and val.startswith(ENC_PREFIX):
+                            try:
+                                config[key] = decrypt_value(val)
+                            except Exception:
+                                logger.error(
+                                    "provider_config_decrypt_failed",
+                                    provider=p.name,
+                                    field=key,
+                                )
+                                # Leave the encrypted value — provider will
+                                # fail at runtime, which is safer than
+                                # silently dropping the field.
                     provider_registry.apply_config(p.name, config)
                     loaded.append(p.name)
                     logger.info("provider_config_loaded", provider=p.name)

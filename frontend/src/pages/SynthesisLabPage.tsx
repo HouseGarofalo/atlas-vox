@@ -295,6 +295,20 @@ export default function SynthesisLabPage() {
                   <Slider label="Speed" id="speed" min={0.5} max={2} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} displayValue={`${speed.toFixed(2)}x`} />
                   <Slider label="Pitch" id="pitch" min={-50} max={50} step={1} value={pitch} onChange={(e) => setPitch(Number(e.target.value))} displayValue={`${pitch > 0 ? "+" : ""}${pitch}`} />
                   <Slider label="Volume" id="volume" min={0} max={2} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} displayValue={`${(volume * 100).toFixed(0)}%`} />
+                  {profileId && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const previewText = text.trim() ? text.slice(0, 100) : "Hello, this is a quick preview of the current settings.";
+                        synthesize({ text: previewText, profile_id: profileId, speed, pitch, volume, output_format: outputFormat });
+                      }}
+                      disabled={loading}
+                      className="mt-2"
+                    >
+                      <Play className="h-3.5 w-3.5" /> Quick Preview
+                    </Button>
+                  )}
                 </>
               )}
               <Select

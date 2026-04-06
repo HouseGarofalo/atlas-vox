@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     profiles,
     pronunciation,
     providers,
+    text_import,
     samples,
     synthesis,
     training,
@@ -41,3 +42,4 @@ api_router.include_router(webhooks.router)
 api_router.include_router(pronunciation.router)
 api_router.include_router(usage.router)
 api_router.include_router(favorites.router)
+api_router.include_router(text_import.router)

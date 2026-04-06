@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.dependencies import CurrentUser, DbSession, require_scope
+from app.core.encryption import ENC_PREFIX, decrypt_value, encrypt_value
 from app.models.provider import Provider
 from app.schemas.provider import (
     PROVIDER_CONFIG_SCHEMAS,
@@ -157,11 +158,17 @@ async def get_provider_config(
     else:
         defaults = {}
 
-    # Overlay DB-stored config
+    # Overlay DB-stored config (decrypt encrypted values)
     db_config: dict = {}
     if db_provider and db_provider.config_json:
         try:
             db_config = json.loads(db_provider.config_json)
+            for key, val in db_config.items():
+                if isinstance(val, str) and val.startswith(ENC_PREFIX):
+                    try:
+                        db_config[key] = decrypt_value(val)
+                    except Exception:
+                        logger.error("provider_config_decrypt_failed", provider=name, field=key)
         except (json.JSONDecodeError, TypeError):
             pass
     merged = {**defaults, **db_config}
@@ -218,11 +225,17 @@ async def update_provider_config(
             detail=f"Provider '{name}' not found in database. Run seed_providers first.",
         )
 
-    # Load existing config from DB
+    # Load existing config from DB and decrypt for comparison
     existing_config: dict = {}
     if db_provider.config_json:
         try:
             existing_config = json.loads(db_provider.config_json)
+            for key, val in existing_config.items():
+                if isinstance(val, str) and val.startswith(ENC_PREFIX):
+                    try:
+                        existing_config[key] = decrypt_value(val)
+                    except Exception:
+                        logger.error("provider_config_decrypt_failed", provider=name, field=key)
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -244,15 +257,25 @@ async def update_provider_config(
     else:
         merged_config = existing_config
 
+    # Encrypt secret fields before persisting to DB
+    field_defs = PROVIDER_FIELD_DEFINITIONS.get(name, [])
+    secret_fields = {f.name for f in field_defs if f.is_secret}
+    config_for_db = dict(merged_config)
+    for key in secret_fields:
+        if key in config_for_db:
+            val = config_for_db[key]
+            if isinstance(val, str) and val and not val.startswith(ENC_PREFIX):
+                config_for_db[key] = encrypt_value(val)
+
     # Update DB row
     if body.enabled is not None:
         db_provider.enabled = body.enabled
     if body.gpu_mode is not None:
         db_provider.gpu_mode = body.gpu_mode
-    db_provider.config_json = json.dumps(merged_config)
+    db_provider.config_json = json.dumps(config_for_db)
     await db.flush()
 
-    # Apply to runtime registry
+    # Apply decrypted config to runtime registry (in-memory stays plaintext)
     provider_registry.apply_config(name, merged_config)
 
     logger.info("provider_config_updated", provider=name)
