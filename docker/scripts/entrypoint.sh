@@ -8,8 +8,27 @@ set -e
 chown -R app:app /app/storage /app/data 2>/dev/null || true
 chown -R app:app /home/app 2>/dev/null || true
 
-# Run init-models.sh as root (needs write access everywhere for model downloads)
 export HOME=/home/app
+
+# If host models are mounted, copy them to the HF cache
+if [ -f /app/models-host/kokoro-v1_0.pth ]; then
+    HASH="f3ff3571791e39611d31c381e3a41a3af07b4987"
+    CACHE="$HOME/.cache/huggingface/hub/models--hexgrad--Kokoro-82M"
+    if [ ! -f "$CACHE/snapshots/$HASH/kokoro-v1_0.pth" ]; then
+        echo "[entrypoint] Copying Kokoro model from host mount..."
+        mkdir -p "$CACHE/snapshots/$HASH/voices" "$CACHE/refs"
+        echo "$HASH" > "$CACHE/refs/main"
+        cp /app/models-host/kokoro-v1_0.pth "$CACHE/snapshots/$HASH/"
+        cp /app/models-host/config.json "$CACHE/snapshots/$HASH/" 2>/dev/null || true
+        if [ -d /app/models-host/voices ]; then
+            cp /app/models-host/voices/*.pt "$CACHE/snapshots/$HASH/voices/" 2>/dev/null || true
+        fi
+        chown -R app:app "$CACHE"
+        echo "[entrypoint] Kokoro model ready from host mount."
+    fi
+fi
+
+# Run init-models.sh (downloads anything still missing)
 /app/init-models.sh
 
 # Copy any baked models from the image to the storage volume

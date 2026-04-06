@@ -16,11 +16,16 @@ services:
       - PORT=8000
       - GPU_SERVICE_URL=http://host.docker.internal:8200
       - APP_ENV=production
+      - HF_HOME=/home/app/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     volumes:
       - storage_data:/app/storage
       - db_data:/app/data
+      - ../temp:/app/models-host:ro
     depends_on:
       redis:
         condition: service_healthy
