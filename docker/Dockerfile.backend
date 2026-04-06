@@ -63,6 +63,9 @@ RUN mkdir -p /app/storage_bak/models && \
 # Download NLTK data needed by StyleTTS2
 RUN python3 -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger_eng', quiet=True); print('NLTK data downloaded')" 2>/dev/null || echo "NLTK download skipped (offline build)"
 
+# Download spaCy English model needed by Kokoro/misaki text processing
+RUN python3 -m spacy download en_core_web_sm 2>/dev/null || echo "spaCy model download skipped (offline build)"
+
 ENV PYTHONUNBUFFERED=1
 ENV APP_ENV=production
 ENV DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
