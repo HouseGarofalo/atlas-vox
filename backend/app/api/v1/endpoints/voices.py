@@ -112,9 +112,22 @@ async def preview_voice(request: Request, data: VoicePreviewRequest, user: Curre
         filename = preview_file.name
         logger.info("preview_voice_synthesized", provider=data.provider, voice_id=data.voice_id)
         return {"audio_url": f"/api/v1/audio/previews/{filename}"}
+    except NotImplementedError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"Provider '{data.provider}' does not support synthesis for this voice.",
+        )
     except Exception as exc:
+        error_msg = str(exc).lower()
+        # Provide user-friendly errors for common failure modes
+        if "not configured" in error_msg or "api_key" in error_msg or "subscription" in error_msg:
+            detail = f"Provider '{data.provider}' requires an API key. Configure it in Settings > Providers."
+        elif "model" in error_msg and ("not found" in error_msg or "download" in error_msg or "connection" in error_msg):
+            detail = f"Provider '{data.provider}' model is not available. It may need to download first."
+        else:
+            detail = f"Preview failed for '{data.provider}'. Check server logs."
         logger.error("voice_preview_failed", provider=data.provider, voice_id=data.voice_id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Preview failed. Check server logs for details.",
+            detail=detail,
         )

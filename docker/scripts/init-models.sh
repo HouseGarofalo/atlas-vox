@@ -2,76 +2,118 @@
 # =============================================================================
 # Atlas Vox — Model Initialization Script
 # =============================================================================
-# Runs inside the backend container on startup. Copies pre-downloaded models
-# from the persistent storage volume to the HuggingFace cache directory so
-# they survive container rebuilds.
-#
-# The storage volume (/app/storage) is Docker-managed and persists across
-# restarts. The HuggingFace cache (/root/.cache/huggingface/) lives in the
-# container's filesystem and is rebuilt from the image each time.
-#
-# This script is idempotent — safe to run multiple times.
+# Runs at container startup. Downloads models if not present in the persistent
+# storage volume, then restores them to the HuggingFace cache.
 # =============================================================================
 
 set -e
 
+echo "[init-models] Starting model initialization..."
+
 # ---------------------------------------------------------------------------
-# Kokoro TTS model (313 MB .pth + config + 28 voice files)
+# Piper TTS model (ONNX, ~30MB)
 # ---------------------------------------------------------------------------
 
-KOKORO_SNAPSHOT="f3ff3571791e39611d31c381e3a41a3af07b4987"
-KOKORO_CACHE="/root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/${KOKORO_SNAPSHOT}"
+PIPER_DIR="/app/storage/models/piper"
+mkdir -p "$PIPER_DIR"
+
+if [ ! -f "$PIPER_DIR/en_US-lessac-medium.onnx" ]; then
+    echo "[init-models] Downloading Piper model..."
+    python3 /tmp/download_piper_model.py 2>/dev/null && \
+        echo "[init-models] Piper model downloaded." || \
+        echo "[init-models] Piper download failed (offline?)."
+    # Also try the image-baked copy
+    if [ -f "/app/storage_bak/models/piper/en_US-lessac-medium.onnx" ]; then
+        cp /app/storage_bak/models/piper/* "$PIPER_DIR/" 2>/dev/null || true
+    fi
+else
+    echo "[init-models] Piper model present."
+fi
+
+# ---------------------------------------------------------------------------
+# Kokoro TTS model (313 MB .pth + config + voice files)
+# ---------------------------------------------------------------------------
+
 KOKORO_STORAGE="/app/storage/models/kokoro"
+mkdir -p "$KOKORO_STORAGE/voices"
 
-if [ -d "$KOKORO_STORAGE" ] && [ -f "$KOKORO_STORAGE/kokoro-v1_0.pth" ]; then
+# Download Kokoro to storage volume if not present
+if [ ! -f "$KOKORO_STORAGE/kokoro-v1_0.pth" ]; then
+    echo "[init-models] Downloading Kokoro model (this may take a few minutes)..."
+    python3 -c "
+import os, urllib.request, time
+
+base = 'https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/'
+dest_dir = '$KOKORO_STORAGE'
+
+files = [
+    ('kokoro-v1_0.pth', os.path.join(dest_dir, 'kokoro-v1_0.pth')),
+    ('config.json', os.path.join(dest_dir, 'config.json')),
+]
+voices = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_alloy',
+          'am_adam', 'am_michael', 'am_echo',
+          'bf_emma', 'bf_alice', 'bm_george', 'bm_lewis', 'bm_daniel']
+files += [(f'voices/{v}.pt', os.path.join(dest_dir, f'voices/{v}.pt')) for v in voices]
+
+for url_path, dest in files:
+    if os.path.exists(dest):
+        continue
+    for attempt in range(3):
+        try:
+            urllib.request.urlretrieve(base + url_path, dest)
+            print(f'  Downloaded {url_path}')
+            break
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(5)
+            else:
+                print(f'  WARNING: Failed {url_path}: {e}')
+print('Kokoro download complete')
+" 2>&1 || echo "[init-models] Kokoro download failed (offline?)."
+else
+    echo "[init-models] Kokoro model present in storage."
+fi
+
+# Restore Kokoro from storage to HuggingFace cache
+# Try multiple possible snapshot hashes
+for SNAPSHOT_DIR in /root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/*/; do
+    if [ -d "$SNAPSHOT_DIR" ] && [ -f "$SNAPSHOT_DIR/kokoro-v1_0.pth" ]; then
+        echo "[init-models] Kokoro already in HF cache."
+        break
+    fi
+done
+
+# If no cache exists, create one from storage
+if [ -f "$KOKORO_STORAGE/kokoro-v1_0.pth" ]; then
+    KOKORO_CACHE="/root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/main"
     if [ ! -f "$KOKORO_CACHE/kokoro-v1_0.pth" ]; then
-        echo "[init-models] Copying Kokoro model from storage to HuggingFace cache..."
+        echo "[init-models] Restoring Kokoro to HF cache..."
         mkdir -p "$KOKORO_CACHE/voices"
         cp "$KOKORO_STORAGE/kokoro-v1_0.pth" "$KOKORO_CACHE/"
         cp "$KOKORO_STORAGE/config.json" "$KOKORO_CACHE/" 2>/dev/null || true
-
-        # Copy all voice files
         if [ -d "$KOKORO_STORAGE/voices" ]; then
             cp "$KOKORO_STORAGE/voices/"*.pt "$KOKORO_CACHE/voices/" 2>/dev/null || true
         fi
-
-        echo "[init-models] Kokoro model restored ($(du -sh "$KOKORO_CACHE" | cut -f1))"
-    else
-        echo "[init-models] Kokoro model already in cache, skipping."
+        echo "[init-models] Kokoro restored ($(du -sh "$KOKORO_CACHE" | cut -f1))"
     fi
-else
-    echo "[init-models] No Kokoro model in storage — will download on first use."
 fi
 
 # ---------------------------------------------------------------------------
-# Piper TTS model (ONNX)
-# ---------------------------------------------------------------------------
-
-PIPER_CACHE="/app/storage/models/piper"
-
-if [ -d "$PIPER_CACHE" ] && [ -f "$PIPER_CACHE/en_US-lessac-medium.onnx" ]; then
-    echo "[init-models] Piper model present in storage."
-else
-    echo "[init-models] No Piper model in storage — using image-baked model if available."
-fi
-
-# ---------------------------------------------------------------------------
-# Fix numpy ABI if needed (transitive deps can downgrade numpy)
+# Fix numpy ABI if needed
 # ---------------------------------------------------------------------------
 
 python3 -c "import numpy; v = tuple(map(int, numpy.__version__.split('.')[:2])); assert v >= (2, 0)" 2>/dev/null || {
-    echo "[init-models] Fixing numpy ABI (upgrading to numpy 2.x)..."
+    echo "[init-models] Fixing numpy ABI..."
     pip install --quiet --no-cache-dir --force-reinstall "numpy>=2.0,<3.0" "pandas>=2.2"
-    echo "[init-models] numpy fixed: $(python3 -c 'import numpy; print(numpy.__version__)')"
 }
 
 # ---------------------------------------------------------------------------
-# Run database migrations (Alembic) — safe to run on every startup
+# Database migrations
 # ---------------------------------------------------------------------------
 
 if [ -f "/app/alembic.ini" ]; then
     echo "[init-models] Running database migrations..."
-    python3 -m alembic upgrade head 2>/dev/null || echo "[init-models] Alembic migration skipped (may not be configured)."
+    python3 -m alembic upgrade head 2>/dev/null || true
 fi
 
-echo "[init-models] Model initialization complete."
+echo "[init-models] Initialization complete."

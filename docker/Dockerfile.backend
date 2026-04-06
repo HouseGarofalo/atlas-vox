@@ -48,13 +48,17 @@ RUN pip install --no-cache-dir --force-reinstall "numpy>=2.0,<3.0" "pandas>=2.2"
 # Storage and data directories
 RUN mkdir -p /app/storage/samples /app/storage/preprocessed /app/storage/output /app/storage/models /app/data
 
-# Download default Piper model (small, English) with retries
+# Copy model download scripts (used during build AND at runtime by init-models.sh)
 COPY docker/scripts/download_piper_model.py /tmp/download_piper_model.py
-RUN python3 /tmp/download_piper_model.py || echo "Piper model download skipped (offline build)"
-
-# Pre-download Kokoro model (313MB .pth) and default voice files
 COPY docker/scripts/download_kokoro_model.py /tmp/download_kokoro_model.py
+
+# Try to download models during build (may fail in network-restricted environments)
+RUN python3 /tmp/download_piper_model.py || echo "Piper model download skipped (offline build)"
 RUN python3 /tmp/download_kokoro_model.py || echo "Kokoro download skipped (offline build)"
+
+# Backup baked models so init-models.sh can restore them to the mounted volume
+RUN mkdir -p /app/storage_bak/models && \
+    cp -r /app/storage/models/* /app/storage_bak/models/ 2>/dev/null || true
 
 # Download NLTK data needed by StyleTTS2
 RUN python3 -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger_eng', quiet=True); print('NLTK data downloaded')" 2>/dev/null || echo "NLTK download skipped (offline build)"
