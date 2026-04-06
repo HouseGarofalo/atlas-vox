@@ -71,10 +71,16 @@ ENV DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
 COPY docker/scripts/init-models.sh /app/init-models.sh
 RUN chmod +x /app/init-models.sh
 
-# Create non-root user (used in future when volume permission handling is improved)
+# Non-root user + gosu for privilege dropping
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 RUN addgroup --system app && adduser --system --ingroup app app
 RUN chown -R app:app /app/storage /app/data
 
+# Entrypoint: fix volume permissions as root, then drop to 'app' user
+COPY docker/scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 EXPOSE 8000
 
-CMD ["/bin/bash", "-c", "/app/init-models.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -201,6 +201,7 @@ async def synthesize(
     include_word_boundaries: bool = False,
     voice_settings: dict | None = None,
     version_id: str | None = None,
+    preprocess: bool = False,
 ) -> dict:
     """Synthesize text using a voice profile's provider.
 
@@ -210,6 +211,11 @@ async def synthesize(
     # Sanitize SSML before sending to any provider
     if ssml:
         text = sanitize_ssml(text)
+
+    # Apply text preprocessing (number/date/abbreviation expansion) before TTS
+    if preprocess and not ssml:
+        from app.services.text_preprocessor import preprocess_text
+        text = preprocess_text(text)
 
     # Apply pronunciation dictionary (global + profile-specific entries)
     if not ssml:
@@ -347,6 +353,20 @@ async def synthesize(
     )
     db.add(usage)
     await db.flush()
+
+    # Dispatch synthesis.complete webhook (best-effort, non-blocking)
+    try:
+        from app.services.webhook_dispatcher import fire_synthesis_complete
+        await fire_synthesis_complete(
+            db,
+            synthesis_id=history.id,
+            profile_id=profile_id,
+            provider_name=profile.provider_name,
+            latency_ms=latency_ms,
+            duration_seconds=result.duration_seconds,
+        )
+    except Exception as wh_exc:
+        logger.warning("webhook_synthesis_complete_failed", error=str(wh_exc))
 
     # Build audio URL
     filename = Path(result.audio_path).name

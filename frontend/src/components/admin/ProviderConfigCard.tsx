@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, ChevronRight, Eye, EyeOff, Loader2, Check, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Check, ExternalLink } from "lucide-react";
+import { ConfigField } from "../providers/ConfigField";
 import { Card } from "../ui/Card";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -8,7 +9,7 @@ import { useProviderStore } from "../../stores/providerStore";
 import ProviderLogo from "../providers/ProviderLogo";
 import { PROVIDER_METADATA } from "../../data/providerMetadata";
 import { createLogger } from "../../utils/logger";
-import type { Provider, ProviderFieldSchema } from "../../types";
+import type { Provider } from "../../types";
 
 const logger = createLogger("ProviderConfigCard");
 
@@ -355,91 +356,7 @@ export default function ProviderConfigCard({ provider }: ProviderConfigCardProps
   );
 }
 
-interface ConfigFieldProps {
-  field: ProviderFieldSchema;
-  value: string;
-  isDirty: boolean;
-  isSecretVisible: boolean;
-  originalValue: string;
-  onChange: (value: string) => void;
-  onToggleVisibility: () => void;
-}
-
-function ConfigField({ field, value, isDirty, isSecretVisible, originalValue, onChange, onToggleVisibility }: ConfigFieldProps) {
-  const inputClass =
-    "h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500";
-
-  return (
-    <div className="space-y-1">
-      <label className="flex items-center gap-1 text-sm font-medium text-[var(--color-text)]">
-        {field.label}
-        {field.required && <span className="text-red-500">*</span>}
-        {isDirty && <span className="text-xs text-primary-500 ml-1">(modified)</span>}
-      </label>
-      {field.field_type === "select" ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={inputClass}
-        >
-          <option value="">{field.default ? `Default: ${field.default}` : "Select..."}</option>
-          {(() => {
-            const groups: { label: string | null; items: string[] }[] = [];
-            let current: { label: string | null; items: string[] } = { label: null, items: [] };
-            for (const opt of field.options ?? []) {
-              if (opt.startsWith("---")) {
-                if (current.items.length > 0 || current.label) groups.push(current);
-                current = { label: opt.slice(3), items: [] };
-              } else {
-                current.items.push(opt);
-              }
-            }
-            if (current.items.length > 0 || current.label) groups.push(current);
-            return groups.map((g) =>
-              g.label ? (
-                <optgroup key={g.label} label={g.label}>
-                  {g.items.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </optgroup>
-              ) : (
-                g.items.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))
-              )
-            );
-          })()}
-        </select>
-      ) : field.field_type === "password" ? (
-        <div className="relative">
-          <input
-            type={isSecretVisible ? "text" : "password"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={originalValue || field.default || ""}
-            className={inputClass + " pr-10"}
-          />
-          <button
-            type="button"
-            onClick={onToggleVisibility}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
-            aria-label={isSecretVisible ? "Hide value" : "Show value"}
-          >
-            {isSecretVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={field.default || ""}
-          className={inputClass}
-        />
-      )}
-    </div>
-  );
-}
+// ConfigField is now imported from ../providers/ConfigField
 
 function CapBadge({ label }: { label: string }) {
   return <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">{label}</span>;

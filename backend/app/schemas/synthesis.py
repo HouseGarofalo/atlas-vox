@@ -35,6 +35,7 @@ class SynthesisRequest(BaseModel):
     include_word_boundaries: bool = False
     voice_settings: dict | None = None  # Provider-specific voice tuning (e.g., stability, similarity_boost)
     version_id: str | None = None  # Synthesize with specific model version without activating it
+    preprocess: bool = False  # If true, apply text preprocessing (number/date/abbreviation expansion)
 
     @field_validator("voice_settings")
     @classmethod

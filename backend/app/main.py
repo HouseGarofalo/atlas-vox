@@ -128,3 +128,33 @@ app.include_router(api_router)
 app.include_router(mcp_router)
 app.include_router(openai_compat_router)
 app.include_router(healing_router, prefix="/api/v1")
+
+
+# --- Metrics endpoint (Prometheus / JSON) ---
+from fastapi.responses import JSONResponse, Response as FastAPIResponse  # noqa: E402
+
+
+@app.get("/api/v1/metrics", tags=["monitoring"])
+async def get_metrics():  # type: ignore[return]
+    """Return application metrics for monitoring.
+
+    Tries to use prometheus_client if installed (returns Prometheus text format).
+    Falls back to a JSON snapshot from the internal telemetry middleware.
+    """
+    try:
+        from prometheus_client import (
+            generate_latest,
+            CONTENT_TYPE_LATEST,
+        )
+
+        # If prometheus_client is available, expose its default registry
+        metrics_output = generate_latest()
+        return FastAPIResponse(content=metrics_output, media_type=CONTENT_TYPE_LATEST)
+    except ImportError:
+        pass
+
+    # Fallback: return JSON telemetry snapshot
+    snapshot = telemetry.snapshot()
+    snapshot["_format"] = "json"
+    snapshot["_info"] = "Install prometheus_client for Prometheus-format metrics"
+    return JSONResponse(content=snapshot)

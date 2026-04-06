@@ -135,6 +135,7 @@ export default function VoiceLibraryPage() {
           <input
             type="text"
             placeholder="Search voices..."
+            aria-label="Search voices"
             value={searchInput}
             onChange={(e) => handleSearch(e.target.value)}
             className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 text-sm text-[var(--color-text)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"

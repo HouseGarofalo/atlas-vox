@@ -1,0 +1,52 @@
+# Atlas Vox Backend — Light image (cloud providers only, no GPU/PyTorch)
+# Target size: ~500MB vs ~4GB for the full image
+#
+# Includes only: ElevenLabs SDK, Azure Speech SDK
+# Excludes: PyTorch, Kokoro, Piper, Coqui XTTS, StyleTTS2, CosyVoice, Dia, Dia2
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY backend/pyproject.toml backend/README.md ./
+
+# Install base app dependencies (no [audio] extras — skip librosa/noisereduce)
+RUN pip install --no-cache-dir --prefix=/install .
+
+# Install only cloud provider SDKs
+RUN pip install --no-cache-dir --prefix=/install \
+    "elevenlabs>=1.0.0" \
+    "azure-cognitiveservices-speech>=1.37.0" \
+    "pydub>=0.25.1" \
+    soundfile
+
+# Runtime stage
+FROM python:3.11-slim
+
+# ffmpeg is needed for pydub format conversion
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /install /usr/local
+COPY backend/app ./app
+COPY backend/alembic.ini .
+COPY backend/migrations ./migrations
+
+# Storage and data directories
+RUN mkdir -p /app/storage/samples /app/storage/preprocessed /app/storage/output /app/storage/models /app/data
+
+ENV PYTHONUNBUFFERED=1
+ENV APP_ENV=production
+ENV DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
+
+# Disable GPU providers at runtime — they are not installed
+ENV ATLAS_VOX_DISABLED_PROVIDERS=kokoro,piper,coqui_xtts,styletts2,cosyvoice,dia,dia2
+
+# Create non-root user
+RUN addgroup --system app && adduser --system --ingroup app app
+RUN chown -R app:app /app/storage /app/data
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

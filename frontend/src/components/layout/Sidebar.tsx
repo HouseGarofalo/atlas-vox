@@ -66,6 +66,8 @@ export default function Sidebar() {
 
       {/* Sidebar */}
       <aside
+        role="navigation"
+        aria-label="Main navigation"
         className={clsx(
           "sidebar fixed z-40 flex h-full flex-col border-r border-[var(--color-border)] bg-[var(--color-sidebar)] transition-transform duration-200 md:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
@@ -75,7 +77,7 @@ export default function Sidebar() {
           <AudioLines className="h-7 w-7 text-primary-500" />
           <span className="text-lg font-bold">Atlas Vox</span>
         </div>
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Primary">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}

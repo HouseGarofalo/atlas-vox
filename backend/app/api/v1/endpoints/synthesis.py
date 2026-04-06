@@ -55,6 +55,7 @@ async def synthesize_text(
             include_word_boundaries=data.include_word_boundaries,
             voice_settings=data.voice_settings,
             version_id=data.version_id,
+            preprocess=data.preprocess,
         )
         latency_ms = int((time.perf_counter() - t_start) * 1000)
         logger.info(

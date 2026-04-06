@@ -17,6 +17,23 @@ from app.models.webhook import Webhook
 
 logger = structlog.get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Webhook event type constants
+# ---------------------------------------------------------------------------
+EVENT_SYNTHESIS_COMPLETE = "synthesis.complete"
+EVENT_TRAINING_COMPLETE = "training.complete"
+EVENT_TRAINING_COMPLETED = "training.completed"  # Legacy alias
+EVENT_TRAINING_FAILED = "training.failed"
+EVENT_HEALTH_ALERT = "health.alert"
+
+ALL_EVENT_TYPES = [
+    EVENT_SYNTHESIS_COMPLETE,
+    EVENT_TRAINING_COMPLETE,
+    EVENT_TRAINING_COMPLETED,
+    EVENT_TRAINING_FAILED,
+    EVENT_HEALTH_ALERT,
+]
+
 BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
 BLOCKED_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
                     "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
@@ -161,18 +178,52 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
 
 
 async def fire_training_completed(db: AsyncSession, job_id: str, profile_id: str, version_id: str) -> None:
-    """Fire training.completed event."""
-    await dispatch_event(db, "training.completed", {
+    """Fire training.completed and training.complete events."""
+    data = {
         "job_id": job_id,
         "profile_id": profile_id,
         "version_id": version_id,
-    })
+    }
+    await dispatch_event(db, EVENT_TRAINING_COMPLETED, data)
+    await dispatch_event(db, EVENT_TRAINING_COMPLETE, data)
 
 
 async def fire_training_failed(db: AsyncSession, job_id: str, profile_id: str, error: str) -> None:
     """Fire training.failed event."""
-    await dispatch_event(db, "training.failed", {
+    await dispatch_event(db, EVENT_TRAINING_FAILED, {
         "job_id": job_id,
         "profile_id": profile_id,
         "error": error,
+    })
+
+
+async def fire_synthesis_complete(
+    db: AsyncSession,
+    synthesis_id: str,
+    profile_id: str,
+    provider_name: str,
+    latency_ms: int,
+    duration_seconds: float | None = None,
+) -> None:
+    """Fire synthesis.complete event after a successful synthesis."""
+    await dispatch_event(db, EVENT_SYNTHESIS_COMPLETE, {
+        "synthesis_id": synthesis_id,
+        "profile_id": profile_id,
+        "provider_name": provider_name,
+        "latency_ms": latency_ms,
+        "duration_seconds": duration_seconds,
+    })
+
+
+async def fire_health_alert(
+    db: AsyncSession,
+    provider_name: str,
+    severity: str,
+    message: str,
+) -> None:
+    """Fire health.alert event when a provider health issue is detected."""
+    await dispatch_event(db, EVENT_HEALTH_ALERT, {
+        "provider_name": provider_name,
+        "severity": severity,
+        "message": message,
     })
