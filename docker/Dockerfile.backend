@@ -72,8 +72,9 @@ COPY docker/scripts/init-models.sh /app/init-models.sh
 RUN chmod +x /app/init-models.sh
 
 # Non-root user + gosu for privilege dropping
-RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
-RUN addgroup --system app && adduser --system --ingroup app app
+RUN apt-get update && apt-get install -y --no-install-recommends gosu curl && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system app && adduser --system --home /home/app --ingroup app app
+RUN mkdir -p /home/app/.cache/huggingface /home/app/.local && chown -R app:app /home/app
 RUN chown -R app:app /app/storage /app/data
 
 # Entrypoint: fix volume permissions as root, then drop to 'app' user

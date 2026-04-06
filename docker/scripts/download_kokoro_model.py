@@ -5,7 +5,8 @@ import time
 import urllib.request
 
 BASE_URL = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/"
-CACHE_DIR = "/root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/main/"
+_home = os.environ.get("HOME", "/home/app")
+CACHE_DIR = f"{_home}/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/main/"
 
 MODEL_FILES = [
     ("kokoro-v1_0.pth", os.path.join(CACHE_DIR, "kokoro-v1_0.pth")),

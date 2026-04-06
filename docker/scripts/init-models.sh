@@ -76,7 +76,7 @@ fi
 
 # Restore Kokoro from storage to HuggingFace cache
 # Try multiple possible snapshot hashes
-for SNAPSHOT_DIR in /root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/*/; do
+for SNAPSHOT_DIR in ${HOME:-/home/app}/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/*/; do
     if [ -d "$SNAPSHOT_DIR" ] && [ -f "$SNAPSHOT_DIR/kokoro-v1_0.pth" ]; then
         echo "[init-models] Kokoro already in HF cache."
         break
@@ -85,7 +85,7 @@ done
 
 # If no cache exists, create one from storage
 if [ -f "$KOKORO_STORAGE/kokoro-v1_0.pth" ]; then
-    KOKORO_CACHE="/root/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/main"
+    KOKORO_CACHE="${HOME:-/home/app}/.cache/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots/main"
     if [ ! -f "$KOKORO_CACHE/kokoro-v1_0.pth" ]; then
         echo "[init-models] Restoring Kokoro to HF cache..."
         mkdir -p "$KOKORO_CACHE/voices"
