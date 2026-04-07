@@ -433,24 +433,52 @@ async def batch_synthesize(
     speed: float = 1.0,
     output_format: str = "wav",
 ) -> list[dict]:
-    """Batch synthesize multiple lines, returning results for each."""
+    """Batch synthesize multiple lines concurrently with controlled parallelism.
+
+    Uses asyncio.gather with a semaphore to process lines in parallel while
+    limiting concurrent provider calls to avoid overwhelming resources.
+    Each concurrent task gets its own DB session to avoid async session conflicts.
+    """
+    import asyncio
+    from app.core.database import async_session_factory
+
+    MAX_CONCURRENT = 4  # Limit parallel provider calls
+
+    stripped = [line.strip() for line in lines if line.strip()]
+    if not stripped:
+        return []
+
     logger.info(
         "batch_synthesis_started",
         profile_id=profile_id,
-        line_count=len(lines),
+        line_count=len(stripped),
         preset_id=preset_id,
         output_format=output_format,
     )
-    results = []
-    for line in lines:
-        if not line.strip():
-            continue
-        result = await synthesize(
-            db, text=line.strip(), profile_id=profile_id,
-            preset_id=preset_id, speed=speed, output_format=output_format,
-        )
-        results.append(result)
-    return results
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+
+    async def _synth_one(line: str) -> dict:
+        async with semaphore:
+            async with async_session_factory() as session:
+                try:
+                    result = await synthesize(
+                        session, text=line, profile_id=profile_id,
+                        preset_id=preset_id, speed=speed, output_format=output_format,
+                    )
+                    await session.commit()
+                    return result
+                except Exception:
+                    await session.rollback()
+                    raise
+
+    results = await asyncio.gather(*[_synth_one(line) for line in stripped])
+    logger.info(
+        "batch_synthesis_completed",
+        profile_id=profile_id,
+        result_count=len(results),
+    )
+    return list(results)
 
 
 async def get_history(

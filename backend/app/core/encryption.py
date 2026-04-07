@@ -24,11 +24,11 @@ _fernet: Fernet | None = None
 
 
 def get_fernet_key() -> Fernet:
-    """Derive a Fernet key from ``settings.jwt_secret_key`` via HKDF-SHA256.
+    """Derive a Fernet key via HKDF-SHA256.
 
-    The key is cached after the first call.  The default dev secret
-    (``change-me-in-production``) is accepted as-is so encryption still works
-    in local development, although the protection is obviously weaker.
+    Uses ``settings.encryption_key`` if set, otherwise falls back to
+    ``settings.jwt_secret_key`` for backward compatibility.  The key is
+    cached after the first call.
     """
     global _fernet
     if _fernet is not None:
@@ -36,13 +36,21 @@ def get_fernet_key() -> Fernet:
 
     from app.core.config import settings
 
+    # Prefer dedicated encryption key; fall back to JWT secret
+    secret = settings.encryption_key or settings.jwt_secret_key
+    if secret == "change-me-in-production" and not settings.auth_disabled:
+        logger.warning(
+            "encryption_key_insecure",
+            hint="Set ENCRYPTION_KEY (or at least JWT_SECRET_KEY) to a strong random value in production.",
+        )
+
     kdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
         salt=b"atlas-vox-encryption",
         info=b"provider-config",
     )
-    key = base64.urlsafe_b64encode(kdf.derive(settings.jwt_secret_key.encode()))
+    key = base64.urlsafe_b64encode(kdf.derive(secret.encode()))
     _fernet = Fernet(key)
     return _fernet
 

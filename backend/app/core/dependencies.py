@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_factory
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, verify_api_key
 
 logger = structlog.get_logger(__name__)
 
@@ -34,7 +36,10 @@ async def get_current_user(
 ) -> dict | None:
     """Extract and validate the current user from JWT or API key.
 
-    When AUTH_DISABLED=true, returns a default user dict.
+    Supports:
+    - AUTH_DISABLED=true: returns a default admin user
+    - Bearer <jwt>: validates JWT token
+    - Bearer avx_<key>: validates API key against the database
     """
     if settings.auth_disabled:
         logger.debug("auth_bypass", reason="AUTH_DISABLED")
@@ -47,22 +52,65 @@ async def get_current_user(
             detail="Missing authorization header",
         )
 
-    # Bearer token
-    if authorization.startswith("Bearer "):
-        token = authorization[7:]
-        claims = decode_access_token(token)
-        if claims is None:
-            logger.warning("auth_failed", reason="invalid_or_expired_token")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-        return claims
+    if not authorization.startswith("Bearer "):
+        logger.warning("auth_failed", reason="invalid_authorization_scheme")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization scheme. Use: Bearer <token>",
+        )
 
-    logger.warning("auth_failed", reason="invalid_authorization_scheme")
+    token = authorization[7:]
+
+    # API key path: keys start with avx_
+    if token.startswith("avx_"):
+        return await _authenticate_api_key(token)
+
+    # JWT path
+    claims = decode_access_token(token)
+    if claims is None:
+        logger.warning("auth_failed", reason="invalid_or_expired_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    return claims
+
+
+async def _authenticate_api_key(raw_key: str) -> dict:
+    """Validate an API key against the database and return user claims."""
+    from app.models.api_key import ApiKey
+
+    prefix = raw_key[:12]
+
+    async with async_session_factory() as session:
+        # Look up active keys matching the prefix to narrow candidates
+        result = await session.execute(
+            select(ApiKey).where(
+                ApiKey.key_prefix == prefix,
+                ApiKey.active.is_(True),
+            )
+        )
+        candidates = result.scalars().all()
+
+        for key_row in candidates:
+            if verify_api_key(raw_key, key_row.key_hash):
+                # Update last_used_at
+                key_row.last_used_at = datetime.now(UTC)
+                await session.commit()
+
+                scopes = [s.strip() for s in key_row.scopes.split(",") if s.strip()]
+                logger.info(
+                    "api_key_authenticated",
+                    key_id=key_row.id,
+                    name=key_row.name,
+                    scopes=scopes,
+                )
+                return {"sub": f"api-key:{key_row.id}", "scopes": scopes}
+
+    logger.warning("auth_failed", reason="invalid_api_key", prefix=prefix)
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid authorization scheme",
+        detail="Invalid or revoked API key",
     )
 
 

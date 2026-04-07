@@ -31,7 +31,7 @@ const mockApi = vi.mocked(api);
 // ---------------------------------------------------------------------------
 // Fixtures
 //
-// The api service uses internal AudioDesignFile / AudioDesignQuality types.
+// The api service uses AudioDesignFile / AudioQualityBrief types from types/index.ts.
 // At the mock boundary we cast with `as any` so our plain test fixtures do not
 // need to satisfy those private type constraints.  The store then exposes the
 // same shape via its own exported AudioClip / AnalysisResult interfaces, which

@@ -113,7 +113,7 @@ async def stream_synthesis(
 
 
 @router.post("/synthesize/batch")
-@limiter.limit("10/minute")
+@limiter.limit("3/minute")
 async def batch_synthesis(
     request: Request, data: BatchSynthesisRequest, db: DbSession, user: CurrentUser
 ) -> list[dict]:

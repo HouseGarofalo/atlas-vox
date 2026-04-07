@@ -1,13 +1,18 @@
 import type {
+  AudioDesignFile,
+  AudioQualityBrief,
   AudioSample,
   ApiKeyResponse,
   PersonaPreset,
+  PronunciationEntry,
   Provider,
   ProviderConfigResponse,
   ProviderHealth,
   ProviderTestResponse,
   TrainingJob,
+  UsageAnalytics,
   Voice,
+  VoiceFavoriteItem,
   VoiceProfile,
 } from "../types";
 import { createLogger } from "../utils/logger";
@@ -16,6 +21,34 @@ import { useAuthStore } from "../stores/authStore";
 const logger = createLogger("ApiClient");
 
 const API_BASE = "/api/v1";
+
+/**
+ * Structured API error that preserves HTTP status code and server detail.
+ *
+ * Usage in catch blocks:
+ *   if (err instanceof ApiError && err.status === 401) { ... }
+ *   if (err instanceof ApiError && err.isValidation) { ... }
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  readonly requestId: string | null;
+
+  constructor(status: number, detail: string, requestId: string | null = null) {
+    super(detail);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+    this.requestId = requestId;
+  }
+
+  get isUnauthorized() { return this.status === 401; }
+  get isForbidden() { return this.status === 403; }
+  get isNotFound() { return this.status === 404; }
+  get isValidation() { return this.status === 422; }
+  get isRateLimited() { return this.status === 429; }
+  get isServerError() { return this.status >= 500; }
+}
 
 class ApiClient {
   private baseUrl: string;
@@ -61,11 +94,13 @@ class ApiClient {
     }
 
     // Inject auth headers
-    const { token, apiKey } = useAuthStore.getState();
-    if (token) {
-      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-    } else if (apiKey) {
-      (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
+    const { token, apiKey, authDisabled } = useAuthStore.getState();
+    if (!authDisabled) {
+      if (token) {
+        (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+      } else if (apiKey) {
+        (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
+      }
     }
 
     logger.info("API request", { method, url });
@@ -74,8 +109,23 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
-      logger.error("API error", { method, url, status: response.status, detail: error.detail });
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const requestId = response.headers.get("X-Request-ID");
+      logger.error("API error", { method, url, status: response.status, detail: error.detail, requestId });
+
+      // Auto-logout on 401 to force re-authentication
+      if (response.status === 401) {
+        const { authDisabled } = useAuthStore.getState();
+        if (!authDisabled) {
+          logger.warn("Session expired, logging out");
+          useAuthStore.getState().logout();
+        }
+      }
+
+      throw new ApiError(
+        response.status,
+        error.detail || `HTTP ${response.status}`,
+        requestId,
+      );
     }
 
     logger.info("API response", { method, url, status: response.status });
@@ -313,7 +363,7 @@ class ApiClient {
   audioDesignUpload(file: File) {
     const form = new FormData();
     form.append("audio", file);
-    return this.request<{ file: AudioDesignFile; quality: AudioDesignQuality | null }>(
+    return this.request<{ file: AudioDesignFile; quality: AudioQualityBrief | null }>(
       "/audio-tools/upload",
       { method: "POST", body: form },
     );
@@ -356,7 +406,7 @@ class ApiClient {
   }
 
   audioDesignAnalyze(fileId: string) {
-    return this.request<{ file_id: string; duration_seconds: number; sample_rate: number; quality: AudioDesignQuality; pitch_mean: number | null; pitch_std: number | null; energy_mean: number | null; energy_std: number | null; spectral_centroid_mean: number | null; rms_db: number | null }>("/audio-tools/analyze", {
+    return this.request<{ file_id: string; duration_seconds: number; sample_rate: number; quality: AudioQualityBrief; pitch_mean: number | null; pitch_std: number | null; energy_mean: number | null; energy_std: number | null; spectral_centroid_mean: number | null; rms_db: number | null }>("/audio-tools/analyze", {
       method: "POST",
       body: JSON.stringify({ file_id: fileId }),
     });
@@ -409,53 +459,6 @@ class ApiClient {
   listCollections() {
     return this.request<{ collections: string[] }>("/favorites/collections");
   }
-}
-
-interface PronunciationEntry {
-  id: string;
-  word: string;
-  ipa: string;
-  language: string;
-  profile_id: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface UsageAnalytics {
-  period_days: number;
-  total_characters: number;
-  total_requests: number;
-  total_estimated_cost_usd: number;
-  by_provider: Record<string, { characters: number; requests: number; cost_usd: number; avg_latency_ms: number }>;
-  daily: Record<string, { characters: number; requests: number; cost_usd: number }>;
-}
-
-interface VoiceFavoriteItem {
-  id: string;
-  provider: string;
-  voice_id: string;
-  collection_name: string | null;
-  created_at: string;
-}
-
-interface AudioDesignFile {
-  file_id: string;
-  filename: string;
-  original_filename: string;
-  duration_seconds: number;
-  sample_rate: number;
-  channels: number;
-  format: string;
-  file_size_bytes: number;
-  audio_url: string;
-}
-
-interface AudioDesignQuality {
-  passed: boolean;
-  score: number;
-  snr_db: number | null;
-  rms_db: number | null;
-  issues: { code: string; severity: string; message: string }[];
 }
 
 export const api = new ApiClient();

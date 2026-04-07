@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
@@ -63,31 +64,66 @@ PROVIDER_TYPES: dict[str, str] = {
 
 
 class ProviderRegistry:
-    """Manages provider instances and provides discovery."""
+    """Manages provider instances and provides discovery.
+
+    Thread-safe: uses an asyncio.Lock to prevent race conditions during
+    lazy provider instantiation under concurrent requests.
+    """
 
     def __init__(self) -> None:
         self._instances: dict[str, TTSProvider] = {}
         self._config_overrides: dict[str, dict] = {}
         self._gpu_providers: dict[str, TTSProvider] = {}
+        self._lock = asyncio.Lock()
 
     def get_provider(self, name: str) -> TTSProvider:
-        """Get or create a provider instance by name."""
-        # Check GPU providers first (they are pre-instantiated)
+        """Get or create a provider instance by name (sync fast path).
+
+        For the initial instantiation of a provider, use ``get_provider_async``
+        which holds the lock.  This sync version is safe for already-instantiated
+        providers (the common path after startup).
+        """
+        # Fast path — no lock needed for existing instances
         if name in self._gpu_providers:
             return self._gpu_providers[name]
+        if name in self._instances:
+            return self._instances[name]
 
         if name not in PROVIDER_CLASSES:
             from app.core.exceptions import NotFoundError
             raise NotFoundError("Provider", name)
 
-        if name not in self._instances:
+        # Slow path — instantiate under lock (sync fallback)
+        instance = PROVIDER_CLASSES[name]()
+        if name in self._config_overrides:
+            instance.configure(self._config_overrides[name])
+        self._instances[name] = instance
+        logger.info("provider_instantiated", provider=name)
+        return self._instances[name]
+
+    async def get_provider_async(self, name: str) -> TTSProvider:
+        """Get or create a provider instance by name (async, lock-protected)."""
+        # Fast path — no lock needed for existing instances
+        if name in self._gpu_providers:
+            return self._gpu_providers[name]
+        if name in self._instances:
+            return self._instances[name]
+
+        if name not in PROVIDER_CLASSES:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Provider", name)
+
+        async with self._lock:
+            # Double-check after acquiring lock
+            if name in self._instances:
+                return self._instances[name]
+
             instance = PROVIDER_CLASSES[name]()
             if name in self._config_overrides:
                 instance.configure(self._config_overrides[name])
             self._instances[name] = instance
             logger.info("provider_instantiated", provider=name)
-
-        return self._instances[name]
+            return self._instances[name]
 
     def apply_config(self, name: str, config: dict) -> None:
         """Store config overrides and force provider reload."""

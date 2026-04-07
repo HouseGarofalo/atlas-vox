@@ -69,14 +69,22 @@ class BatchSynthesisRequest(BaseModel):
     lines: list[str] = Field(..., max_length=100)
     profile_id: str
     preset_id: str | None = None
-    speed: float = 1.0
-    pitch: float = 0.0
+    speed: float = Field(1.0, ge=0.5, le=2.0)
+    pitch: float = Field(0.0, ge=-50.0, le=50.0)
     output_format: OutputFormat = OutputFormat.WAV
+
+    @field_validator("lines")
+    @classmethod
+    def validate_lines(cls, v: list[str]) -> list[str]:
+        total_chars = sum(len(line) for line in v)
+        if total_chars > 50000:
+            raise ValueError(f"Total text length ({total_chars:,} chars) exceeds 50,000 char limit for batch")
+        return v
 
 
 class CompareRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
-    profile_ids: list[str] = Field(..., min_length=2)
+    profile_ids: list[str] = Field(..., min_length=2, max_length=10)
     speed: float = 1.0
     pitch: float = 0.0
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from typing import Any
 
 import structlog
@@ -57,7 +58,7 @@ class SelfHealingEngine:
         self._detection_interval = detection_interval
         self._running = False
         self._task: asyncio.Task[None] | None = None
-        self._incident_log: list[dict[str, Any]] = []
+        self._incident_log: deque[dict[str, Any]] = deque(maxlen=500)
 
     async def start(self) -> None:
         """Start all monitors and the detection loop."""

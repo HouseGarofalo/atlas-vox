@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
 
+    # Encryption — separate from JWT so rotating JWT secret doesn't break encrypted data.
+    # If empty, falls back to jwt_secret_key for backward compatibility.
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    encryption_key: str = ""
+
     # Redis
     redis_url: str = "redis://localhost:6379/1"
 

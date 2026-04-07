@@ -1,14 +1,15 @@
-"""Health check endpoint."""
+"""Health check and storage management endpoints."""
 
 
 from pathlib import Path
+from typing import Annotated
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.dependencies import DbSession
+from app.core.dependencies import CurrentUser, DbSession, require_scope
 
 logger = structlog.get_logger(__name__)
 
@@ -62,3 +63,31 @@ async def health_check(db: DbSession) -> dict:
         "checks": checks,
         "version": "0.1.0",
     }
+
+
+@router.get("/storage/stats")
+async def storage_stats(user: Annotated[dict, require_scope("admin")]) -> dict:
+    """Return current storage usage statistics (admin only)."""
+    from app.services.storage_cleanup import get_storage_stats
+    return get_storage_stats()
+
+
+@router.post("/storage/cleanup")
+async def storage_cleanup(
+    db: DbSession,
+    user: Annotated[dict, require_scope("admin")],
+    output_days: int = Query(default=7, ge=1, le=365, description="Delete output files older than N days"),
+    design_days: int = Query(default=30, ge=1, le=365, description="Delete design files older than N days"),
+    dry_run: bool = Query(default=True, description="Preview what would be deleted without removing"),
+) -> dict:
+    """Clean up old synthesis output and audio design files (admin only).
+
+    Pass ``dry_run=false`` to actually delete files.
+    """
+    from app.services.storage_cleanup import cleanup_old_files
+    return await cleanup_old_files(
+        db,
+        output_retention_days=output_days,
+        design_retention_days=design_days,
+        dry_run=dry_run,
+    )

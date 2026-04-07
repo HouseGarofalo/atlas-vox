@@ -244,3 +244,36 @@ export interface AudioQualityBrief {
   rms_db: number | null;
   issues: QualityIssue[];
 }
+
+// --- Pronunciation Dictionary types ---
+
+export interface PronunciationEntry {
+  id: string;
+  word: string;
+  ipa: string;
+  language: string;
+  profile_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- Usage Analytics types ---
+
+export interface UsageAnalytics {
+  period_days: number;
+  total_characters: number;
+  total_requests: number;
+  total_estimated_cost_usd: number;
+  by_provider: Record<string, { characters: number; requests: number; cost_usd: number; avg_latency_ms: number }>;
+  daily: Record<string, { characters: number; requests: number; cost_usd: number }>;
+}
+
+// --- Voice Favorites types ---
+
+export interface VoiceFavoriteItem {
+  id: string;
+  provider: string;
+  voice_id: string;
+  collection_name: string | null;
+  created_at: string;
+}

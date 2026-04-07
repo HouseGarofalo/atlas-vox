@@ -78,13 +78,16 @@ app = FastAPI(
     redoc_url="/redoc" if not settings.is_production else None,
 )
 
-# Request logging & telemetry middleware (outermost — wraps everything)
-app.add_middleware(RequestLoggingMiddleware)
+# Middleware order matters: Starlette executes the LAST added middleware as
+# the outermost (first on request, last on response).  We want:
+#   Request → RequestLogging → CORS → GZip → App
+#   Response → App → GZip → CORS → RequestLogging
+# So add in reverse: GZip first (innermost), then CORS, then RequestLogging (outermost).
 
-# GZip compression for responses >= 1KB
+# GZip compression for responses >= 1KB (innermost — compresses after handler)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# CORS
+# CORS (middle — handles preflight and response headers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -93,6 +96,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
 )
+
+# Request logging & telemetry middleware (outermost — measures full lifecycle)
+app.add_middleware(RequestLoggingMiddleware)
 
 # Global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
