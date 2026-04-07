@@ -13,6 +13,12 @@
 - [Data Flow: Synthesis](#-data-flow-synthesis)
 - [Data Flow: Training](#-data-flow-training)
 - [Technology Stack](#-technology-stack)
+- [Exception Hierarchy](#-exception-hierarchy)
+- [Authentication Flow](#-authentication-flow)
+- [API Client Resilience](#-api-client-resilience)
+- [Security Headers](#-security-headers)
+- [Monitoring Stack](#-monitoring-stack)
+- [Celery Beat Scheduler](#-celery-beat-scheduler)
 - [Database Schema](#-database-schema)
 - [Directory Structure](#-directory-structure)
 
@@ -25,8 +31,12 @@ Atlas Vox is a modular, self-hosted platform with four entry points (Web UI, RES
 **Key architectural decisions:**
 - **Provider abstraction**: Every TTS engine implements a common `TTSProvider` ABC. The UI adapts dynamically based on each provider's declared capabilities.
 - **Async-first**: All backend services use `async def` with SQLAlchemy async and aiosqlite/asyncpg.
-- **Background workers**: CPU/GPU-intensive tasks (training, preprocessing) run in Celery workers, keeping the API server responsive.
+- **Background workers**: CPU/GPU-intensive tasks (training, preprocessing) run in Celery workers, keeping the API server responsive. Celery Beat handles periodic tasks (audio cleanup, health checks).
 - **Config-driven**: All settings flow through Pydantic Settings, supporting `.env` files, environment variables, and runtime DB overrides.
+- **Typed exceptions**: A hierarchy of domain-specific exceptions (`AtlasVoxError` subclasses) maps automatically to HTTP status codes via global middleware.
+- **Database per environment**: SQLite for local development simplicity; PostgreSQL (via asyncpg) for Docker deployments to prevent corruption across backend and worker containers.
+- **Resilient frontend**: API client with retry/backoff, AbortController cancellation, and staleness guards in Zustand stores.
+- **Observability**: Prometheus metrics + Grafana dashboards for production monitoring.
 
 ---
 
@@ -63,11 +73,20 @@ graph TB
 
         subgraph Workers
             CeleryWorker["Celery Worker - Training + Preprocessing"]
+            CeleryBeat["Celery Beat - Periodic Tasks"]
             GPUWorker["GPU Worker - CUDA 12.1"]
         end
+
+        subgraph Monitoring
+            Prometheus["Prometheus - Metrics"]
+            Grafana["Grafana - Dashboards"]
+        end
+
+        Nginx["Nginx - Reverse Proxy + Security Headers"]
     end
 
-    WebUI -->|HTTP/WS| Router
+    WebUI -->|HTTP/WS| Nginx
+    Nginx -->|proxy| Router
     CLI -->|HTTP| Router
     API_Client -->|HTTP| Router
     MCP_Client -->|SSE| MCP
@@ -84,11 +103,15 @@ graph TB
     Registry --> LocalGPU
 
     Redis --> CeleryWorker
+    Redis --> CeleryBeat
     Redis --> GPUWorker
     CeleryWorker --> DB
     CeleryWorker --> FileStore
     GPUWorker --> DB
     GPUWorker --> FileStore
+
+    Router -->|/metrics| Prometheus
+    Prometheus --> Grafana
 ```
 
 ### ASCII Architecture Diagram
@@ -96,6 +119,8 @@ graph TB
 ```
 +------ Docker Containers -----------------------------------------+
 |                                                                   |
+|  Nginx :80/443 (CSP, HSTS, X-Frame-Options)                     |
+|    |                                                              |
 |  Web UI :3100   ----+                                            |
 |  CLI (Typer)    ----+---> FastAPI Backend :8100                  |
 |  API Client     ----+      |                                     |
@@ -106,7 +131,11 @@ graph TB
 |                             |      +---> GPU (Coqui, StyleTTS2...)|
 |                             |                                     |
 |  Redis :6379 <-- Celery --> Worker                               |
-|  SQLite / PG                                                     |
+|                  Celery --> Beat (periodic tasks)                 |
+|  SQLite (dev) / PostgreSQL (Docker)                              |
+|                                                                   |
+|  Prometheus :9090 <-- /api/v1/metrics                            |
+|  Grafana :3000 (auto-provisioned dashboards)                     |
 +------------------------------------------------------------------+
 ```
 
@@ -119,9 +148,9 @@ graph TB
 | Component | Purpose |
 |-----------|---------|
 | **Pages** (9+) | Lazy-loaded route components: Dashboard, Profiles, Library, Training, Synthesis, Comparison, Providers, API Keys, Settings, Help, Docs |
-| **Stores** (5+) | Zustand state stores: profiles, providers, training, synthesis, voice library, settings, admin |
-| **Services** | Typed API client (`api.ts`) with 30+ methods |
-| **Components** (40+) | UI primitives (Card, Button, Modal, Badge), audio components (AudioPlayer, AudioRecorder), layout (Sidebar, AppLayout) |
+| **Stores** (5+) | Zustand state stores with staleness guards (`lastFetchedAt` + `STALE_MS` pattern) and AbortController integration: profiles, providers, training, synthesis, voice library, settings, admin |
+| **Services** | Typed API client (`api.ts`) with 30+ methods, `fetchWithRetry()` with exponential backoff (1s/2s/4s base, max 8s, + jitter), AbortController integration |
+| **Components** (40+) | UI primitives (Card, Button, Modal with focus trap/aria-modal/scroll lock, Badge), audio components (AudioPlayer, AudioRecorder), auth (ProtectedRoute, LoginPage), layout (Sidebar, AppLayout) |
 | **Hooks** | WebSocket hook for training progress, audio playback hooks |
 
 ### Backend (FastAPI + Python)
@@ -134,16 +163,18 @@ graph TB
 | **Models** (9) | SQLAlchemy async ORM: VoiceProfile, AudioSample, TrainingJob, ModelVersion, PersonaPreset, SynthesisHistory, ApiKey, Webhook, Provider |
 | **Schemas** | Pydantic v2 request/response schemas with validation |
 | **Tasks** | Celery background tasks: `training.py`, `preprocessing.py` |
-| **Core** | Config (Pydantic Settings), Database, Security, Logging, Dependencies |
+| **Core** | Config (Pydantic Settings), Database, Security, Logging, Dependencies, Exceptions |
 
 ### Infrastructure
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Database** | SQLite (dev) / PostgreSQL (prod) | Persistent storage |
+| **Database** | SQLite (local dev) / PostgreSQL (Docker) | Persistent storage; Docker uses PostgreSQL via asyncpg to prevent corruption across containers |
 | **Cache/Broker** | Redis 7 | Celery task broker, result backend |
 | **Worker** | Celery 5 | Background training and preprocessing |
-| **Proxy** | Nginx | Frontend serving, API reverse proxy |
+| **Scheduler** | Celery Beat | Periodic tasks (audio cleanup, health checks) |
+| **Proxy** | Nginx | Frontend serving, API reverse proxy, security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy) |
+| **Monitoring** | Prometheus + Grafana | Metrics scraping at `/api/v1/metrics`; Grafana auto-provisions a 4-panel dashboard (request rate, error rate, latency p99, system health) |
 
 ---
 
@@ -334,7 +365,8 @@ sequenceDiagram
 | FastAPI | 0.115+ | Web framework |
 | Pydantic | v2 | Validation and settings |
 | SQLAlchemy | 2.0+ (async) | ORM |
-| aiosqlite | 0.20+ | Async SQLite driver |
+| aiosqlite | 0.20+ | Async SQLite driver (local dev) |
+| asyncpg | 0.29+ | Async PostgreSQL driver (Docker deployments, optional `[postgres]` extra) |
 | Alembic | 1.13+ | Database migrations |
 | Celery | 5.3+ | Background task queue |
 | Redis | 5.0+ | Celery broker |
@@ -364,6 +396,133 @@ sequenceDiagram
 | Nginx | Frontend serving, reverse proxy |
 | NVIDIA Container Toolkit | GPU passthrough |
 | CUDA 12.1 | GPU compute |
+| Prometheus | Metrics collection and scraping |
+| Grafana | Metrics dashboards and visualization |
+
+---
+
+## 🚨 Exception Hierarchy
+
+Atlas Vox uses a typed exception system defined in `backend/app/core/exceptions.py`. All custom exceptions extend `AtlasVoxError` and are automatically mapped to HTTP status codes by the global exception handler in `middleware.py`.
+
+```
+AtlasVoxError (base)
+├── NotFoundError          → HTTP 404
+├── ValidationError        → HTTP 422
+├── ProviderError          → HTTP 502
+├── AuthenticationError    → HTTP 401
+├── AuthorizationError     → HTTP 403
+├── StorageError           → HTTP 500
+├── TrainingError          → HTTP 500
+└── ServiceError           → HTTP 500
+```
+
+Services raise these typed exceptions instead of raw `HTTPException`. The middleware catches them and returns consistent JSON error responses with the appropriate status code, error type, and message.
+
+---
+
+## 🔐 Authentication Flow
+
+Authentication supports two modes controlled by the `AUTH_DISABLED` environment variable:
+
+### Multi-User Mode (`AUTH_DISABLED=false`)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant LoginPage
+    participant API as FastAPI
+    participant AuthStore
+
+    User->>LoginPage: Enter JWT token or API key
+    LoginPage->>API: POST /api/v1/auth/login
+    API-->>LoginPage: 200 + user info
+    LoginPage->>AuthStore: Store token
+    AuthStore->>API: All requests include Authorization header
+```
+
+- **ProtectedRoute** component (`frontend/src/components/ProtectedRoute.tsx`) wraps all main routes, redirecting unauthenticated users to the login page.
+- **LoginPage** (`frontend/src/pages/LoginPage.tsx`) accepts JWT tokens or API keys.
+- Auth headers are injected automatically by the API client from `authStore`.
+
+### Single-User Mode (`AUTH_DISABLED=true`)
+
+When auth is disabled, the frontend auto-authenticates on load by hitting `/api/v1/health`. No login is required and `ProtectedRoute` passes through immediately.
+
+---
+
+## 🔄 API Client Resilience
+
+The frontend API client (`frontend/src/services/api.ts`) includes built-in resilience patterns:
+
+### Retry with Exponential Backoff
+
+`fetchWithRetry()` automatically retries failed requests:
+- **Base delays**: 1s, 2s, 4s (exponential)
+- **Max delay**: 8s cap
+- **Jitter**: Random jitter added to each delay to prevent thundering herd
+- **Retryable**: Only retries on network errors and 5xx responses
+
+### Request Cancellation
+
+All Zustand stores integrate `AbortController` to cancel in-flight requests:
+- `voiceLibraryStore`, `profileStore`, `providerStore`, `synthesisStore` all support cancellation
+- Previous requests are aborted when new ones are initiated
+- Component unmounts trigger cleanup via AbortController
+
+### Staleness Guards
+
+Stores use a `lastFetchedAt` + `STALE_MS` pattern to avoid redundant API calls. Data is only re-fetched if it exceeds the staleness threshold.
+
+---
+
+## 🛡️ Security Headers
+
+Nginx adds the following security headers to all responses:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Content-Security-Policy` | Restrictive CSP | Prevents XSS and injection attacks |
+| `X-Frame-Options` | `SAMEORIGIN` | Prevents clickjacking |
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME type sniffing |
+| `Strict-Transport-Security` | HSTS with max-age | Enforces HTTPS |
+| `Permissions-Policy` | Restrictive policy | Controls browser feature access |
+
+---
+
+## 📊 Monitoring Stack
+
+Prometheus and Grafana are integrated via Docker Compose for production observability.
+
+### Metrics Collection
+
+- The backend exposes a `/api/v1/metrics` endpoint in Prometheus format
+- Prometheus scrapes this endpoint on a configurable interval
+- Metrics include request counts, error rates, latency histograms, and system health indicators
+
+### Grafana Dashboards
+
+Grafana auto-provisions on startup with a pre-configured **Atlas Vox** dashboard containing 4 panels:
+
+| Panel | Metric | Purpose |
+|-------|--------|---------|
+| Request Rate | `http_requests_total` | Traffic volume over time |
+| Error Rate | `http_requests_total{status=~"5.."}` | 5xx error trend |
+| Latency P99 | `http_request_duration_seconds` | 99th percentile response time |
+| System Health | Provider health checks | Overall system status |
+
+---
+
+## ⏰ Celery Beat Scheduler
+
+A Celery Beat service runs alongside workers to handle periodic tasks:
+
+| Task | Schedule | Purpose |
+|------|----------|---------|
+| Audio cleanup | Periodic | Removes orphaned/temporary audio files from storage |
+| Health checks | Periodic | Verifies provider availability and updates status |
+
+Beat is deployed as a separate container in Docker Compose, sharing the same Redis broker as the workers.
 
 ---
 
@@ -496,7 +655,7 @@ atlas-vox/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/endpoints/       # 12 API endpoint modules (60+ routes)
-│   │   ├── core/                   # Config, Database, Security, Logging
+│   │   ├── core/                   # Config, Database, Security, Logging, Exceptions
 │   │   ├── models/                 # 9 SQLAlchemy ORM models
 │   │   ├── schemas/                # Pydantic v2 request/response schemas
 │   │   ├── services/               # 7 business logic services

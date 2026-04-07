@@ -29,7 +29,7 @@ class AudioSample(Base):
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_source: Mapped[str | None] = mapped_column(String(20), nullable=True)  # manual, azure_stt
     pronunciation_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: accuracy, fluency, etc.
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Relationships
     profile: Mapped[VoiceProfile] = relationship("VoiceProfile", back_populates="samples")

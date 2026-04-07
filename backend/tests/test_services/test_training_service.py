@@ -13,6 +13,7 @@ from app.models.audio_sample import AudioSample
 from app.models.model_version import ModelVersion
 from app.models.training_job import TrainingJob
 from app.models.voice_profile import VoiceProfile
+from app.core.exceptions import ValidationError, NotFoundError
 from app.schemas.profile import ProfileCreate
 from app.services.profile_service import create_profile
 from app.services.training_service import (
@@ -81,7 +82,7 @@ def _mock_training_provider() -> AsyncMock:
 # ---------------------------------------------------------------------------
 
 async def test_start_training_no_profile(db_session: AsyncSession):
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(NotFoundError, match="not found"):
         await start_training(db_session, profile_id="nonexistent-profile-id")
 
 
@@ -101,7 +102,7 @@ async def test_start_training_no_samples(db_session: AsyncSession):
         "app.services.training_service.provider_registry.get_provider",
         return_value=mock_provider,
     ):
-        with pytest.raises(ValueError, match="no audio samples"):
+        with pytest.raises(ValidationError, match="no audio samples"):
             await start_training(db_session, profile_id=profile.id)
 
 
@@ -121,7 +122,7 @@ async def test_start_training_provider_no_training(db_session: AsyncSession):
         "app.services.training_service.provider_registry.get_provider",
         return_value=mock_provider,
     ):
-        with pytest.raises(ValueError, match="training|cloning"):
+        with pytest.raises(ValidationError, match="training|cloning"):
             await start_training(db_session, profile_id=profile.id)
 
 
@@ -184,8 +185,8 @@ async def test_get_job_status_success(db_session: AsyncSession):
 
 
 async def test_get_job_status_not_found(db_session: AsyncSession):
-    """Nonexistent job_id must raise ValueError."""
-    with pytest.raises(ValueError, match="not found"):
+    """Nonexistent job_id must raise NotFoundError."""
+    with pytest.raises(NotFoundError, match="not found"):
         await get_job_status(db_session, job_id="no-such-job-id")
 
 
@@ -211,7 +212,7 @@ async def test_activate_version_success(db_session: AsyncSession):
 
 
 async def test_activate_version_wrong_profile(db_session: AsyncSession):
-    """A version belonging to a different profile must raise ValueError."""
+    """A version belonging to a different profile must raise NotFoundError."""
     profile_a = await _make_profile(db_session, name="Profile A")
     profile_b = await _make_profile(db_session, name="Profile B")
 
@@ -223,14 +224,14 @@ async def test_activate_version_wrong_profile(db_session: AsyncSession):
     db_session.add(version_for_b)
     await db_session.flush()
 
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(NotFoundError, match="not found"):
         await activate_version(db_session, profile_id=profile_a.id, version_id=version_for_b.id)
 
 
 async def test_activate_version_not_found(db_session: AsyncSession):
-    """Nonexistent version_id must raise ValueError."""
+    """Nonexistent version_id must raise NotFoundError."""
     profile = await _make_profile(db_session)
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(NotFoundError, match="not found"):
         await activate_version(db_session, profile_id=profile.id, version_id="no-such-version")
 
 
@@ -287,7 +288,7 @@ async def test_list_jobs_by_profile(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 async def test_cancel_job_not_found(db_session: AsyncSession):
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(NotFoundError, match="not found"):
         await cancel_job(db_session, job_id="nonexistent-job-id")
 
 
@@ -304,7 +305,7 @@ async def test_cancel_completed_job(db_session: AsyncSession):
     db_session.add(job)
     await db_session.flush()
 
-    with pytest.raises(ValueError, match="cancel"):
+    with pytest.raises(ValidationError, match="cancel"):
         await cancel_job(db_session, job_id=job.id)
 
 
@@ -319,7 +320,7 @@ async def test_cancel_failed_job(db_session: AsyncSession):
     db_session.add(job)
     await db_session.flush()
 
-    with pytest.raises(ValueError, match="cancel"):
+    with pytest.raises(ValidationError, match="cancel"):
         await cancel_job(db_session, job_id=job.id)
 
 

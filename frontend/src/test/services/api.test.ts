@@ -10,6 +10,27 @@ vi.mock("../../utils/logger", () => ({
   }),
 }));
 
+// Mock the auth store before importing the api module
+vi.mock("../../stores/authStore", () => {
+  const mockAuthStore = {
+    token: 'mock-token',
+    apiKey: null,
+    user: { sub: 'test-user', scopes: ['admin'] },
+    isAuthenticated: true,
+    setToken: vi.fn(),
+    setApiKey: vi.fn(),
+    logout: vi.fn(),
+    hasScope: vi.fn().mockReturnValue(true),
+  };
+
+  const mockUseAuthStore = vi.fn().mockReturnValue(mockAuthStore);
+  mockUseAuthStore.getState = vi.fn().mockReturnValue(mockAuthStore);
+
+  return {
+    useAuthStore: mockUseAuthStore,
+  };
+});
+
 const createMockResponse = (body: unknown, status = 200, ok = true): Response => {
   return {
     ok,
@@ -36,6 +57,7 @@ const mockFetch = vi.fn();
 
 describe("ApiClient", () => {
   let api: any;
+  let originalSetTimeout: typeof setTimeout;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
@@ -43,8 +65,19 @@ describe("ApiClient", () => {
     mockFetch.mockReset();
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
+    // Mock setTimeout to be instant to avoid delays in retry logic
+    originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = vi.fn().mockImplementation((fn: Function) => {
+      fn();
+      return 0 as unknown as NodeJS.Timeout;
+    });
+
     const module = await import("../../services/api");
     api = module.api;
+  });
+
+  afterEach(() => {
+    globalThis.setTimeout = originalSetTimeout;
   });
 
   describe("health", () => {

@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Base, async_session_factory, engine, get_db, init_db
+from app.core.database import Base, async_session_factory, engine, init_db
+from app.core.dependencies import get_db
 
 
 # ---------------------------------------------------------------------------

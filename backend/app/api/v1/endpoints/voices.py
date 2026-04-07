@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import NotFoundError
 from app.core.rate_limit import limiter
 from app.providers.base import SynthesisSettings
 from app.services.provider_registry import PROVIDER_DISPLAY_NAMES, provider_registry
@@ -95,7 +96,7 @@ async def preview_voice(request: Request, data: VoicePreviewRequest, user: Curre
     # Synthesize
     try:
         provider = provider_registry.get_provider(data.provider)
-    except ValueError:
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown provider: {data.provider}",

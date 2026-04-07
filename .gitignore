@@ -97,6 +97,12 @@ frontend/tsconfig.tsbuildinfo
 # Playwright MCP state
 .playwright-mcp/
 
+# Playwright E2E test results
+/test-results/
+/playwright-report/
+/frontend/test-results/
+/frontend/playwright-report/
+
 # Test artifacts
 e2e-screenshots/
 audit-*.png

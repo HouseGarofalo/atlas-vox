@@ -122,7 +122,8 @@ async def _resolve_profile(db: AsyncSession, profile_id: str) -> VoiceProfile:
     )
     profile = result.scalar_one_or_none()
     if profile is None:
-        raise ValueError("Profile not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Profile")
     return profile
 
 
@@ -180,7 +181,8 @@ async def _apply_preset(db: AsyncSession, preset_id: str, synth_settings: Synthe
     )
     preset = result.scalar_one_or_none()
     if preset is None:
-        raise ValueError(f"Preset '{preset_id}' not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Preset", preset_id)
 
     synth_settings.speed = preset.speed
     synth_settings.pitch = preset.pitch
@@ -411,7 +413,8 @@ async def stream_synthesize(
 
     capabilities = await provider.get_capabilities()
     if not capabilities.supports_streaming:
-        raise ValueError(f"Provider '{profile.provider_name}' does not support streaming")
+        from app.core.exceptions import ProviderError
+        raise ProviderError(profile.provider_name, "does not support streaming")
 
     voice_id = await _resolve_voice_id(db, profile)
     synth_settings = SynthesisSettings(speed=speed, pitch=pitch, output_format=output_format)

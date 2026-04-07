@@ -23,7 +23,7 @@ def test_not_found_raises_with_message():
     try:
         raise NotFoundError("Profile", "abc-123")
     except AtlasVoxError as e:
-        assert "Profile not found" in str(e)
+        assert "Profile 'abc-123' not found" in str(e)
         assert e.code == "not_found"
 
 

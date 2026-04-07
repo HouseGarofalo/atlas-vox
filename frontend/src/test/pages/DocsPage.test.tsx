@@ -23,7 +23,7 @@ describe('DocsPage', () => {
         <DocsPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Provider Setup Guides')).toBeInTheDocument();
+    expect(screen.getByText('Documentation')).toBeInTheDocument();
   });
 
   it('renders provider selector', () => {

@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import NotFoundError
 from app.core.rate_limit import limiter
 from app.providers.base import SynthesisSettings
 from app.services.provider_registry import provider_registry
@@ -159,7 +160,7 @@ async def create_speech(request: Request, body: SpeechRequest, user: CurrentUser
     # Validate provider
     try:
         provider = provider_registry.get_provider(provider_name)
-    except ValueError:
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

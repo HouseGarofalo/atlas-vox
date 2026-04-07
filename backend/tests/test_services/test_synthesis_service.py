@@ -161,8 +161,9 @@ async def test_synthesize_with_preset(db_session: AsyncSession):
 
 
 async def test_synthesize_invalid_profile(db_session: AsyncSession):
-    """Nonexistent profile_id must raise ValueError."""
-    with pytest.raises(ValueError, match="not found"):
+    """Nonexistent profile_id must raise NotFoundError."""
+    from app.core.exceptions import NotFoundError
+    with pytest.raises(NotFoundError, match="not found"):
         await synthesize(db_session, text="Hello.", profile_id="no-such-profile-id")
 
 

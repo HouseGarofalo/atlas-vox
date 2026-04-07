@@ -27,14 +27,16 @@ async def _make_profile(db: AsyncSession, name: str) -> str:
 
 async def test_compare_too_few_profiles(db_session: AsyncSession):
     """compare_voices raises ValueError when fewer than 2 profile IDs are given."""
+    from app.core.exceptions import ValidationError
     pid = await _make_profile(db_session, "Solo")
 
-    with pytest.raises(ValueError, match="[Aa]t least 2"):
+    with pytest.raises(ValidationError, match="[Aa]t least 2"):
         await compare_voices(db_session, text="test", profile_ids=[pid])
 
 
 async def test_compare_zero_profiles(db_session: AsyncSession):
-    with pytest.raises(ValueError, match="[Aa]t least 2"):
+    from app.core.exceptions import ValidationError
+    with pytest.raises(ValidationError, match="[Aa]t least 2"):
         await compare_voices(db_session, text="test", profile_ids=[])
 
 

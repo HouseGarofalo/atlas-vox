@@ -28,8 +28,9 @@ def _fresh_registry() -> ProviderRegistry:
 # ---------------------------------------------------------------------------
 
 def test_registry_get_unknown_provider():
+    from app.core.exceptions import NotFoundError
     registry = _fresh_registry()
-    with pytest.raises(ValueError, match="Unknown provider"):
+    with pytest.raises(NotFoundError, match="Provider.*not found"):
         registry.get_provider("this_does_not_exist")
 
 
@@ -136,8 +137,9 @@ async def test_registry_get_capabilities_kokoro():
 
 
 async def test_registry_get_capabilities_unknown():
+    from app.core.exceptions import NotFoundError
     registry = _fresh_registry()
-    with pytest.raises(ValueError, match="Unknown provider"):
+    with pytest.raises(NotFoundError, match="Provider.*not found"):
         await registry.get_capabilities("totally_fake_provider")
 
 

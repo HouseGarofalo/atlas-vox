@@ -55,22 +55,7 @@ class Base(DeclarativeBase):
     pass
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a database session, ensuring cleanup.
 
-    NOTE: The canonical ``get_db`` used by FastAPI endpoint dependencies
-    lives in ``app.core.dependencies``.  This copy is kept for backward
-    compatibility with tests and the health endpoint that import from here.
-    """
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 async def init_db() -> None:

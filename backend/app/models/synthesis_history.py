@@ -23,4 +23,4 @@ class SynthesisHistory(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # speed, pitch, volume, persona
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)

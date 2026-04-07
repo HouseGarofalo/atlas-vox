@@ -26,7 +26,8 @@ async def compare_voices(
     is needed — it would only issue redundant queries.
     """
     if len(profile_ids) < 2:
-        raise ValueError("At least 2 profiles required for comparison")
+        from app.core.exceptions import ValidationError
+        raise ValidationError("At least 2 profiles required for comparison")
 
     logger.info(
         "comparison_started",

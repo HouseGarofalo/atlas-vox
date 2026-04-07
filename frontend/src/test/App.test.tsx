@@ -83,6 +83,26 @@ vi.mock('../stores/adminStore', () => ({
   }),
 }));
 
+vi.mock('../stores/authStore', () => {
+  const mockAuthStore = {
+    token: 'mock-token',
+    apiKey: null,
+    user: { sub: 'test-user', scopes: ['admin'] },
+    isAuthenticated: true,
+    setToken: vi.fn(),
+    setApiKey: vi.fn(),
+    logout: vi.fn(),
+    hasScope: vi.fn().mockReturnValue(true),
+  };
+
+  const mockUseAuthStore = vi.fn().mockReturnValue(mockAuthStore);
+  mockUseAuthStore.getState = vi.fn().mockReturnValue(mockAuthStore);
+
+  return {
+    useAuthStore: mockUseAuthStore,
+  };
+});
+
 vi.mock('../services/api', () => ({
   api: {
     listApiKeys: vi.fn().mockResolvedValue({ api_keys: [] }),

@@ -131,6 +131,19 @@ All error responses follow a consistent JSON structure:
 }
 ```
 
+**Typed Exception Mapping:** The backend uses a typed exception hierarchy (`backend/app/core/exceptions.py`) that automatically maps to HTTP status codes:
+
+| Exception | HTTP Code | When |
+|-----------|-----------|------|
+| `NotFoundError` | `404` | Resource not found |
+| `ValidationError` | `422` | Invalid input data |
+| `ProviderError` | `502` | TTS provider failure |
+| `AuthenticationError` | `401` | Missing/invalid credentials |
+| `AuthorizationError` | `403` | Insufficient permissions |
+| `StorageError` | `500` | File system errors |
+| `TrainingError` | `500` | Training job failures |
+| `ServiceError` | `500` | General service errors |
+
 **Standard HTTP Status Codes:**
 
 | Code | Meaning |

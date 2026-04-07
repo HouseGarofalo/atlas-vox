@@ -22,9 +22,9 @@ class PersonaPreset(Base):
     volume: Mapped[float] = mapped_column(Float, default=1.0)  # 0.0 to 2.0
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # True for built-in presets
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # Extra provider-specific settings
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )

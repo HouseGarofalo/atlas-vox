@@ -21,9 +21,9 @@ class Provider(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     gpu_mode: Mapped[str] = mapped_column(String(20), default="none")  # none, docker_gpu, host_cpu, auto
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string of provider-specific config
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )

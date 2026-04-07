@@ -20,5 +20,5 @@ class ApiKey(Base):
     key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)  # First 8 chars for display
     scopes: Mapped[str] = mapped_column(Text, default="read,synthesize")  # Comma-separated: read,write,synthesize,train,admin
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

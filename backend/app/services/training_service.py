@@ -35,18 +35,21 @@ async def start_training(
     result = await db.execute(select(VoiceProfile).where(VoiceProfile.id == profile_id))
     profile = result.scalar_one_or_none()
     if profile is None:
-        raise ValueError("Profile not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Profile")
 
     # Resolve provider
     effective_provider = provider_name or profile.provider_name
     try:
         provider = provider_registry.get_provider(effective_provider)
     except ValueError:
-        raise ValueError(f"Provider '{effective_provider}' is not available")
+        from app.core.exceptions import ProviderError
+        raise ProviderError(effective_provider, "is not available")
 
     capabilities = await provider.get_capabilities()
     if not capabilities.supports_cloning and not capabilities.supports_fine_tuning:
-        raise ValueError(f"Provider '{effective_provider}' does not support training or cloning")
+        from app.core.exceptions import ValidationError
+        raise ValidationError(f"Provider '{effective_provider}' does not support training or cloning")
 
     # Check sample count
     sample_count_result = await db.execute(
@@ -54,10 +57,12 @@ async def start_training(
     )
     sample_count = sample_count_result.scalar() or 0
     if sample_count == 0:
-        raise ValueError("Profile has no audio samples — upload samples before training")
+        from app.core.exceptions import ValidationError
+        raise ValidationError("Profile has no audio samples — upload samples before training")
 
     if capabilities.min_samples_for_cloning > 0 and sample_count < capabilities.min_samples_for_cloning:
-        raise ValueError(
+        from app.core.exceptions import ValidationError
+        raise ValidationError(
             f"Provider '{effective_provider}' requires at least {capabilities.min_samples_for_cloning} "
             f"samples, but only {sample_count} available"
         )
@@ -110,7 +115,8 @@ async def get_job_status(db: AsyncSession, job_id: str) -> dict:
     result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_id))
     job = result.scalar_one_or_none()
     if job is None:
-        raise ValueError("Training job not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Training job")
 
     logger.info(
         "job_status_queried",
@@ -150,10 +156,12 @@ async def cancel_job(db: AsyncSession, job_id: str) -> TrainingJob:
     result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_id))
     job = result.scalar_one_or_none()
     if job is None:
-        raise ValueError("Training job not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Training job")
 
     if job.status in ("completed", "failed", "cancelled"):
-        raise ValueError(f"Cannot cancel job with status '{job.status}'")
+        from app.core.exceptions import ValidationError
+        raise ValidationError(f"Cannot cancel job with status '{job.status}'")
 
     celery_task_id = job.celery_task_id
 
@@ -240,12 +248,14 @@ async def activate_version(
     )
     version = result.scalar_one_or_none()
     if version is None:
-        raise ValueError("Model version not found for this profile")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Model version")
 
     result = await db.execute(select(VoiceProfile).where(VoiceProfile.id == profile_id))
     profile = result.scalar_one_or_none()
     if profile is None:
-        raise ValueError("Profile not found")
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Profile")
 
     profile.active_version_id = version_id
     if profile.status != "ready":

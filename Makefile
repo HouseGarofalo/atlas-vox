@@ -58,7 +58,7 @@ migrate-new:
 
 # Utilities
 seed:
-	cd backend && python -m app.cli.main seed
+	cd backend && python -c "import asyncio; from app.core.database import init_db; from app.services.provider_registry import seed_providers, load_provider_configs; asyncio.run(init_db()); asyncio.run(seed_providers()); asyncio.run(load_provider_configs()); print('✅ Seeding complete - database initialized and providers seeded')"
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

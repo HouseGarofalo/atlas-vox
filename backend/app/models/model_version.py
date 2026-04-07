@@ -21,7 +21,7 @@ class ModelVersion(Base):
     model_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # Local model file path
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # Training config snapshot
     metrics_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # Quality metrics
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Relationships
     profile: Mapped[VoiceProfile] = relationship(

@@ -7,6 +7,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import NotFoundError, ValidationError
 from app.schemas.profile import (
     ProfileCreate,
     ProfileListResponse,
@@ -150,6 +151,6 @@ async def activate_profile_version(
         profile = await activate_version(db, profile_id, version_id)
         logger.info("profile_version_activated", profile_id=profile_id, version_id=version_id)
         return await profile_to_response(db, profile)
-    except ValueError as e:
+    except (NotFoundError, ValidationError) as e:
         logger.error("activate_profile_version_failed", profile_id=profile_id, version_id=version_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -19,9 +19,9 @@ class Webhook(Base):
     events: Mapped[str] = mapped_column(Text, nullable=False)  # Comma-separated: training.completed, training.failed
     secret: Mapped[str | None] = mapped_column(String(500), nullable=True)  # For HMAC signing
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )

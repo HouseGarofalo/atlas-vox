@@ -7,7 +7,14 @@ scrape_configs:
   - job_name: "atlas-vox-backend"
     metrics_path: "/api/v1/metrics"
     static_configs:
-      - targets: ["backend:8000"]
+      - targets: ["atlas-vox-backend:8000"]
         labels:
           service: "atlas-vox"
           component: "backend"
+
+  - job_name: "atlas-vox-redis"
+    static_configs:
+      - targets: ["atlas-vox-redis:6379"]
+        labels:
+          service: "atlas-vox"
+          component: "redis"

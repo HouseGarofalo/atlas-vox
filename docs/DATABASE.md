@@ -1,6 +1,6 @@
 # Atlas Vox Database Schema Reference
 
-> **Version**: 1.0 | **Last updated**: 2026-03-25 | **Engine**: SQLAlchemy 2.x (async) with Alembic migrations
+> **Version**: 1.1 | **Last updated**: 2026-04-06 | **Engine**: SQLAlchemy 2.x (async) with Alembic migrations
 
 ---
 
@@ -36,7 +36,9 @@ Atlas Vox uses a relational database to persist voice profiles, audio samples, t
 | Engine | Connection URL | Use Case |
 |:---|:---|:---|
 | **SQLite** (default) | `sqlite+aiosqlite:///./atlas_vox.db` | Local development, single-user mode |
-| **PostgreSQL** (optional) | `postgresql+asyncpg://user:pass@host/db` | Production, multi-user, concurrent workloads |
+| **PostgreSQL** (recommended for Docker) | `postgresql+asyncpg://user:pass@host/db` | Docker deployments, production, multi-user, concurrent workloads |
+
+> **Docker Note:** Docker deployments **must** use PostgreSQL. SQLite cannot be safely shared between the backend and Celery worker containers via a Docker volume mount (file locking issues). The `asyncpg` driver is installed via the `[postgres]` optional dependency in `pyproject.toml`.
 
 ### Engine Configuration
 

@@ -4,8 +4,8 @@ FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY backend/pyproject.toml backend/README.md ./
 
-# Install base app + audio processing deps (BEFORE copying app code for layer caching)
-RUN pip install --no-cache-dir --prefix=/install ".[audio]"
+# Install base app + audio processing deps + PostgreSQL driver (BEFORE copying app code for layer caching)
+RUN pip install --no-cache-dir --prefix=/install ".[audio,postgres]"
 
 # Install lightweight CPU providers + cloud SDKs
 RUN pip install --no-cache-dir --prefix=/install \

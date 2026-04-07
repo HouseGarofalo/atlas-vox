@@ -12,27 +12,30 @@ vi.mock('../../utils/logger', () => ({
   }),
 }));
 
+vi.mock('../../components/providers/ProviderLogo', () => ({
+  default: ({ name }: { name: string }) => <span data-testid="provider-logo">{name}</span>,
+}));
+
 describe('HelpPage', () => {
-  it('renders help center heading', () => {
+  it('renders help page heading', () => {
     render(
       <MemoryRouter>
         <HelpPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Help Center')).toBeInTheDocument();
+    expect(screen.getByText('Help & Documentation')).toBeInTheDocument();
   });
 
-  it('renders all tabs', () => {
+  it('renders group buttons', () => {
     render(
       <MemoryRouter>
         <HelpPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Getting Started')).toBeInTheDocument();
-    expect(screen.getByText('User Guide')).toBeInTheDocument();
-    expect(screen.getByText('Troubleshooting')).toBeInTheDocument();
-    expect(screen.getByText('API Reference')).toBeInTheDocument();
-    expect(screen.getByText('About')).toBeInTheDocument();
+    expect(screen.getByText('Guide')).toBeInTheDocument();
+    expect(screen.getByText('Reference')).toBeInTheDocument();
+    expect(screen.getByText('Technical')).toBeInTheDocument();
+    expect(screen.getByText('Support')).toBeInTheDocument();
   });
 
   it('shows Getting Started content by default', () => {
@@ -54,33 +57,43 @@ describe('HelpPage', () => {
     expect(screen.getByText('Feature Guide')).toBeInTheDocument();
   });
 
-  it('tab switching works - Troubleshooting', () => {
+  it('tab switching works - Support group shows Troubleshooting', () => {
     render(
       <MemoryRouter>
         <HelpPage />
       </MemoryRouter>,
     );
+    // Switch to Support group
+    fireEvent.click(screen.getByText('Support'));
+    // The Troubleshooting tab should be visible within the Support group
+    expect(screen.getByText('Troubleshooting')).toBeInTheDocument();
+    // Click it to load the troubleshooting content with its search input
     fireEvent.click(screen.getByText('Troubleshooting'));
-    // Troubleshooting tab has a search input
     expect(screen.getByPlaceholderText('Search troubleshooting topics...')).toBeInTheDocument();
   });
 
-  it('tab switching works - API Reference', () => {
+  it('tab switching works - Reference group shows API tab', () => {
     render(
       <MemoryRouter>
         <HelpPage />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByText('API Reference'));
-    expect(screen.getByText('Quick API Examples')).toBeInTheDocument();
+    // Switch to Reference group
+    fireEvent.click(screen.getByText('Reference'));
+    // Click the API tab
+    fireEvent.click(screen.getByText('API'));
+    expect(screen.getByText('Interactive API Documentation')).toBeInTheDocument();
   });
 
-  it('tab switching works - About', () => {
+  it('tab switching works - Support group shows About', () => {
     render(
       <MemoryRouter>
         <HelpPage />
       </MemoryRouter>,
     );
+    // Switch to Support group
+    fireEvent.click(screen.getByText('Support'));
+    // Click the About tab
     fireEvent.click(screen.getByText('About'));
     expect(screen.getByText('About Atlas Vox')).toBeInTheDocument();
   });
@@ -91,7 +104,7 @@ describe('HelpPage', () => {
         <HelpPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Start Atlas Vox')).toBeInTheDocument();
-    expect(screen.getByText('Open the Web UI')).toBeInTheDocument();
+    expect(screen.getByText('Install Prerequisites')).toBeInTheDocument();
+    expect(screen.getByText('Clone and Configure')).toBeInTheDocument();
   });
 });

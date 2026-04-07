@@ -594,6 +594,24 @@ alembic upgrade head
   ```bash
   DATABASE_URL=postgresql+asyncpg://user:pass@localhost/atlas_vox
   ```
+- In Docker deployments, PostgreSQL is used automatically
+
+---
+
+### PostgreSQL DateTime Errors
+
+**Symptom:** `asyncpg.exceptions.DataError: can't subtract offset-naive and offset-aware datetimes` during database operations.
+
+**Cause:** PostgreSQL is strict about timezone-aware vs naive datetimes. All Atlas Vox models use `DateTime(timezone=True)` columns with `datetime.now(UTC)` defaults.
+
+**Fix:**
+- Ensure you're using the latest codebase — this was fixed by using `DateTime(timezone=True)` in all model definitions
+- If you upgraded from an older version, you may need to recreate the database:
+  ```bash
+  # Docker: remove the PostgreSQL volume and restart
+  docker compose -f docker/docker-compose.yml down -v
+  docker compose -f docker/docker-compose.yml up -d
+  ```
 
 ---
 

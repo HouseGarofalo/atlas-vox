@@ -9,7 +9,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-_UUID_PATTERN = re.compile(r'[0-9a-f]{8,}(?:-[0-9a-f]{4,}){0,4}')
+# UUID pattern for path normalization - matches standard UUID format
+_UUID_PATTERN = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.IGNORECASE)
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -171,8 +172,68 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 async def global_exception_handler(request: Request, exc: Exception) -> Response:
     """Catch-all exception handler that logs unhandled errors."""
     from starlette.responses import JSONResponse
+    from app.core.exceptions import (
+        AtlasVoxError,
+        NotFoundError,
+        ValidationError,
+        ProviderError,
+        ServiceError,
+        AuthenticationError,
+        AuthorizationError,
+        StorageError,
+        TrainingError
+    )
 
     request_id = getattr(request.state, "request_id", "unknown")
+    
+    # Handle our custom exceptions with appropriate status codes
+    if isinstance(exc, NotFoundError):
+        return JSONResponse(
+            status_code=404,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+    elif isinstance(exc, ValidationError):
+        content = {"detail": exc.detail, "request_id": request_id}
+        if exc.field:
+            content["field"] = exc.field
+        return JSONResponse(status_code=422, content=content)
+    elif isinstance(exc, ProviderError):
+        return JSONResponse(
+            status_code=502,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+    elif isinstance(exc, AuthenticationError):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+    elif isinstance(exc, AuthorizationError):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+    elif isinstance(exc, (StorageError, TrainingError, ServiceError)):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+
+    # Handle any other AtlasVoxError as generic 500
+    elif isinstance(exc, AtlasVoxError):
+        logger.error(
+            "atlas_vox_error",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            error=exc.detail,
+            error_type=type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+    
+    # Catch-all for other exceptions
     logger.error(
         "unhandled_exception",
         request_id=request_id,

@@ -23,9 +23,9 @@ class VoiceProfile(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, training, ready, error, archived
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of strings
     active_version_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("model_versions.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )

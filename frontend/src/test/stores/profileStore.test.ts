@@ -34,6 +34,7 @@ describe("ProfileStore", () => {
       profiles: [],
       loading: false,
       error: null,
+      lastFetchedAt: null,
     });
   });
 

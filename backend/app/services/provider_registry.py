@@ -77,7 +77,8 @@ class ProviderRegistry:
             return self._gpu_providers[name]
 
         if name not in PROVIDER_CLASSES:
-            raise ValueError(f"Unknown provider: {name}")
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Provider", name)
 
         if name not in self._instances:
             instance = PROVIDER_CLASSES[name]()

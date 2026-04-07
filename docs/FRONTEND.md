@@ -100,11 +100,13 @@ frontend/src/
 
 ## Routing
 
-Routing uses React Router v6 with a shared layout and lazy-loaded pages.
+Routing uses React Router v6 with a shared layout, lazy-loaded pages, and an authentication guard.
 
 ```mermaid
 graph TD
-    Root["Routes"] --> Layout["AppLayout<br/>(Sidebar + Header + Outlet)"]
+    Root["Routes"] --> Login["/login -> LoginPage"]
+    Root --> Protected["ProtectedRoute<br/>(auth check)"]
+    Protected --> Layout["AppLayout<br/>(Sidebar + Header + Outlet)"]
     Layout --> Dash["/ -> DashboardPage"]
     Layout --> Prof["/profiles -> ProfilesPage"]
     Layout --> Train["/training -> TrainingStudioPage"]
@@ -113,20 +115,31 @@ graph TD
     Layout --> Prov["/providers -> ProvidersPage"]
     Layout --> Keys["/api-keys -> ApiKeysPage"]
     Layout --> Set["/settings -> SettingsPage"]
+    Layout --> Lib["/library -> VoiceLibraryPage"]
+    Layout --> Help["/help -> HelpPage"]
+    Layout --> Docs["/docs -> DocsPage"]
 ```
 
 **Route table:**
 
 | Path | Page Component | Description |
 |---|---|---|
+| `/login` | `LoginPage` | JWT token or API key login (unprotected) |
 | `/` | `DashboardPage` | Overview dashboard (index route) |
 | `/profiles` | `ProfilesPage` | Voice profile management |
 | `/training` | `TrainingStudioPage` | Sample upload and training |
 | `/synthesis` | `SynthesisLabPage` | Text-to-speech synthesis |
 | `/compare` | `ComparisonPage` | Side-by-side voice comparison |
+| `/library` | `VoiceLibraryPage` | Browse all provider voices |
 | `/providers` | `ProvidersPage` | TTS provider status |
 | `/api-keys` | `ApiKeysPage` | API key management |
 | `/settings` | `SettingsPage` | User preferences |
+| `/help` | `HelpPage` | Help & documentation |
+| `/docs` | `DocsPage` | Provider setup guides |
+
+**Authentication:** All routes except `/login` are wrapped in `ProtectedRoute`, which checks `useAuthStore().isAuthenticated`. When `AUTH_DISABLED=true` on the backend, the App component auto-authenticates by hitting `/api/v1/health` — if it succeeds without auth headers, a synthetic token is set and the user bypasses the login page.
+
+**LoginPage** accepts either a JWT token (contains `.`) or an API key. The token/key is stored in the auth store and injected into all subsequent API requests.
 
 **Lazy loading:** All page components are loaded via `React.lazy()` and wrapped in `<Suspense>` with a spinner fallback:
 
@@ -144,7 +157,7 @@ The `PageLoader` component renders a centered spinning circle indicator.
 
 ## State Management
 
-Atlas Vox uses **5 Zustand stores**, one per domain. Each store follows the same pattern: state fields, an async fetch action, and mutation actions that optimistically update local state.
+Atlas Vox uses **7 Zustand stores**, one per domain. Each store follows the same pattern: state fields, an async fetch action, and mutation actions that optimistically update local state. All stores include AbortController integration to cancel in-flight requests and staleness guards to avoid redundant API calls.
 
 ```mermaid
 graph LR
@@ -154,6 +167,8 @@ graph LR
         SS[synthesisStore]
         PRS[providerStore]
         STS[settingsStore]
+        VLS[voiceLibraryStore]
+        AS[authStore]
     end
 
     API[API Client<br/>services/api.ts]
@@ -288,9 +303,13 @@ User preferences persisted to `localStorage` via Zustand's `persist` middleware.
 
 ## API Client
 
-All backend communication goes through a single `ApiClient` class in `frontend/src/services/api.ts`. It wraps the Fetch API with JSON handling, error extraction, and `FormData` support for file uploads.
+All backend communication goes through a single `ApiClient` class in `frontend/src/services/api.ts`. It wraps the Fetch API with JSON handling, error extraction, `FormData` support for file uploads, automatic auth header injection, and retry with exponential backoff.
 
 **Base URL:** `/api/v1` (proxied to backend by Vite dev server)
+
+**Authentication:** The API client automatically reads the current token/apiKey from `useAuthStore.getState()` and injects an `Authorization: Bearer <token>` header on every request.
+
+**Retry Logic:** All requests use `fetchWithRetry()` which retries transient failures (network errors, 502, 503, 504) up to 3 times with exponential backoff (1s, 2s, 4s base delays, max 8s, plus random jitter to prevent thundering herd).
 
 **Method groups:**
 

@@ -1,4 +1,5 @@
 .git
+.github
 .env
 .env.*
 storage/
@@ -8,7 +9,9 @@ frontend/dist/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite*
 __pycache__/
+*.pyc
 .pytest_cache/
 .ruff_cache/
 .claude/
@@ -29,6 +32,7 @@ Thumbs.db
 .mypy_cache/
 htmlcov/
 coverage.xml
+.coverage
 .harness/
 .archon_project.json
 claude-progress.txt
@@ -37,3 +41,4 @@ prompts/
 docs/
 TASKS.md
 README.md
+docker-compose.override.yml

@@ -1,6 +1,6 @@
 # Atlas Vox Security Guide
 
-> **Authentication, authorization, API key management, webhook signing, and production hardening.**
+> **Exception handling, authentication, authorization, API key management, path traversal protection, webhook signing, frontend security, Docker hardening, and production hardening.**
 
 Atlas Vox supports flexible authentication modes -- from fully disabled (single-user homelab) to JWT + API key authentication for multi-user production deployments. This guide covers every security surface of the platform.
 
@@ -8,10 +8,12 @@ Atlas Vox supports flexible authentication modes -- from fully disabled (single-
 
 ## Table of Contents
 
+- [Typed Exception Hierarchy](#typed-exception-hierarchy)
 - [Authentication Modes](#authentication-modes)
   - [Disabled Mode (Default)](#disabled-mode-default)
   - [JWT Authentication](#jwt-authentication)
   - [API Key Authentication](#api-key-authentication)
+  - [Frontend Authentication Flow](#frontend-authentication-flow)
 - [API Key System](#api-key-system)
   - [Key Format](#key-format)
   - [Hashing (Argon2id)](#hashing-argon2id)
@@ -24,9 +26,63 @@ Atlas Vox supports flexible authentication modes -- from fully disabled (single-
   - [HMAC-SHA256 Signing](#hmac-sha256-signing)
   - [Signature Verification](#signature-verification)
   - [SSRF Protection](#ssrf-protection)
+- [Path Traversal Protection](#path-traversal-protection)
 - [File Upload Security](#file-upload-security)
 - [Input Validation](#input-validation)
+- [API Client Resilience](#api-client-resilience)
+- [Nginx Security Headers](#nginx-security-headers)
+- [Docker Security](#docker-security)
+- [Frontend Security](#frontend-security)
 - [Production Hardening Checklist](#production-hardening-checklist)
+
+---
+
+## Typed Exception Hierarchy
+
+Atlas Vox uses a structured exception hierarchy (`backend/app/core/exceptions.py`) to ensure consistent error responses and prevent stack trace leakage to clients.
+
+### Exception Classes
+
+| Exception | HTTP Status | Use Case |
+|---|---|---|
+| `AtlasVoxError` | (base class) | Base for all application exceptions |
+| `NotFoundError` | 404 | Resource not found (profiles, presets, providers) |
+| `ValidationError` | 422 | Input validation failures beyond Pydantic |
+| `ProviderError` | 502 | TTS provider failures (network, API, model errors) |
+| `AuthenticationError` | 401 | Invalid or missing credentials |
+| `AuthorizationError` | 403 | Insufficient permissions / scope violations |
+| `StorageError` | 500 | File system or storage backend failures |
+| `TrainingError` | 500 | Voice training job failures |
+| `ServiceError` | 500 | General internal service errors |
+
+### How It Works
+
+A global exception handler registered on the FastAPI application intercepts all `AtlasVoxError` subclasses and maps them to the appropriate HTTP status code with a safe error message. Stack traces and internal details are logged server-side via structlog but are **never** exposed in the API response body.
+
+```python
+# Services raise typed exceptions instead of generic ValueError
+from app.core.exceptions import NotFoundError, ProviderError
+
+async def get_profile(profile_id: str) -> VoiceProfile:
+    profile = await db.get(VoiceProfile, profile_id)
+    if not profile:
+        raise NotFoundError(f"Profile '{profile_id}' not found")
+    return profile
+
+async def synthesize(text: str, provider: str) -> bytes:
+    try:
+        return await provider.generate(text)
+    except ProviderAPIError as e:
+        raise ProviderError(f"Provider '{provider}' failed: {e}")
+```
+
+**Client response (no stack trace leakage):**
+
+```json
+{
+  "detail": "Profile 'abc123' not found"
+}
+```
 
 ---
 
@@ -86,15 +142,19 @@ token = create_access_token(
 **Token validation flow:**
 
 1. Extract the `Bearer` prefix from the `Authorization` header
-2. Decode the JWT using the configured secret key and algorithm
+2. Decode the JWT using the configured secret key and algorithm (via `python-jose`)
 3. Validate the `exp` (expiration) claim
 4. Return the decoded claims as a Python dict
+
+**Secret key safety check:**
+
+When `AUTH_DISABLED=false`, the backend validates that `JWT_SECRET_KEY` is not set to the default value `"change-me-in-production"`. If the default is detected with authentication enabled, the application will reject the configuration to prevent insecure deployments.
 
 **Relevant configuration:**
 
 | Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET_KEY` | `change-me-in-production` | HMAC signing key |
+| `JWT_SECRET_KEY` | `change-me-in-production` | HMAC signing key (rejected if default when auth enabled) |
 | `JWT_ALGORITHM` | `HS256` | Signing algorithm |
 | `JWT_EXPIRE_MINUTES` | `1440` (24 hours) | Default token lifetime |
 
@@ -108,6 +168,25 @@ The API key flow is used primarily for:
 - MCP server connections
 - CI/CD pipeline integration
 - Third-party application access
+
+---
+
+### Frontend Authentication Flow
+
+The frontend uses a `ProtectedRoute` component that wraps all main application routes. Unauthenticated users are redirected to the `LoginPage`.
+
+**Login methods:**
+
+- **JWT token:** Users enter a JWT token directly
+- **API key:** Users enter an `avx_` API key
+
+**Auto-authentication (disabled mode):**
+
+When `AUTH_DISABLED=true`, the frontend detects this by calling `/api/v1/health`. If the health endpoint succeeds without credentials, the frontend automatically sets a placeholder token and bypasses the login page entirely.
+
+**Auth header injection:**
+
+The API client (`services/api.ts`) reads the current token from the Zustand `authStore` and automatically injects it as an `Authorization: Bearer <token>` header on every outgoing request. No manual header management is needed in individual components.
 
 ---
 
@@ -218,7 +297,7 @@ sequenceDiagram
 
 | Variable | Type | Default | Security Notes |
 |---|---|---|---|
-| `JWT_SECRET_KEY` | `str` | `change-me-in-production` | **Must** be changed for any non-local deployment. Use at least 32 bytes of randomness. |
+| `JWT_SECRET_KEY` | `str` | `change-me-in-production` | **Must** be changed for any non-local deployment. Rejected at startup when `AUTH_DISABLED=false` and still set to default. Use at least 32 bytes of randomness. |
 | `JWT_ALGORITHM` | `str` | `HS256` | HMAC-SHA256. Sufficient for single-service deployments. Use RS256 for multi-service architectures. |
 | `JWT_EXPIRE_MINUTES` | `int` | `1440` | 24 hours. Reduce for higher-security environments (e.g., 60-480 minutes). |
 
@@ -387,6 +466,33 @@ The webhook dispatcher includes built-in SSRF (Server-Side Request Forgery) prot
 
 ---
 
+## Path Traversal Protection
+
+The audio file serving endpoint (`backend/app/api/v1/endpoints/audio.py`) includes a dedicated `_safe_audio_path()` function that prevents directory traversal attacks.
+
+**Protections applied:**
+
+| Protection | Detail |
+|---|---|
+| Filename sanitization | Strips directory components, rejects names containing `..`, `/`, or `\` |
+| Extension whitelist | Only `.wav`, `.mp3`, `.ogg`, `.flac` are allowed |
+| Symlink resolution | Resolves all symlinks via `Path.resolve()` before serving |
+| Directory confinement | Verifies the resolved path is a child of the configured storage directory |
+
+**Attack scenarios blocked:**
+
+```
+# All of these are rejected by _safe_audio_path()
+GET /api/v1/audio/../../etc/passwd          # Directory traversal
+GET /api/v1/audio/file.exe                  # Invalid extension
+GET /api/v1/audio/symlink_to_outside.wav    # Symlink escape
+GET /api/v1/audio/../../../secrets.env      # Path escape attempt
+```
+
+If any check fails, the request is rejected before any file system read occurs.
+
+---
+
 ## File Upload Security
 
 Audio sample uploads are protected by multiple layers:
@@ -471,6 +577,102 @@ if invalid:
 
 ---
 
+## API Client Resilience
+
+The frontend API client (`frontend/src/services/api.ts`) implements several resilience and security patterns:
+
+### Retry with Exponential Backoff
+
+Transient errors (network failures, 5xx responses) are automatically retried with exponential backoff and jitter to prevent thundering-herd effects:
+
+```
+Attempt 1: immediate
+Attempt 2: ~1s + jitter
+Attempt 3: ~2s + jitter
+Attempt 4: ~4s + jitter
+```
+
+### Request Cancellation
+
+All API calls integrate with `AbortController` to cancel stale or superseded requests. This prevents race conditions where an outdated response could overwrite newer data.
+
+### Credential Safety
+
+Error messages surfaced to the UI are sanitized to ensure no credentials, tokens, or internal URLs leak through error handling paths.
+
+---
+
+## Nginx Security Headers
+
+The production Nginx configuration (`nginx/nginx.conf`) sets the following security headers on all responses:
+
+| Header | Value | Purpose |
+|---|---|---|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'` | Restricts resource loading to same origin; allows inline scripts/styles needed by the SPA |
+| `X-Frame-Options` | `SAMEORIGIN` | Prevents clickjacking by blocking cross-origin framing |
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforces HTTPS for 1 year including subdomains |
+| `Permissions-Policy` | `camera=(), microphone=(self), geolocation=()` | Disables camera and geolocation; allows microphone only for same origin (needed for voice recording) |
+| `X-XSS-Protection` | `1; mode=block` | Legacy XSS filter (defense-in-depth for older browsers) |
+
+> **Note:** The `Permissions-Policy` allows `microphone=(self)` because Atlas Vox uses browser microphone access for voice sample recording.
+
+---
+
+## Docker Security
+
+The Docker Compose setup (`docker-compose.yml`, `docker-compose.gpu.yml`) follows container security best practices:
+
+### Non-root Execution
+
+The application containers run as a non-root `app` user. The entrypoint uses `gosu` for clean privilege dropping from root (needed for initial setup) to the unprivileged user:
+
+```dockerfile
+# In Dockerfile
+RUN groupadd -r app && useradd -r -g app app
+# ...
+ENTRYPOINT ["gosu", "app", "uvicorn", "app.main:app"]
+```
+
+### Service Credentials
+
+| Service | Protection |
+|---|---|
+| **Redis** | Password-protected via `REDIS_PASSWORD` environment variable; `requirepass` enforced |
+| **PostgreSQL** | Password-protected via `POSTGRES_PASSWORD` environment variable |
+
+### Build-time Safety
+
+- **`.dockerignore`** prevents sensitive files (`.env`, `.git/`, `*.pem`, `__pycache__/`) from being copied into the Docker image
+- **`.env.example`** provides a template for required variables; the actual `.env` file is gitignored and never committed
+
+---
+
+## Frontend Security
+
+### Route Protection
+
+All main application routes are wrapped in a `ProtectedRoute` component. If no valid auth token exists in the Zustand `authStore`, the user is redirected to the login page.
+
+### Accessible Modal Components
+
+Modal dialogs (used for confirmation prompts, settings, etc.) follow WAI-ARIA best practices:
+
+| Feature | Implementation |
+|---|---|
+| `aria-modal="true"` | Announces the modal to assistive technologies |
+| `role="dialog"` | Identifies the element as a dialog |
+| Focus trap | Tab key cycles within the modal; focus cannot escape to background content |
+| Escape key | Closes the modal and returns focus to the triggering element |
+
+### Client-side Data Handling
+
+- **No sensitive data in `localStorage`**: Only the auth token is persisted, via the Zustand `persist` middleware
+- Auth tokens are stored in Zustand state with `persist` configured for `localStorage` -- no passwords, API keys, or PII are stored client-side
+- The auth token is cleared from storage on logout
+
+---
+
 ## Production Hardening Checklist
 
 Use this checklist before deploying Atlas Vox to a production or internet-facing environment.
@@ -478,7 +680,7 @@ Use this checklist before deploying Atlas Vox to a production or internet-facing
 ### Authentication and Secrets
 
 - [ ] **Set `AUTH_DISABLED=false`** -- enable authentication
-- [ ] **Change `JWT_SECRET_KEY`** -- generate a cryptographically random key (at least 32 bytes)
+- [ ] **Change `JWT_SECRET_KEY`** -- generate a cryptographically random key (at least 32 bytes); the backend rejects the default value when auth is enabled
 - [ ] **Reduce `JWT_EXPIRE_MINUTES`** -- lower from 1440 (24h) to 60-480 based on your threat model
 - [ ] **Create scoped API keys** -- use minimal scopes for each integration (avoid `admin` where possible)
 - [ ] **Rotate API keys periodically** -- revoke old keys and issue new ones on a schedule
@@ -486,17 +688,27 @@ Use this checklist before deploying Atlas Vox to a production or internet-facing
 ### Network and Transport
 
 - [ ] **Enable HTTPS/TLS** -- terminate TLS at your reverse proxy (nginx, Caddy, Traefik)
+- [ ] **Configure Nginx security headers** -- verify CSP, HSTS, X-Frame-Options, and Permissions-Policy are set (see [Nginx Security Headers](#nginx-security-headers))
 - [ ] **Restrict CORS origins** -- set `CORS_ORIGINS` to your exact frontend domain(s)
 - [ ] **Bind to localhost** -- set `HOST=127.0.0.1` if behind a reverse proxy
 - [ ] **Use a reverse proxy** -- nginx, Caddy, or Traefik with rate limiting and request size limits
 - [ ] **Firewall Redis** -- ensure Redis is not exposed to the internet
+- [ ] **Set Redis password** -- configure `REDIS_PASSWORD` in `.env`
 
 ### Database
 
 - [ ] **Use PostgreSQL** -- migrate from SQLite for concurrent access and better reliability
+- [ ] **Set PostgreSQL password** -- configure `POSTGRES_PASSWORD` in `.env`
 - [ ] **Use Alembic migrations** -- do not rely on auto-create in production (`is_production` disables it)
 - [ ] **Encrypt database credentials** -- use secrets management (Vault, AWS Secrets Manager, etc.)
 - [ ] **Enable connection encryption** -- use `sslmode=require` in PostgreSQL URL if over network
+
+### Docker and Containers
+
+- [ ] **Verify non-root execution** -- confirm containers run as the `app` user, not root
+- [ ] **Review `.dockerignore`** -- ensure `.env`, secrets, and dev artifacts are excluded from images
+- [ ] **Isolate GPU containers** -- if using `docker_gpu` mode, ensure containers run with minimal privileges
+- [ ] **Pin base images** -- use specific image tags, not `latest`, for reproducible builds
 
 ### Storage
 
@@ -509,6 +721,7 @@ Use this checklist before deploying Atlas Vox to a production or internet-facing
 - [ ] **Set `APP_ENV=production`** -- disables auto-table creation and enables production behaviors
 - [ ] **Set `DEBUG=false`** -- reduces log verbosity and disables debug features
 - [ ] **Use structured logging** -- set `LOG_FORMAT=json` for log aggregation systems
+- [ ] **Verify exception handling** -- confirm typed exceptions are in use and no stack traces leak to clients
 - [ ] **Monitor webhook delivery** -- check logs for `webhook_delivery_failed` events
 - [ ] **Review API key usage** -- monitor `last_used_at` and revoke unused keys
 

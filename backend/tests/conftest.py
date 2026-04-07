@@ -17,7 +17,8 @@ os.environ["DEBUG"] = "false"
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 import app.models  # noqa: E402, F401
-from app.core.database import Base, async_session_factory, engine, get_db  # noqa: E402
+from app.core.database import Base, async_session_factory, engine  # noqa: E402
+from app.core.dependencies import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
 _tables_created = False

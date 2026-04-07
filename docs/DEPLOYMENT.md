@@ -1,4 +1,4 @@
-# 🚀 Atlas Vox Deployment Guide
+# Atlas Vox Deployment Guide
 
 > Complete guide for deploying Atlas Vox in development, staging, and production environments.
 
@@ -11,15 +11,17 @@
 - [Environment Variables Reference](#-environment-variables-reference)
 - [Port Configuration](#-port-configuration)
 - [Volume Management](#-volume-management)
+- [Security Headers](#-security-headers)
 - [Reverse Proxy Setup](#-reverse-proxy-setup)
 - [Production Hardening](#-production-hardening)
 - [Backup and Restore](#-backup-and-restore)
 - [Monitoring and Logging](#-monitoring-and-logging)
+- [Monitoring Stack (Prometheus + Grafana)](#-monitoring-stack-prometheus--grafana)
 - [Scaling Considerations](#-scaling-considerations)
 
 ---
 
-## 🐳 Docker Compose Deployment
+## Docker Compose Deployment
 
 Atlas Vox ships with production-ready Docker Compose configurations.
 
@@ -27,13 +29,19 @@ Atlas Vox ships with production-ready Docker Compose configurations.
 
 ```
 docker-compose.yml
-├── backend       (FastAPI on :8100, Python 3.11)
+├── backend       (FastAPI on :8000, Python 3.11, 4G memory limit)
 ├── frontend      (Nginx serving React build on :80)
-├── redis         (Redis 7 Alpine on :6379)
-└── worker        (Celery worker, same image as backend)
+├── postgres      (PostgreSQL 16 Alpine on :5432)
+├── redis         (Redis 7 Alpine on :6379, password-protected, 512M limit)
+├── worker        (Celery worker, same image as backend, 8G memory limit)
+└── celery-beat   (Celery Beat scheduler, same image as backend)
 
 docker-compose.gpu.yml (extends above)
 └── gpu-worker    (CUDA 12.1, NVIDIA GPU passthrough)
+
+docker-compose.monitoring.yml (optional overlay)
+├── prometheus    (Prometheus on :9090)
+└── grafana       (Grafana on :3000)
 ```
 
 ### Standard Deployment (CPU)
@@ -56,10 +64,19 @@ make docker-down
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
-| `backend` | `python:3.11-slim` | 8000 (internal) → 8100 (host) | FastAPI API server |
-| `frontend` | `nginx:alpine` | 80 (internal) → 3100 (host) | Serves React build |
-| `redis` | `redis:7-alpine` | 6379 (internal only) | Celery broker + cache |
+| `backend` | `Dockerfile.backend` | 8000 (internal) -> 8100 (host) | FastAPI API server |
+| `frontend` | `Dockerfile.frontend` / `nginx:alpine` | 80 (internal) -> 3100 (host) | Serves React build |
+| `postgres` | `postgres:16-alpine` | 5432 (internal only) | PostgreSQL database |
+| `redis` | `redis:7-alpine` | 6379 (internal only) | Celery broker + cache (password-protected) |
 | `worker` | Same as backend | None | Celery background tasks |
+| `celery-beat` | Same as backend | None | Periodic task scheduler (audio cleanup, health checks) |
+
+### Health Checks
+
+Docker Compose includes built-in health checks for key services:
+
+- **Backend**: `curl -f http://localhost:8000/api/v1/health` with a 120-second `start_period` to allow model loading
+- **Frontend**: `curl -f http://localhost:80` to verify Nginx is serving
 
 ### Build Stages
 
@@ -77,9 +94,19 @@ The backend uses a multi-stage Docker build:
 - Downloads default Piper model
 - Downloads NLTK data for StyleTTS2
 
+### .dockerignore
+
+The `.dockerignore` excludes the following from build context to keep images lean:
+
+- `.github/` -- CI/CD workflows
+- `*.sqlite*` -- Local SQLite databases
+- `*.pyc` -- Python bytecode
+- `.coverage` -- Test coverage reports
+- `docker-compose.override.yml` -- Local overrides
+
 ---
 
-## 🖥️ GPU Deployment
+## GPU Deployment
 
 For GPU-accelerated training and synthesis with local models.
 
@@ -137,9 +164,14 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml \
 
 ---
 
-## 📋 Environment Variables Reference
+## Environment Variables Reference
 
-All configuration is done via environment variables. Set them in `docker/.env`, a `.env` file in the project root, or directly in your shell.
+All configuration is done via environment variables. An `.env.example` file is provided in the project root with all available settings and sensible defaults. Copy it to get started:
+
+```bash
+cp .env.example docker/.env
+# Edit docker/.env with your values
+```
 
 ### Application Settings
 
@@ -168,34 +200,44 @@ All configuration is done via environment variables. Set them in `docker/.env`, 
 
 ### Database
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./atlas_vox.db` | Database connection string |
+| Variable | Default (local) | Default (Docker) | Description |
+|----------|-----------------|-------------------|-------------|
+| `DATABASE_URL` | `sqlite+aiosqlite:///./atlas_vox.db` | `postgresql+asyncpg://atlas_vox:{POSTGRES_PASSWORD}@atlas-vox-postgres:5432/atlas_vox` | Database connection string |
+| `POSTGRES_USER` | -- | `atlas_vox` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | -- | `atlas-vox-pg` | PostgreSQL password |
+| `POSTGRES_DB` | -- | `atlas_vox` | PostgreSQL database name |
 
-**SQLite (default):**
+**Local development (SQLite):**
 ```
 DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
 ```
 
-**PostgreSQL (production):**
+**Docker deployment (PostgreSQL -- default):**
 ```
-DATABASE_URL=postgresql+asyncpg://user:password@host:5432/atlas_vox
+DATABASE_URL=postgresql+asyncpg://atlas_vox:atlas-vox-pg@atlas-vox-postgres:5432/atlas_vox
 ```
+
+> **Note:** Docker Compose deployments now use PostgreSQL 16 Alpine by default, replacing the previous SQLite configuration. SQLite remains available for local development outside Docker.
 
 ### Authentication
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_DISABLED` | `true` | Skip authentication (homelab mode) |
-| `JWT_SECRET_KEY` | `change-me-in-production` | Secret for JWT signing |
+| `JWT_SECRET_KEY` | `change-me-in-production` | Secret for JWT signing (required when `AUTH_DISABLED=false`) |
 | `JWT_ALGORITHM` | `HS256` | JWT algorithm |
 | `JWT_EXPIRE_MINUTES` | `1440` | JWT token expiry (24 hours) |
 
+> **Important:** When `AUTH_DISABLED=false`, you **must** set `JWT_SECRET_KEY` to a strong random value. The Docker Compose file passes this as an environment variable to the backend service.
+
 ### Redis / Celery
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_URL` | `redis://localhost:6379/1` | Redis connection URL |
+| Variable | Default (local) | Default (Docker) | Description |
+|----------|-----------------|-------------------|-------------|
+| `REDIS_URL` | `redis://localhost:6379/1` | `redis://:{REDIS_PASSWORD}@atlas-vox-redis:6379/0` | Redis connection URL |
+| `REDIS_PASSWORD` | -- | `atlas-vox-redis` | Redis password |
+
+Redis is configured with `--maxmemory 256mb --maxmemory-policy allkeys-lru` and password authentication in Docker deployments.
 
 ### Storage
 
@@ -217,10 +259,6 @@ DATABASE_URL=postgresql+asyncpg://user:password@host:5432/atlas_vox
 | `AZURE_SPEECH_KEY` | *(empty)* | Azure subscription key |
 | `AZURE_SPEECH_REGION` | `eastus` | Azure region |
 
-### GPU Service
-
-| Variable | Default | Description |
-|----------|---------|-------------|
 ### Provider: GPU Modes
 
 | Variable | Default | Options |
@@ -241,9 +279,9 @@ DATABASE_URL=postgresql+asyncpg://user:password@host:5432/atlas_vox
 
 ---
 
-## 🔌 Port Configuration
+## Port Configuration
 
-Default ports are configured in `docker/.env`:
+Default ports are configured in `docker/.env` (or copied from `.env.example`):
 
 ```env
 BACKEND_PORT=8100
@@ -270,15 +308,15 @@ FRONTEND_PORT=9001
 
 ---
 
-## 💾 Volume Management
+## Volume Management
 
-Docker Compose creates three named volumes:
+Docker Compose creates named volumes for persistent data:
 
 | Volume | Mount Point | Purpose |
 |--------|------------|---------|
-| `storage_data` | `/app/storage` | Audio files, models, preprocessed data |
-| `db_data` | `/app/data` | SQLite database file |
+| `pg_data` | PostgreSQL data directory | PostgreSQL database files |
 | `redis_data` | `/data` | Redis persistence |
+| `storage_data` | `/app/storage` | Audio files, models, preprocessed data |
 
 ### Inspecting Volumes
 
@@ -293,16 +331,13 @@ docker volume inspect atlas-vox_storage_data
 ### Backing Up Volumes
 
 ```bash
-# Backup all data
+# Backup storage
 docker run --rm \
   -v atlas-vox_storage_data:/source:ro \
   -v $(pwd)/backups:/backup \
   alpine tar czf /backup/storage_$(date +%Y%m%d).tar.gz -C /source .
 
-docker run --rm \
-  -v atlas-vox_db_data:/source:ro \
-  -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/db_$(date +%Y%m%d).tar.gz -C /source .
+# Backup PostgreSQL (see Backup and Restore section for pg_dump)
 ```
 
 ### Restoring Volumes
@@ -324,7 +359,23 @@ docker compose -f docker/docker-compose.yml down -v
 
 ---
 
-## 🔒 Reverse Proxy Setup
+## Security Headers
+
+The built-in Nginx configuration (`docker/nginx.conf`) applies security headers to all responses served by the frontend:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Content-Security-Policy` | Configured CSP | Prevents XSS and data injection |
+| `X-Frame-Options` | `SAMEORIGIN` | Prevents clickjacking |
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
+| `Strict-Transport-Security` | HSTS policy | Enforces HTTPS connections |
+| `Permissions-Policy` | Restricted | Limits browser feature access |
+
+These are applied automatically in Docker deployments. If using an external reverse proxy, you may want to review `docker/nginx.conf` and decide whether to apply headers at the proxy level instead.
+
+---
+
+## Reverse Proxy Setup
 
 For production, place Atlas Vox behind a reverse proxy for SSL termination, caching, and security.
 
@@ -425,24 +476,24 @@ CORS_ORIGINS='["https://vox.example.com"]'
 
 ---
 
-## 🛡️ Production Hardening
+## Production Hardening
 
 ### Checklist
 
 ```
-✅ Set APP_ENV=production
-✅ Set DEBUG=false
-✅ Generate strong JWT_SECRET_KEY
-✅ Set AUTH_DISABLED=false
-✅ Switch to PostgreSQL
-✅ Run alembic upgrade head
-✅ Configure CORS for your domain only
-✅ Set provider API keys via environment variables (not UI)
-✅ Configure Redis persistence
-✅ Set up SSL/TLS via reverse proxy
-✅ Set up log aggregation
-✅ Configure backup schedule
-✅ Set resource limits on containers
+[ ] Set APP_ENV=production
+[ ] Set DEBUG=false
+[ ] Generate strong JWT_SECRET_KEY (see below)
+[ ] Set AUTH_DISABLED=false
+[ ] Change POSTGRES_PASSWORD from default
+[ ] Change REDIS_PASSWORD from default
+[ ] Run alembic upgrade head
+[ ] Configure CORS for your domain only
+[ ] Set provider API keys via environment variables (not UI)
+[ ] Set up SSL/TLS via reverse proxy
+[ ] Set up log aggregation
+[ ] Configure backup schedule
+[ ] Review security headers in docker/nginx.conf
 ```
 
 ### Generate JWT Secret
@@ -451,14 +502,33 @@ CORS_ORIGINS='["https://vox.example.com"]'
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-### PostgreSQL Setup
+### PostgreSQL Setup (Docker)
+
+PostgreSQL 16 Alpine is included in the Docker Compose stack and starts automatically. No manual database creation is needed.
+
+```bash
+# The Docker Compose stack handles database creation via env vars:
+POSTGRES_USER=atlas_vox
+POSTGRES_PASSWORD=atlas-vox-pg   # CHANGE THIS in production!
+POSTGRES_DB=atlas_vox
+
+# The backend connects using:
+DATABASE_URL=postgresql+asyncpg://atlas_vox:${POSTGRES_PASSWORD}@atlas-vox-postgres:5432/atlas_vox
+
+# Run migrations (happens automatically on backend startup, or manually):
+docker compose -f docker/docker-compose.yml exec backend alembic upgrade head
+```
+
+### PostgreSQL Setup (External)
+
+For an external PostgreSQL instance:
 
 ```bash
 # Create database
 createdb atlas_vox
 
 # Set connection string
-DATABASE_URL=postgresql+asyncpg://atlas_vox:your_password@db:5432/atlas_vox
+DATABASE_URL=postgresql+asyncpg://atlas_vox:your_password@db-host:5432/atlas_vox
 
 # Run migrations
 cd backend
@@ -467,58 +537,49 @@ alembic upgrade head
 
 ### Container Resource Limits
 
-Add to `docker-compose.yml`:
-```yaml
-services:
-  backend:
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-          cpus: "2.0"
-  worker:
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-          cpus: "4.0"
-```
+Resource limits are configured in `docker/docker-compose.yml`:
 
-### Redis Persistence
+| Service | Memory Limit | Purpose |
+|---------|-------------|---------|
+| `backend` | 4G | FastAPI server |
+| `worker` | 8G | Celery worker (handles model inference) |
+| `redis` | 512M | Broker and cache |
+| `postgres` | 512M | Database |
 
-Add to the Redis service in `docker-compose.yml`:
-```yaml
-redis:
-  image: redis:7-alpine
-  command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-  volumes:
-    - redis_data:/data
-```
+These can be adjusted in the `deploy.resources.limits` section of each service in `docker-compose.yml`.
+
+### Redis Configuration
+
+Redis is pre-configured in Docker Compose with:
+- Password authentication (`REDIS_PASSWORD`, default: `atlas-vox-redis`)
+- Memory limit: `--maxmemory 256mb`
+- Eviction policy: `--maxmemory-policy allkeys-lru`
+- Persistent volume: `redis_data`
 
 ---
 
-## 📦 Backup and Restore
+## Backup and Restore
 
 ### What to Back Up
 
 | Component | Location | Method |
 |-----------|----------|--------|
-| Database (SQLite) | `/app/data/atlas_vox.db` | File copy |
-| Database (PostgreSQL) | PostgreSQL server | `pg_dump` |
-| Audio storage | `/app/storage/` | Volume backup |
+| Database (PostgreSQL) | Docker volume `pg_data` | `pg_dump` |
+| Database (SQLite, local dev) | `./data/atlas_vox.db` | File copy |
+| Audio storage | Docker volume `storage_data` | Volume backup |
 | Configuration | `.env` file | File copy |
 
 ### Automated Backup Script
 
 ```bash
 #!/bin/bash
-# backup.sh — Run daily via cron
+# backup.sh -- Run daily via cron
 BACKUP_DIR="/backups/atlas-vox/$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
 
-# SQLite backup
-docker compose -f docker/docker-compose.yml exec -T backend \
-  cp /app/data/atlas_vox.db /dev/stdout > "$BACKUP_DIR/atlas_vox.db"
+# PostgreSQL backup
+docker compose -f docker/docker-compose.yml exec -T postgres \
+  pg_dump -U atlas_vox atlas_vox > "$BACKUP_DIR/atlas_vox.sql"
 
 # Storage backup
 docker run --rm \
@@ -536,11 +597,10 @@ find /backups/atlas-vox -maxdepth 1 -mtime +30 -exec rm -rf {} \;
 # Stop services
 docker compose -f docker/docker-compose.yml down
 
-# Restore database
-docker run --rm \
-  -v atlas-vox_db_data:/target \
-  -v /backups/atlas-vox/20240101:/backup:ro \
-  alpine cp /backup/atlas_vox.db /target/
+# Restore PostgreSQL
+docker compose -f docker/docker-compose.yml up -d postgres
+docker compose -f docker/docker-compose.yml exec -T postgres \
+  psql -U atlas_vox atlas_vox < /backups/atlas-vox/20240101/atlas_vox.sql
 
 # Restore storage
 docker run --rm \
@@ -554,7 +614,7 @@ docker compose -f docker/docker-compose.yml up -d
 
 ---
 
-## 📊 Monitoring and Logging
+## Monitoring and Logging
 
 ### Log Output
 
@@ -574,6 +634,7 @@ docker compose -f docker/docker-compose.yml logs -f
 # Specific service
 docker compose -f docker/docker-compose.yml logs -f backend
 docker compose -f docker/docker-compose.yml logs -f worker
+docker compose -f docker/docker-compose.yml logs -f celery-beat
 
 # Last 100 lines
 docker compose -f docker/docker-compose.yml logs --tail=100 backend
@@ -586,9 +647,7 @@ curl http://localhost:8100/api/v1/health
 # Returns: {"status":"healthy","service":"atlas-vox","version":"0.1.0"}
 ```
 
-### Monitoring Integration
-
-For Prometheus/Grafana, use the health endpoint as a scrape target or add a `/metrics` endpoint.
+### Log Aggregation
 
 For log aggregation (ELK, Loki), configure Docker logging driver:
 ```yaml
@@ -603,7 +662,65 @@ services:
 
 ---
 
-## 📈 Scaling Considerations
+## Monitoring Stack (Prometheus + Grafana)
+
+Atlas Vox includes an optional monitoring stack with Prometheus and Grafana, deployed via a Docker Compose overlay file.
+
+### Starting the Monitoring Stack
+
+```bash
+# Start core services + monitoring
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.yml up -d
+
+# Start everything including GPU and monitoring
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml -f docker/docker-compose.monitoring.yml up -d
+```
+
+### Components
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Prometheus | 9090 | Metrics collection and alerting |
+| Grafana | 3000 | Dashboards and visualization |
+
+### Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `docker/monitoring/prometheus.yml` | Prometheus scrape configuration |
+| `docker/monitoring/grafana/provisioning/datasources/` | Auto-provisioned Prometheus datasource |
+| `docker/monitoring/grafana/provisioning/dashboards/` | Pre-built Atlas Vox dashboard |
+
+### Prometheus
+
+Prometheus is configured to scrape the backend metrics endpoint:
+
+- **Target**: `atlas-vox-backend:8000`
+- **Path**: `/api/v1/metrics`
+- **Interval**: Configured in `docker/monitoring/prometheus.yml`
+
+Access Prometheus at `http://localhost:9090`.
+
+### Grafana
+
+Grafana comes pre-configured with:
+- **Datasource**: Prometheus (auto-provisioned, no manual setup needed)
+- **Dashboard**: Atlas Vox overview dashboard (auto-provisioned)
+
+Access Grafana at `http://localhost:3000` (default credentials: `admin` / `admin`).
+
+### Metrics Available
+
+The `/api/v1/metrics` endpoint exposes Prometheus-format metrics including:
+- HTTP request counts and latencies
+- Provider health status
+- Synthesis job counts
+- Training job progress
+- Celery task metrics
+
+---
+
+## Scaling Considerations
 
 ### Celery Workers
 
@@ -611,6 +728,14 @@ Scale training throughput by adding workers:
 ```bash
 docker compose -f docker/docker-compose.yml up --scale worker=3 -d
 ```
+
+### Celery Beat
+
+The `celery-beat` service runs as a single instance and handles periodic tasks:
+- **Audio cleanup**: Removes expired temporary audio files
+- **Health checks**: Periodic provider health verification
+
+> **Important:** Only one `celery-beat` instance should run at a time to avoid duplicate task scheduling.
 
 ### GPU Workers
 
@@ -639,8 +764,8 @@ services:
 
 ### Database Scaling
 
-- **SQLite**: Single-writer, suitable for development and single-user deployments
-- **PostgreSQL**: Multi-writer, connection pooling, suitable for production and multi-user deployments
+- **SQLite**: Single-writer, suitable for local development only
+- **PostgreSQL** (Docker default): Multi-writer, connection pooling, suitable for production and multi-user deployments
 
 For PostgreSQL connection pooling, consider PgBouncer:
 ```

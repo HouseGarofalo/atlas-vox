@@ -28,6 +28,7 @@ describe("ProviderStore", () => {
       providers: [],
       loading: false,
       error: null,
+      lastFetchedAt: null,
     });
   });
 

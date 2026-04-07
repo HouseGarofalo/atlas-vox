@@ -99,19 +99,30 @@ HTTP server binding and CORS.
 
 ### Database
 
-Database connection. SQLite works out of the box; PostgreSQL is recommended for production.
+Database connection. SQLite works out of the box; PostgreSQL is recommended for production and **required** for Docker multi-container deployments.
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | `str` | `sqlite+aiosqlite:///./atlas_vox.db` | Async database URL (SQLAlchemy format) |
+| `POSTGRES_PASSWORD` | `str` | `atlas-vox-pg` *(Docker only)* | PostgreSQL password for Docker deployments |
+| `POSTGRES_DB` | `str` | `atlas_vox` *(Docker only)* | PostgreSQL database name |
+| `POSTGRES_USER` | `str` | `atlas_vox` *(Docker only)* | PostgreSQL username |
 
 **Supported database URLs:**
 
-| Database | URL Format |
-|---|---|
-| SQLite (default) | `sqlite+aiosqlite:///./atlas_vox.db` |
-| SQLite (absolute) | `sqlite+aiosqlite:////var/data/atlas_vox.db` |
-| PostgreSQL | `postgresql+asyncpg://user:password@host:5432/atlas_vox` |
+| Database | URL Format | Notes |
+|---|---|---|
+| SQLite (default) | `sqlite+aiosqlite:///./atlas_vox.db` | Local development only |
+| SQLite (absolute) | `sqlite+aiosqlite:////var/data/atlas_vox.db` | Not for Docker (file locking) |
+| PostgreSQL | `postgresql+asyncpg://user:password@host:5432/atlas_vox` | Docker & production |
+
+> **Docker Note:** The Docker compose file automatically sets `DATABASE_URL` to PostgreSQL. SQLite is not supported in Docker because multiple containers (backend + worker) cannot safely share a SQLite file over a volume mount.
+
+To use PostgreSQL locally (outside Docker), install the `[postgres]` extra:
+
+```bash
+pip install -e ".[postgres]"
+```
 
 ---
 
@@ -121,12 +132,12 @@ Authentication can be completely disabled for single-user/homelab setups.
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `AUTH_DISABLED` | `bool` | `true` | Disable all authentication. When `true`, all requests get a default admin user. |
-| `JWT_SECRET_KEY` | `str` | `change-me-in-production` | Secret key for JWT signing. **Must** be changed in production. |
+| `AUTH_DISABLED` | `bool` | `true` | Disable all authentication. When `true`, all requests get a default admin user. The frontend auto-authenticates. |
+| `JWT_SECRET_KEY` | `str` | `change-me-in-production` | Secret key for JWT signing. **Must** be changed in production. Validated on startup: rejects the default value when `AUTH_DISABLED=false`. |
 | `JWT_ALGORITHM` | `str` | `HS256` | JWT signing algorithm |
 | `JWT_EXPIRE_MINUTES` | `int` | `1440` | Token expiration time (default: 24 hours) |
 
-> **Security Warning:** The default `JWT_SECRET_KEY` is intentionally insecure. Generate a proper key for any non-local deployment:
+> **Security Warning:** The default `JWT_SECRET_KEY` is intentionally insecure. The application validates this at startup and will reject the default value when authentication is enabled (`AUTH_DISABLED=false`). Generate a proper key:
 > ```bash
 > python -c "import secrets; print(secrets.token_urlsafe(32))"
 > ```
@@ -140,8 +151,10 @@ Required for Celery task queue (training jobs, preprocessing).
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `REDIS_URL` | `str` | `redis://localhost:6379/1` | Redis connection URL (used as Celery broker and result backend) |
+| `REDIS_PASSWORD` | `str` | *(Docker only)* | Redis password. Docker compose default: `atlas-vox-redis`. The REDIS_URL in Docker automatically includes this. |
 
 > **Note:** Atlas Vox uses Redis db1 (`/1`) to avoid collision with ATLAS on db0.
+> In Docker deployments, Redis requires authentication. The password is set via `REDIS_PASSWORD` environment variable and enforced with `--requirepass`.
 
 ---
 
@@ -368,6 +381,21 @@ DIA2_GPU_MODE=docker_gpu
 KOKORO_ENABLED=true
 PIPER_ENABLED=true
 ```
+
+---
+
+### Docker-Specific Variables
+
+These variables are only relevant when running via `docker compose -f docker/docker-compose.yml up`.
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `BACKEND_PORT` | `int` | `8100` | Host port mapped to the backend container (port 8000 inside) |
+| `FRONTEND_PORT` | `int` | `3100` | Host port mapped to the frontend container (port 80 inside) |
+| `POSTGRES_PASSWORD` | `str` | `atlas-vox-pg` | PostgreSQL password (shared between postgres, backend, worker, celery-beat) |
+| `REDIS_PASSWORD` | `str` | `atlas-vox-redis` | Redis password (set via `--requirepass`) |
+| `JWT_SECRET_KEY` | `str` | *(empty)* | JWT signing key. Required when `AUTH_DISABLED=false`. |
+| `GPU_SERVICE_URL` | `str` | `http://host.docker.internal:8200` | URL for the GPU worker service |
 
 ---
 

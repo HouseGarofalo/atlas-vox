@@ -11,6 +11,7 @@ import type {
   VoiceProfile,
 } from "../types";
 import { createLogger } from "../utils/logger";
+import { useAuthStore } from "../stores/authStore";
 
 const logger = createLogger("ApiClient");
 
@@ -21,6 +22,30 @@ class ApiClient {
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
+  }
+
+  private async fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+        if (response.status >= 500 && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 1000;
+          logger.warn("API retry", { attempt: attempt + 1, status: response.status, delay: Math.round(delay) });
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        return response;
+      } catch (err) {
+        lastError = err as Error;
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 1000;
+          logger.warn("API retry (network)", { attempt: attempt + 1, error: (err as Error).message, delay: Math.round(delay) });
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastError ?? new Error("Request failed after retries");
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -35,9 +60,17 @@ class ApiClient {
       delete (headers as Record<string, string>)["Content-Type"];
     }
 
+    // Inject auth headers
+    const { token, apiKey } = useAuthStore.getState();
+    if (token) {
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+    } else if (apiKey) {
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
+    }
+
     logger.info("API request", { method, url });
 
-    const response = await fetch(url, { ...options, headers });
+    const response = await this.fetchWithRetry(url, { ...options, headers });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));

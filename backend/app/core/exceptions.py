@@ -1,50 +1,91 @@
-"""Custom exception hierarchy for Atlas Vox.
+"""Application exception hierarchy.
 
-These exceptions provide a consistent error contract:
-  - ``AtlasVoxError`` and its children carry a human-readable ``detail``
-    and a machine-readable ``code``.
-  - Endpoint code catches them and returns {"detail": "...", "code": "..."}.
-  - The ``internal_detail`` field is logged server-side but NEVER sent to
-    clients, preventing information leakage.
+All services should raise these typed exceptions instead of bare ValueError.
+The global exception handler maps them to appropriate HTTP status codes.
 """
+
+from __future__ import annotations
 
 
 class AtlasVoxError(Exception):
     """Base exception for all Atlas Vox errors."""
 
-    def __init__(self, detail: str = "An error occurred", *, code: str = "error", internal_detail: str = "") -> None:
-        super().__init__(detail)
+    def __init__(self, detail: str = "An error occurred", code: str = "error"):
         self.detail = detail
         self.code = code
-        self.internal_detail = internal_detail
+        super().__init__(detail)
 
 
 class NotFoundError(AtlasVoxError):
-    """Resource not found."""
+    """Resource was not found."""
 
-    def __init__(self, resource: str = "Resource", resource_id: str = "") -> None:
-        detail = f"{resource} not found" + (f": {resource_id}" if resource_id else "")
-        super().__init__(detail, code="not_found")
+    def __init__(self, resource: str = "Resource", identifier: str | None = None):
+        self.resource = resource
+        self.identifier = identifier
+        msg = f"{resource} not found"
+        if identifier:
+            msg = f"{resource} '{identifier}' not found"
+        super().__init__(detail=msg, code="not_found")
 
 
 class ValidationError(AtlasVoxError):
-    """Client-side validation failed."""
+    """Input validation failed."""
 
-    def __init__(self, detail: str = "Validation failed") -> None:
-        super().__init__(detail, code="validation_error")
+    def __init__(self, message: str = "Validation failed", field: str | None = None):
+        self.field = field
+        super().__init__(detail=message, code="validation_error")
 
 
 class ProviderError(AtlasVoxError):
-    """TTS provider operation failed. Internal error logged, not returned to client."""
+    """TTS provider error."""
 
-    def __init__(self, provider: str = "", operation: str = "", internal_error: str = "") -> None:
-        detail = f"Provider '{provider}' failed during {operation}. Check server logs." if provider else "Provider error"
-        super().__init__(detail, code="provider_error", internal_detail=internal_error)
+    def __init__(self, provider: str = "provider", operation: str = "operation", internal_error: str | None = None):
+        self.provider = provider
+        self.operation = operation
+        self.internal_error = internal_error
+        # Don't expose internal errors in the detail
+        detail = f"[{provider}] {operation} failed"
+        super().__init__(detail=detail, code="provider_error")
 
 
 class ServiceError(AtlasVoxError):
-    """Internal service failure. Internal error logged, not returned to client."""
+    """Service operation error."""
 
-    def __init__(self, operation: str = "", internal_error: str = "") -> None:
-        detail = f"{operation} failed. Check server logs." if operation else "Service error"
-        super().__init__(detail, code="service_error", internal_detail=internal_error)
+    def __init__(self, service: str = "service", internal_error: str | None = None):
+        self.service = service
+        self.internal_error = internal_error
+        # Don't expose internal errors in the detail
+        detail = f"{service} error"
+        super().__init__(detail=detail, code="service_error")
+
+
+class AuthenticationError(AtlasVoxError):
+    """Authentication failed."""
+
+    def __init__(self):
+        super().__init__(detail="Authentication failed", code="authentication_error")
+
+
+class AuthorizationError(AtlasVoxError):
+    """Insufficient permissions."""
+
+    def __init__(self, required_scope: str | None = None):
+        msg = "Insufficient permissions"
+        if required_scope:
+            msg = f"Required scope: {required_scope}"
+        super().__init__(detail=msg, code="authorization_error")
+
+
+class StorageError(AtlasVoxError):
+    """File storage/retrieval error."""
+
+    def __init__(self, message: str = "Storage error"):
+        super().__init__(detail=message, code="storage_error")
+
+
+class TrainingError(AtlasVoxError):
+    """Training pipeline error."""
+
+    def __init__(self, message: str, job_id: str | None = None):
+        self.job_id = job_id
+        super().__init__(detail=message, code="training_error")

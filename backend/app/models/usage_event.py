@@ -22,4 +22,4 @@ class UsageEvent(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     event_type: Mapped[str] = mapped_column(String(20), default="synthesis")  # synthesis, clone, training
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)

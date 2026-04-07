@@ -21,9 +21,9 @@ class PronunciationEntry(Base):
     profile_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("voice_profiles.id"), nullable=True, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )

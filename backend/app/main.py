@@ -135,7 +135,7 @@ from fastapi.responses import JSONResponse, Response as FastAPIResponse  # noqa:
 
 
 @app.get("/api/v1/metrics", tags=["monitoring"])
-async def get_metrics():  # type: ignore[return]
+async def get_metrics(user: CurrentUser):  # type: ignore[return]
     """Return application metrics for monitoring.
 
     Tries to use prometheus_client if installed (returns Prometheus text format).

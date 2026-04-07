@@ -12,6 +12,7 @@ interface ProviderState {
   loading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
+  _abortController: AbortController | null;
   fetchProviders: (force?: boolean) => Promise<void>;
   checkHealth: (name: string) => Promise<void>;
   checkAllHealth: () => Promise<void>;
@@ -23,11 +24,22 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   loading: false,
   error: null,
   lastFetchedAt: null,
+  _abortController: null,
 
   fetchProviders: async (force = false) => {
     const { lastFetchedAt, loading } = get();
     if (!force && lastFetchedAt && Date.now() - lastFetchedAt < STALE_MS) return;
     if (loading) return;
+
+    const prevController = get()._abortController;
+    if (prevController) {
+      logger.debug("aborting_previous_request");
+      prevController.abort();
+    }
+
+    const controller = new AbortController();
+    set({ _abortController: controller });
+
     logger.info("fetchProviders");
     set({ loading: true, error: null });
     try {
@@ -35,13 +47,17 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       logger.info("fetchProviders_success", { count: providers.length });
       set({ providers, loading: false, lastFetchedAt: Date.now() });
     } catch (e: unknown) {
+      if ((e as Error).name === 'AbortError') {
+        logger.debug("fetchProviders_aborted");
+        return;
+      }
       const message = e instanceof Error ? e.message : "Failed to fetch providers";
       logger.error("fetchProviders_failed", { error: message });
       set({ error: message, loading: false });
     }
   },
 
-  reset: () => set({ providers: [], loading: false, error: null, lastFetchedAt: null }),
+  reset: () => set({ providers: [], loading: false, error: null, lastFetchedAt: null, _abortController: null }),
 
   checkHealth: async (name) => {
     logger.info("checkHealth", { provider: name });

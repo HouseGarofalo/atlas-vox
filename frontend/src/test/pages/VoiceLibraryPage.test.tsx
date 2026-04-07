@@ -27,6 +27,40 @@ vi.mock('../../components/providers/ProviderLogo', () => ({
   default: ({ name }: { name: string }) => <span data-testid="provider-logo">{name}</span>,
 }));
 
+vi.mock('../../hooks/useAudioPlayer', () => ({
+  useAudioPlayer: () => ({
+    isPlaying: false,
+    currentUrl: null,
+    loading: false,
+    duration: 0,
+    currentTime: 0,
+    play: vi.fn(),
+    pause: vi.fn(),
+    stop: vi.fn(),
+    toggle: vi.fn(),
+    seek: vi.fn(),
+    setVolume: vi.fn(),
+    setPlaybackRate: vi.fn(),
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('react-virtuoso', () => ({
+  VirtuosoGrid: ({ totalCount, itemContent }: { totalCount: number; itemContent: (index: number) => React.ReactNode }) => (
+    <div data-testid="virtuoso-grid">
+      {Array.from({ length: totalCount }).map((_, i) => (
+        <div key={i}>{itemContent(i)}</div>
+      ))}
+    </div>
+  ),
+}));
+
 import { useVoiceLibraryStore } from '../../stores/voiceLibraryStore';
 import { useProfileStore } from '../../stores/profileStore';
 import { render, screen, fireEvent } from '@testing-library/react';

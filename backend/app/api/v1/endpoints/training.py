@@ -6,6 +6,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import NotFoundError, ValidationError
 from app.core.rate_limit import limiter
 from app.schemas.training import TrainingJobListResponse, TrainingJobResponse, TrainingStart
 from app.services.training_service import (
@@ -44,7 +45,7 @@ async def start_training_job(
         )
         logger.info("training_job_started", profile_id=profile_id, job_id=job.id, provider_name=data.provider_name)
         return TrainingJobResponse.model_validate(job)
-    except ValueError as e:
+    except (NotFoundError, ValidationError) as e:
         logger.error("start_training_job_failed", profile_id=profile_id, provider_name=data.provider_name, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -82,7 +83,7 @@ async def get_training_job(
     logger.info("get_training_job_called", job_id=job_id)
     try:
         return await get_job_status(db, job_id)
-    except ValueError as e:
+    except (NotFoundError, ValidationError) as e:
         logger.info("get_training_job_not_found", job_id=job_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -97,7 +98,7 @@ async def cancel_training_job(
         job = await cancel_job(db, job_id)
         logger.info("training_job_cancelled", job_id=job_id)
         return TrainingJobResponse.model_validate(job)
-    except ValueError as e:
+    except (NotFoundError, ValidationError) as e:
         logger.error("cancel_training_job_failed", job_id=job_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

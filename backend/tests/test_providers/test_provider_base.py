@@ -37,7 +37,8 @@ class TestProviderRegistry:
         assert len(implemented) >= 9
 
     def test_get_unknown_provider_raises(self):
-        with pytest.raises(ValueError, match="Unknown provider"):
+        from app.core.exceptions import NotFoundError
+        with pytest.raises(NotFoundError, match="Provider.*not found"):
             provider_registry.get_provider("nonexistent")
 
     def test_get_provider_returns_instance(self):

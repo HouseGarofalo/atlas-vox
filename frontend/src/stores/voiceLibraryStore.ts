@@ -17,6 +17,7 @@ interface VoiceLibraryState {
   loading: boolean;
   error: string | null;
   filters: VoiceLibraryFilters;
+  _abortController: AbortController | null;
 
   fetchAllVoices: () => Promise<void>;
   setFilter: (key: keyof VoiceLibraryFilters, value: string | null) => void;
@@ -33,8 +34,18 @@ export const useVoiceLibraryStore = create<VoiceLibraryState>((set, get) => ({
     gender: null,
     search: "",
   },
+  _abortController: null,
 
   fetchAllVoices: async () => {
+    const prevController = get()._abortController;
+    if (prevController) {
+      logger.debug("aborting_previous_request");
+      prevController.abort();
+    }
+
+    const controller = new AbortController();
+    set({ _abortController: controller });
+
     logger.info("fetchAllVoices");
     set({ loading: true, error: null });
     try {
@@ -42,6 +53,10 @@ export const useVoiceLibraryStore = create<VoiceLibraryState>((set, get) => ({
       logger.info("fetchAllVoices_success", { count: voices.length });
       set({ voices, loading: false });
     } catch (e: unknown) {
+      if ((e as Error).name === 'AbortError') {
+        logger.debug("fetchAllVoices_aborted");
+        return;
+      }
       const message = e instanceof Error ? e.message : "Failed to fetch voices";
       logger.error("fetchAllVoices_failed", { error: message });
       set({ error: message, loading: false });
