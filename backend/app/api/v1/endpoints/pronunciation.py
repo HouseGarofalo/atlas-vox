@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.models.pronunciation_entry import PronunciationEntry
+from app.services.synthesis_service import _pronunciation_cache
 
 logger = structlog.get_logger(__name__)
 
@@ -95,6 +96,8 @@ async def create_entry(data: PronunciationCreate, db: DbSession, user: CurrentUs
     )
     db.add(entry)
     await db.flush()
+    # Invalidate pronunciation cache for affected profile
+    _pronunciation_cache.pop(data.profile_id or "__global__", None)
     logger.info("pronunciation_created", word=data.word, ipa=data.ipa)
     return {
         "id": entry.id,
@@ -122,6 +125,8 @@ async def update_entry(entry_id: str, data: PronunciationUpdate, db: DbSession, 
     if data.language is not None:
         entry.language = data.language
     await db.flush()
+    # Invalidate pronunciation cache for the affected profile
+    _pronunciation_cache.pop(entry.profile_id or "__global__", None)
     logger.info("pronunciation_updated", entry_id=entry_id)
     return {
         "id": entry.id,
@@ -142,6 +147,8 @@ async def delete_entry(entry_id: str, db: DbSession, user: CurrentUser) -> None:
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
     await db.delete(entry)
+    # Invalidate pronunciation cache for the affected profile
+    _pronunciation_cache.pop(entry.profile_id or "__global__", None)
     logger.info("pronunciation_deleted", entry_id=entry_id)
 
 
@@ -165,6 +172,8 @@ async def import_csv(file: UploadFile, db: DbSession, user: CurrentUser) -> dict
         db.add(entry)
         created += 1
     await db.flush()
+    # Invalidate entire pronunciation cache after bulk import
+    _pronunciation_cache.clear()
     logger.info("pronunciation_imported", count=created)
     return {"imported": created}
 

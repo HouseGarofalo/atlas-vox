@@ -17,7 +17,6 @@ interface VoiceLibraryState {
   loading: boolean;
   error: string | null;
   filters: VoiceLibraryFilters;
-  _abortController: AbortController | null;
 
   fetchAllVoices: () => Promise<void>;
   setFilter: (key: keyof VoiceLibraryFilters, value: string | null) => void;

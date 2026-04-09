@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -13,6 +13,9 @@ from app.core.database import Base
 
 class SynthesisHistory(Base):
     __tablename__ = "synthesis_history"
+    __table_args__ = (
+        Index("ix_synthesis_history_profile_created", "profile_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("voice_profiles.id"), nullable=False, index=True)

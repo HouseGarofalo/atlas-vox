@@ -45,17 +45,19 @@ function App() {
     // Auto-authenticate when AUTH_DISABLED=true on backend
     const { isAuthenticated, setAuthDisabled } = useAuthStore.getState();
     if (!isAuthenticated) {
-      fetch("/api/v1/health")
-        .then(res => {
-          if (res.ok) {
-            // Backend responded without auth — AUTH_DISABLED=true
+      fetch("/api/v1/auth/status")
+        .then(res => res.json())
+        .then(data => {
+          if (data.auth_disabled) {
             setAuthDisabled();
             logger.info("auto_authenticated", { reason: "AUTH_DISABLED" });
+          } else {
+            logger.info("auth_required");
           }
         })
         .catch(() => {
-          // Backend not reachable or requires auth — user must login
-          logger.info("auth_required");
+          // Backend not reachable — user must login
+          logger.info("auth_check_failed");
         });
     }
   }, []);

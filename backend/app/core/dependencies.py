@@ -19,11 +19,19 @@ logger = structlog.get_logger(__name__)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a database session."""
+    """Yield a database session with auto-commit on success.
+
+    The session commits automatically when the endpoint completes without
+    error.  Services that need intermediate flushes should call
+    ``session.flush()`` (not ``session.commit()``).  The final commit
+    happens here, ensuring a single transaction per request.
+    """
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
+            # Only commit if the session has pending work (new/dirty/deleted objects)
+            if session.new or session.dirty or session.deleted:
+                await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -77,8 +85,16 @@ async def get_current_user(
 
 
 async def _authenticate_api_key(raw_key: str) -> dict:
-    """Validate an API key against the database and return user claims."""
+    """Validate an API key against the database and return user claims.
+
+    Security notes:
+    - Limits candidate keys checked to MAX_KEY_CANDIDATES to prevent
+      Argon2-based CPU exhaustion attacks with crafted prefixes.
+    - Uses constant-time prefix matching via DB query.
+    """
     from app.models.api_key import ApiKey
+
+    MAX_KEY_CANDIDATES = 5  # Prevent DoS via many keys with same prefix
 
     prefix = raw_key[:12]
 
@@ -88,7 +104,7 @@ async def _authenticate_api_key(raw_key: str) -> dict:
             select(ApiKey).where(
                 ApiKey.key_prefix == prefix,
                 ApiKey.active.is_(True),
-            )
+            ).limit(MAX_KEY_CANDIDATES)
         )
         candidates = result.scalars().all()
 

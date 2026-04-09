@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
 from typing import Any
 
@@ -57,6 +58,7 @@ class SelfHealingEngine:
         self.enabled = True
         self._detection_interval = detection_interval
         self._running = False
+        self._started_at: float | None = None
         self._task: asyncio.Task[None] | None = None
         self._incident_log: deque[dict[str, Any]] = deque(maxlen=500)
 
@@ -66,6 +68,7 @@ class SelfHealingEngine:
         await self.health.start()
         await self.telemetry.start()
         self._running = True
+        self._started_at = time.monotonic()
         self._task = asyncio.create_task(self._detection_loop())
         logger.info("self_healing_engine_started")
 
@@ -119,7 +122,7 @@ class SelfHealingEngine:
         return {
             "enabled": self.enabled,
             "running": self._running,
-            "uptime_seconds": 0,
+            "uptime_seconds": round(time.monotonic() - self._started_at, 1) if self._started_at else 0,
             "incidents_handled": len(self._incident_log),
             "health": {
                 "healthy": self.health.is_healthy,

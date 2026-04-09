@@ -92,13 +92,54 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def validate_jwt_secret(self) -> "Settings":
-        """Ensure a real JWT secret is set when authentication is enabled."""
-        if not self.auth_disabled and self.jwt_secret_key == "change-me-in-production":
-            raise ValueError(
-                "jwt_secret_key must be changed from the default value when "
-                "AUTH_DISABLED is False. Set a strong random secret in JWT_SECRET_KEY."
-            )
+    def validate_secrets(self) -> "Settings":
+        """Ensure real secrets are set when authentication is enabled."""
+        if not self.auth_disabled:
+            if self.jwt_secret_key == "change-me-in-production":
+                raise ValueError(
+                    "jwt_secret_key must be changed from the default value when "
+                    "AUTH_DISABLED is False. Set a strong random secret in JWT_SECRET_KEY."
+                )
+            if not self.encryption_key:
+                raise ValueError(
+                    "ENCRYPTION_KEY must be set when AUTH_DISABLED is False. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+        if self.is_production:
+            if self.jwt_secret_key == "change-me-in-production":
+                raise ValueError(
+                    "jwt_secret_key must be changed from the default in production."
+                )
+            if not self.encryption_key:
+                raise ValueError(
+                    "ENCRYPTION_KEY must be set in production to protect provider API keys. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            if self.encryption_key == self.jwt_secret_key:
+                import warnings
+                warnings.warn(
+                    "ENCRYPTION_KEY and JWT_SECRET_KEY should be different values. "
+                    "Rotating JWT keys will break encrypted provider configs if they share the same key.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            if "*" in self.cors_origins:
+                import warnings
+                warnings.warn(
+                    "CORS_ORIGINS contains '*' in production — this allows requests from any origin. "
+                    "Set explicit origins for security.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            localhost_origins = [o for o in self.cors_origins if "localhost" in o or "127.0.0.1" in o]
+            if localhost_origins:
+                import warnings
+                warnings.warn(
+                    f"CORS_ORIGINS contains localhost origins in production: {localhost_origins}. "
+                    "Remove these and use your production domain instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
         return self
 
     @property

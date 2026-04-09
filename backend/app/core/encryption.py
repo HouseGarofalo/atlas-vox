@@ -36,12 +36,18 @@ def get_fernet_key() -> Fernet:
 
     from app.core.config import settings
 
-    # Prefer dedicated encryption key; fall back to JWT secret
+    # Prefer dedicated encryption key; fall back to JWT secret (dev-only)
     secret = settings.encryption_key or settings.jwt_secret_key
-    if secret == "change-me-in-production" and not settings.auth_disabled:
+    if not settings.encryption_key:
+        logger.warning(
+            "encryption_key_fallback",
+            hint="ENCRYPTION_KEY is not set — falling back to JWT_SECRET_KEY. "
+            "Set a dedicated ENCRYPTION_KEY to decouple JWT rotation from encrypted data.",
+        )
+    if secret == "change-me-in-production":
         logger.warning(
             "encryption_key_insecure",
-            hint="Set ENCRYPTION_KEY (or at least JWT_SECRET_KEY) to a strong random value in production.",
+            hint="Encryption is using the default insecure key. Set ENCRYPTION_KEY to a strong random value.",
         )
 
     kdf = HKDF(

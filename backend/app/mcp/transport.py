@@ -11,6 +11,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.security import verify_api_key
 from app.mcp.server import mcp_server
 
@@ -48,10 +49,18 @@ async def _verify_mcp_auth(authorization: str | None) -> dict[str, Any]:
     from app.core.database import async_session_factory
     from app.models.api_key import ApiKey
 
+    MAX_KEY_CANDIDATES = 5  # Prevent DoS via Argon2 CPU exhaustion
+    prefix = key[:12] if len(key) >= 12 else key
+
     async with async_session_factory() as db:
-        result = await db.execute(select(ApiKey).where(ApiKey.active == True))  # noqa: E712
-        keys = result.scalars().all()
-        for stored_key in keys:
+        result = await db.execute(
+            select(ApiKey).where(
+                ApiKey.key_prefix == prefix,
+                ApiKey.active.is_(True),
+            ).limit(MAX_KEY_CANDIDATES)
+        )
+        candidates = result.scalars().all()
+        for stored_key in candidates:
             if verify_api_key(key, stored_key.key_hash):
                 # Scopes are stored as a comma-separated string on the model,
                 # or may be absent on older rows — default to read-only.
@@ -97,6 +106,7 @@ async def mcp_sse_endpoint(request: Request) -> StreamingResponse:
 
 
 @router.post("/message")
+@limiter.limit("60/minute")
 async def mcp_message_endpoint(request: Request) -> dict:
     """Handle JSONRPC 2.0 messages from MCP clients."""
     auth_ctx = await _verify_mcp_auth(request.headers.get("authorization"))

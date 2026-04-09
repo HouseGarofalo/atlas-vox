@@ -4,11 +4,12 @@
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.core.dependencies import CurrentUser
+from app.core.rate_limit import limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -44,7 +45,8 @@ def _safe_audio_path(base_dir: Path, filename: str) -> Path:
 
 
 @router.get("/audio/previews/{filename}")
-async def serve_preview_audio(filename: str, user: CurrentUser) -> FileResponse:
+@limiter.limit("120/minute")
+async def serve_preview_audio(request: Request, filename: str, user: CurrentUser) -> FileResponse:
     """Serve cached voice preview files."""
     base_dir = Path(settings.storage_path) / "output" / "previews"
     file_path = _safe_audio_path(base_dir, filename)
@@ -64,7 +66,8 @@ async def serve_preview_audio(filename: str, user: CurrentUser) -> FileResponse:
 
 
 @router.get("/audio/{filename}")
-async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
+@limiter.limit("120/minute")
+async def serve_audio(request: Request, filename: str, user: CurrentUser) -> FileResponse:
     """Serve generated audio files from the output storage directory."""
     base_dir = Path(settings.storage_path) / "output"
     file_path = _safe_audio_path(base_dir, filename)
@@ -84,7 +87,8 @@ async def serve_audio(filename: str, user: CurrentUser) -> FileResponse:
 
 
 @router.get("/audio/design/{filename}")
-async def serve_audio_design(filename: str, user: CurrentUser) -> FileResponse:
+@limiter.limit("120/minute")
+async def serve_audio_design(request: Request, filename: str, user: CurrentUser) -> FileResponse:
     """Serve audio files from the Audio Design Studio working directory."""
     base_dir = Path(settings.storage_path) / "audio-design"
     file_path = _safe_audio_path(base_dir, filename)

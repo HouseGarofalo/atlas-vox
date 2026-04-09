@@ -37,6 +37,11 @@ PROVIDER_CHAR_LIMITS: dict[str, int] = {
 }
 CHUNK_MAX_CHARS_DEFAULT = 1500
 
+# In-memory pronunciation cache: keyed by profile_id, stores (entries, timestamp).
+# Global entries (profile_id=None) are cached under the key "__global__".
+_pronunciation_cache: dict[str, tuple[list, float]] = {}
+_PRONUNCIATION_CACHE_TTL = 60.0  # seconds
+
 
 def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS_DEFAULT) -> list[str]:
     """Split long text at paragraph/sentence boundaries.
@@ -89,20 +94,48 @@ async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> 
     """Replace words matching pronunciation dictionary entries with SSML phoneme tags.
 
     Looks up global entries (profile_id IS NULL) and profile-specific entries.
+    Uses an in-memory cache with TTL to avoid repeated DB queries during batch synthesis.
     Only applies if there are matching entries — returns original text otherwise.
     """
     from sqlalchemy import or_
     from app.models.pronunciation_entry import PronunciationEntry
 
-    result = await db.execute(
-        select(PronunciationEntry).where(
-            or_(
-                PronunciationEntry.profile_id.is_(None),
-                PronunciationEntry.profile_id == profile_id,
+    now = time.monotonic()
+    entries: list = []
+
+    # Check cache for global entries
+    cache_key_global = "__global__"
+    cache_key_profile = profile_id
+
+    cached_global = _pronunciation_cache.get(cache_key_global)
+    cached_profile = _pronunciation_cache.get(cache_key_profile)
+
+    if (
+        cached_global is not None
+        and (now - cached_global[1]) < _PRONUNCIATION_CACHE_TTL
+        and cached_profile is not None
+        and (now - cached_profile[1]) < _PRONUNCIATION_CACHE_TTL
+    ):
+        entries = cached_global[0] + cached_profile[0]
+    else:
+        result = await db.execute(
+            select(PronunciationEntry).where(
+                or_(
+                    PronunciationEntry.profile_id.is_(None),
+                    PronunciationEntry.profile_id == profile_id,
+                )
             )
         )
-    )
-    entries = result.scalars().all()
+        all_entries = result.scalars().all()
+
+        global_entries = [e for e in all_entries if e.profile_id is None]
+        profile_entries = [e for e in all_entries if e.profile_id == profile_id]
+
+        _pronunciation_cache[cache_key_global] = (global_entries, now)
+        _pronunciation_cache[cache_key_profile] = (profile_entries, now)
+
+        entries = global_entries + profile_entries
+
     if not entries:
         return text
 

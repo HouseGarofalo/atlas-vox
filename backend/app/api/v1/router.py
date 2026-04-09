@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     api_keys,
     audio,
     audio_tools,
+    auth,
     compare,
     favorites,
     health,
@@ -27,6 +28,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(health.router)
+api_router.include_router(auth.router)
 api_router.include_router(profiles.router)
 api_router.include_router(providers.router)
 api_router.include_router(samples.router)
