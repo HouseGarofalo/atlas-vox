@@ -33,10 +33,11 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-atlas-vox-redis}@atlas-vox-redis:6379/1
       - AUTH_DISABLED=${AUTH_DISABLED:-true}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-docker-dev-key-change-in-production}
       - STORAGE_PATH=/app/storage
       - PORT=8000
       - GPU_SERVICE_URL=http://host.docker.internal:8200
-      - APP_ENV=production
+      - APP_ENV=${APP_ENV:-production}
       - HF_HOME=/home/app/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -110,6 +111,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://atlas_vox:${POSTGRES_PASSWORD:-atlas-vox-pg}@atlas-vox-postgres:5432/atlas_vox
       - REDIS_URL=redis://:${REDIS_PASSWORD:-atlas-vox-redis}@atlas-vox-redis:6379/1
       - STORAGE_PATH=/app/storage
+      - APP_ENV=${APP_ENV:-production}
+      - AUTH_DISABLED=${AUTH_DISABLED:-true}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-docker-dev-key-change-in-production}
     volumes:
       - storage_data:/app/storage
     depends_on:
@@ -133,6 +138,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://atlas_vox:${POSTGRES_PASSWORD:-atlas-vox-pg}@atlas-vox-postgres:5432/atlas_vox
       - REDIS_URL=redis://:${REDIS_PASSWORD:-atlas-vox-redis}@atlas-vox-redis:6379/1
       - STORAGE_PATH=/app/storage
+      - APP_ENV=${APP_ENV:-production}
+      - AUTH_DISABLED=${AUTH_DISABLED:-true}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-docker-dev-key-change-in-production}
     volumes:
       - storage_data:/app/storage
     depends_on:
