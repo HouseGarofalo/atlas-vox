@@ -32,6 +32,9 @@
     "zod": "^4.3.6",
     "zustand": "^4.5.0"
   },
+  "overrides": {
+    "dompurify": "3.3.2"
+  },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
