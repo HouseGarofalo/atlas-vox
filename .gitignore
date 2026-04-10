@@ -60,6 +60,7 @@ frontend/dist/
 .env
 .env.local
 .env.*.local
+docker/.env
 
 # IDE
 .vscode/
@@ -110,3 +111,12 @@ audit-*.png
 # SQLite journal files
 *.db-shm
 *.db-wal
+
+# Screenshots (session artifacts)
+personality-*.png
+shell-*.png
+theme-*.png
+dropdown-portal-fix.png
+
+# Serena AI state
+.serena/

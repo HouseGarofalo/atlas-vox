@@ -8,8 +8,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.gpu-worker
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
-      - REDIS_URL=redis://atlas-vox-redis:6379/1
+      - DATABASE_URL=postgresql+asyncpg://atlas_vox:${POSTGRES_PASSWORD:-atlas-vox-pg}@atlas-vox-postgres:5432/atlas_vox
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-atlas-vox-redis}@atlas-vox-redis:6379/1
       - STORAGE_PATH=/app/storage
       - COQUI_XTTS_GPU_MODE=docker_gpu
       - STYLETTS2_GPU_MODE=docker_gpu
@@ -18,7 +18,6 @@ services:
       - DIA2_GPU_MODE=docker_gpu
     volumes:
       - storage_data:/app/storage
-      - db_data:/app/data
     depends_on:
       - redis
     deploy:

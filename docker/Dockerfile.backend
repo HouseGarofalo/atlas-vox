@@ -17,10 +17,10 @@ RUN pip install --no-cache-dir --prefix=/install \
     soundfile
 
 # Install Coqui TTS (has torch dependency, already pulled by kokoro)
-RUN pip install --no-cache-dir --prefix=/install "TTS>=0.22.0" || true
+RUN pip install --no-cache-dir --prefix=/install "TTS>=0.22.0" 2>&1 || echo "WARNING: TTS package install failed — Coqui XTTS will be unavailable"
 
 # Install StyleTTS2
-RUN pip install --no-cache-dir --prefix=/install "styletts2>=0.1.0" || true
+RUN pip install --no-cache-dir --prefix=/install "styletts2>=0.1.0" 2>&1 || echo "WARNING: StyleTTS2 package install failed — StyleTTS2 will be unavailable"
 
 # Fix numpy ABI — must be the LAST pip install to avoid being downgraded
 # by other packages. Forces numpy 2.x which is required by piper-tts and
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir --prefix=/install --force-reinstall "numpy>=2.0,<
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    espeak-ng ffmpeg && \
+    espeak-ng ffmpeg gosu curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -74,8 +74,7 @@ ENV DATABASE_URL=sqlite+aiosqlite:///./data/atlas_vox.db
 COPY docker/scripts/init-models.sh /app/init-models.sh
 RUN chmod +x /app/init-models.sh
 
-# Non-root user + gosu for privilege dropping
-RUN apt-get update && apt-get install -y --no-install-recommends gosu curl && rm -rf /var/lib/apt/lists/*
+# Non-root user
 RUN addgroup --system app && adduser --system --home /home/app --ingroup app app
 RUN mkdir -p /home/app/.cache/huggingface /home/app/.local && chown -R app:app /home/app
 RUN chown -R app:app /app/storage /app/data

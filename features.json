@@ -1,15 +1,14 @@
 {
   "version": "1.0",
   "total_features": 6,
-  "completed": 6,
-  "passing": 0,
+  "implemented": 6,
   "failing": 0,
   "features": [
     {
       "id": 1,
       "archon_task_id": "a5df9eda-be73-4c86-8493-73aaf9f5d54e",
       "name": "Phase 1: Foundation — Project Scaffolding, Database, Config, First Provider",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {
@@ -22,7 +21,7 @@
       "id": 2,
       "archon_task_id": "33e343ab-67a9-4840-8b1a-30c6ebea16fd",
       "name": "Phase 2: Audio Pipeline & Training Infrastructure",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {
@@ -35,7 +34,7 @@
       "id": 3,
       "archon_task_id": "59a63196-8bf5-4d48-a454-da51190b7065",
       "name": "Phase 3: All Providers & Full Synthesis Pipeline",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {
@@ -48,7 +47,7 @@
       "id": 4,
       "archon_task_id": "7ff44413-b795-408e-b9cb-40e1726fadd0",
       "name": "Phase 4: Web UI — Complete React Frontend",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {
@@ -61,7 +60,7 @@
       "id": 5,
       "archon_task_id": "d61bae7f-f85d-4ce6-b930-928ee13b924c",
       "name": "Phase 5: CLI & MCP Server",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {
@@ -74,7 +73,7 @@
       "id": 6,
       "archon_task_id": "e0935d6a-1fb0-4084-b85b-fd6f035cf47b",
       "name": "Phase 6: Testing, Docker, Documentation, Polish",
-      "status": "passing",
+      "status": "implemented",
       "implemented_at": "2026-03-25",
       "tested": false,
       "test_results": {

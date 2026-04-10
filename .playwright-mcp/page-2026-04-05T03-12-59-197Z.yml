@@ -1,6 +1,0 @@
-- generic [ref=e2]:
-  - region "Notifications alt+T"
-  - generic [ref=e186]:
-    - heading "Something went wrong" [level=2] [ref=e187]
-    - paragraph [ref=e188]: "Failed to fetch dynamically imported module: http://localhost:3100/assets/index-Buh2-VsO.js"
-    - button "Try Again" [ref=e189] [cursor=pointer]

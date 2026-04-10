@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3100", "http://localhost:5173"]
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./atlas_vox.db"
@@ -149,6 +149,14 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def app_version(self) -> str:
+        try:
+            from importlib.metadata import version
+            return version("atlas-vox")
+        except Exception:
+            return "0.1.0-dev"
 
 
 settings = Settings()
