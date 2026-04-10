@@ -11,37 +11,37 @@ describe('Button', () => {
   it('handles click events', () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Click</Button>);
-    fireEvent.click(screen.getByText('Click'));
+    fireEvent.click(screen.getByRole('button', { name: 'Click' }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('applies primary variant classes by default', () => {
     render(<Button>Primary</Button>);
-    const btn = screen.getByText('Primary');
-    expect(btn.className).toContain('bg-primary-500');
+    const btn = screen.getByRole('button', { name: 'Primary' });
+    expect(btn.className).toContain('from-primary-500');
   });
 
   it('applies secondary variant classes', () => {
     render(<Button variant="secondary">Secondary</Button>);
-    const btn = screen.getByText('Secondary');
-    expect(btn.className).toContain('bg-gray-100');
+    const btn = screen.getByRole('button', { name: 'Secondary' });
+    expect(btn.className).toContain('from-secondary-400');
   });
 
   it('applies danger variant classes', () => {
     render(<Button variant="danger">Danger</Button>);
-    const btn = screen.getByText('Danger');
-    expect(btn.className).toContain('bg-red-500');
+    const btn = screen.getByRole('button', { name: 'Danger' });
+    expect(btn.className).toContain('from-red-500');
   });
 
   it('applies ghost variant classes', () => {
     render(<Button variant="ghost">Ghost</Button>);
-    const btn = screen.getByText('Ghost');
-    expect(btn.className).toContain('hover:bg-gray-100');
+    const btn = screen.getByRole('button', { name: 'Ghost' });
+    expect(btn.className).toContain('hover:bg-primary-500/10');
   });
 
   it('renders disabled state', () => {
     render(<Button disabled>Disabled</Button>);
-    const btn = screen.getByText('Disabled');
+    const btn = screen.getByRole('button', { name: 'Disabled' });
     expect(btn).toBeDisabled();
     expect(btn.className).toContain('opacity-50');
     expect(btn.className).toContain('cursor-not-allowed');
@@ -54,19 +54,19 @@ describe('Button', () => {
         Disabled
       </Button>,
     );
-    fireEvent.click(screen.getByText('Disabled'));
+    fireEvent.click(screen.getByRole('button', { name: 'Disabled' }));
     expect(onClick).not.toHaveBeenCalled();
   });
 
   it('applies size sm classes', () => {
     render(<Button size="sm">Small</Button>);
-    const btn = screen.getByText('Small');
+    const btn = screen.getByRole('button', { name: 'Small' });
     expect(btn.className).toContain('h-9');
   });
 
   it('applies size lg classes', () => {
     render(<Button size="lg">Large</Button>);
-    const btn = screen.getByText('Large');
+    const btn = screen.getByRole('button', { name: 'Large' });
     expect(btn.className).toContain('h-12');
   });
 

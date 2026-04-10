@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -41,6 +42,10 @@ CHUNK_MAX_CHARS_DEFAULT = 1500
 # Global entries (profile_id=None) are cached under the key "__global__".
 _pronunciation_cache: dict[str, tuple[list, float]] = {}
 _PRONUNCIATION_CACHE_TTL = 60.0  # seconds
+_PRONUNCIATION_CACHE_MAX_SIZE = 100
+
+# Compiled regex cache for pronunciation patterns
+_regex_cache: dict[str, re.Pattern] = {}
 
 
 def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS_DEFAULT) -> list[str]:
@@ -98,6 +103,7 @@ async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> 
     Only applies if there are matching entries — returns original text otherwise.
     """
     from sqlalchemy import or_
+
     from app.models.pronunciation_entry import PronunciationEntry
 
     now = time.monotonic()
@@ -134,6 +140,15 @@ async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> 
         _pronunciation_cache[cache_key_global] = (global_entries, now)
         _pronunciation_cache[cache_key_profile] = (profile_entries, now)
 
+        # Evict oldest entries if cache exceeds max size
+        if len(_pronunciation_cache) > _PRONUNCIATION_CACHE_MAX_SIZE:
+            oldest_keys = sorted(
+                _pronunciation_cache,
+                key=lambda k: _pronunciation_cache[k][1],
+            )[:_PRONUNCIATION_CACHE_MAX_SIZE // 2]
+            for k in oldest_keys:
+                del _pronunciation_cache[k]
+
         entries = global_entries + profile_entries
 
     if not entries:
@@ -141,8 +156,13 @@ async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> 
 
     # Apply replacements (case-insensitive word boundary matching)
     for entry in entries:
-        # Use word boundary regex for accurate replacement
-        pattern = re.compile(rf"\b{re.escape(entry.word)}\b", re.IGNORECASE)
+        # Use cached compiled regex for performance
+        cache_key = entry.word.lower()
+        pattern = _regex_cache.get(cache_key)
+        if pattern is None:
+            pattern = re.compile(rf"\b{re.escape(entry.word)}\b", re.IGNORECASE)
+            _regex_cache[cache_key] = pattern
+
         replacement = f'<phoneme alphabet="ipa" ph="{entry.ipa}">{entry.word}</phoneme>'
         text = pattern.sub(replacement, text)
 
@@ -391,15 +411,17 @@ async def synthesize(
 
     # Dispatch synthesis.complete webhook (best-effort, non-blocking)
     try:
+        import asyncio
+
         from app.services.webhook_dispatcher import fire_synthesis_complete
-        await fire_synthesis_complete(
+        asyncio.create_task(fire_synthesis_complete(
             db,
             synthesis_id=history.id,
             profile_id=profile_id,
             provider_name=profile.provider_name,
             latency_ms=latency_ms,
             duration_seconds=result.duration_seconds,
-        )
+        ))
     except Exception as wh_exc:
         logger.warning("webhook_synthesis_complete_failed", error=str(wh_exc))
 
@@ -465,15 +487,23 @@ async def batch_synthesize(
     preset_id: str | None = None,
     speed: float = 1.0,
     output_format: str = "wav",
+    _session_factory: Any | None = None,
 ) -> list[dict]:
     """Batch synthesize multiple lines concurrently with controlled parallelism.
 
     Uses asyncio.gather with a semaphore to process lines in parallel while
     limiting concurrent provider calls to avoid overwhelming resources.
     Each concurrent task gets its own DB session to avoid async session conflicts.
+
+    Args:
+        _session_factory: Optional override for the session factory (used in testing).
+            If None, uses the default async_session_factory.
     """
     import asyncio
+
     from app.core.database import async_session_factory
+
+    session_factory = _session_factory or async_session_factory
 
     MAX_CONCURRENT = 4  # Limit parallel provider calls
 
@@ -490,22 +520,32 @@ async def batch_synthesize(
     )
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    caller_owns_session = _session_factory is not None
 
     async def _synth_one(line: str) -> dict:
         async with semaphore:
-            async with async_session_factory() as session:
+            async with session_factory() as session:
                 try:
                     result = await synthesize(
                         session, text=line, profile_id=profile_id,
                         preset_id=preset_id, speed=speed, output_format=output_format,
                     )
-                    await session.commit()
+                    if caller_owns_session:
+                        await session.flush()
+                    else:
+                        await session.commit()
                     return result
                 except Exception:
-                    await session.rollback()
+                    if not caller_owns_session:
+                        await session.rollback()
                     raise
 
-    results = await asyncio.gather(*[_synth_one(line) for line in stripped])
+    # When caller provides a session factory, the tasks share one session and
+    # must run sequentially to avoid concurrent flush errors.
+    if caller_owns_session:
+        results = [await _synth_one(line) for line in stripped]
+    else:
+        results = await asyncio.gather(*[_synth_one(line) for line in stripped])
     logger.info(
         "batch_synthesis_completed",
         profile_id=profile_id,
@@ -542,21 +582,28 @@ async def _convert_format(result: AudioResult, target_format: str) -> AudioResul
         source_path=str(result.audio_path),
     )
     try:
-        from pydub import AudioSegment
-
-        audio = AudioSegment.from_file(str(result.audio_path))
-        output_path = result.audio_path.with_suffix(f".{target_format}")
-        audio.export(str(output_path), format=target_format)
-
-        return AudioResult(
-            audio_path=output_path,
-            duration_seconds=result.duration_seconds,
-            sample_rate=result.sample_rate,
-            format=target_format,
-        )
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _convert_format_sync, result, target_format)
     except ImportError:
         logger.warning("pydub_not_installed", hint="pip install pydub")
         return result  # Fall back to original format
     except Exception as e:
         logger.error("format_conversion_failed", source_format=result.format, target_format=target_format, error=str(e))
         raise
+
+
+def _convert_format_sync(result: AudioResult, target_format: str) -> AudioResult:
+    """Synchronous format conversion using pydub."""
+    from pydub import AudioSegment
+
+    audio = AudioSegment.from_file(str(result.audio_path))
+    output_path = result.audio_path.with_suffix(f".{target_format}")
+    audio.export(str(output_path), format=target_format)
+
+    return AudioResult(
+        audio_path=output_path,
+        duration_seconds=result.duration_seconds,
+        sample_rate=result.sample_rate,
+        format=target_format,
+    )

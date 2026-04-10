@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 import uuid
 from pathlib import Path
-from typing import Any
 
 import httpx
 import structlog
@@ -47,8 +46,15 @@ class RemoteProvider(TTSProvider):
         self._base_url = gpu_service_url.rstrip("/")
         self._timeout = timeout
         self._capabilities_cache: ProviderCapabilities | None = None
+
+        # Set up auth headers
+        headers = {}
+        if settings.gpu_service_api_key:
+            headers["Authorization"] = f"Bearer {settings.gpu_service_api_key}"
+
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self._timeout, connect=10.0),
+            headers=headers,
         )
 
     async def close(self) -> None:

@@ -4,10 +4,47 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Any
 
 import structlog
 
 from app.core.config import settings
+
+# Module-level reference to the LogStreamMonitor instance.
+# Set by the self-healing engine at startup so the structlog processor
+# can feed error events without a circular import.
+_log_stream_monitor: Any = None
+
+
+def set_log_stream_monitor(monitor: Any) -> None:
+    """Register the LogStreamMonitor so structlog feeds errors into it."""
+    global _log_stream_monitor
+    _log_stream_monitor = monitor
+
+
+def _healing_log_processor(
+    logger_instance: Any,
+    method_name: str,
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """Structlog processor that feeds error-level events to LogStreamMonitor.
+
+    This processor is added to the shared processor chain so that every
+    error/critical/exception log event is captured by the self-healing
+    system's LogStreamMonitor for anomaly detection.
+    """
+    if _log_stream_monitor is not None and method_name in (
+        "error",
+        "critical",
+        "exception",
+    ):
+        _log_stream_monitor.ingest(
+            level=method_name,
+            event=event_dict.get("event", ""),
+            logger_name=event_dict.get("logger", ""),
+            error=event_dict.get("error", None),
+        )
+    return event_dict
 
 
 def setup_logging() -> None:
@@ -20,6 +57,7 @@ def setup_logging() -> None:
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
+        _healing_log_processor,
     ]
 
     if settings.log_format == "json":

@@ -20,6 +20,7 @@ from app.models.synthesis_history import SynthesisHistory  # noqa: F401
 from app.models.api_key import ApiKey  # noqa: F401
 from app.models.webhook import Webhook  # noqa: F401
 from app.models.persona_preset import PersonaPreset  # noqa: F401
+from app.models.system_setting import SystemSetting  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

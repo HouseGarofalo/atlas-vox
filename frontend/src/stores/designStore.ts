@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createLogger } from "../utils/logger";
+import { THEME_BY_ID, DEFAULT_THEME_ID, applyThemeToDOM, type Theme } from "../themes";
 
 const logger = createLogger("DesignStore");
 
 export interface DesignTokens {
-  // Colors
+  // Theme selection (replaces accentHue/accentSaturation for full theme support)
+  themeId: string;
+  // Legacy color tokens (still used by DesignSystemPage for hue tweaking)
   accentHue: number;        // 0-360 hue for primary color
   accentSaturation: number;  // 0-100
   borderRadius: "none" | "sm" | "md" | "lg" | "xl" | "full";
@@ -24,17 +27,18 @@ export interface DesignTokens {
   // Animations
   animationsEnabled: boolean;
   // Card style
-  cardStyle: "flat" | "raised" | "bordered" | "glass";
+  cardStyle: "flat" | "raised" | "bordered" | "glass" | "console";
 }
 
 const DEFAULT_TOKENS: DesignTokens = {
-  accentHue: 217,
-  accentSaturation: 91,
+  themeId: DEFAULT_THEME_ID,
+  accentHue: 338,
+  accentSaturation: 85,
   borderRadius: "lg",
   fontFamily: "system",
   fontSize: "default",
   density: "default",
-  sidebarWidth: 256,
+  sidebarWidth: 280,
   sidebarCollapsed: false,
   contentMaxWidth: "full",
   panelDefaultOpen: true,
@@ -46,6 +50,8 @@ interface DesignState {
   tokens: DesignTokens;
   setToken: <K extends keyof DesignTokens>(key: K, value: DesignTokens[K]) => void;
   setTokens: (partial: Partial<DesignTokens>) => void;
+  setTheme: (themeId: string) => void;
+  getCurrentTheme: () => Theme;
   resetTokens: () => void;
   applyToDOM: () => void;
 }
@@ -72,6 +78,30 @@ export const useDesignStore = create<DesignState>()(
         setTimeout(() => get().applyToDOM(), 0);
       },
 
+      setTheme: (themeId) => {
+        const theme = THEME_BY_ID[themeId];
+        if (!theme) {
+          logger.error("theme_not_found", { themeId });
+          return;
+        }
+        logger.info("theme_change", { themeId, name: theme.name });
+        set((state) => ({
+          tokens: {
+            ...state.tokens,
+            themeId,
+            // Sync legacy accentHue/Saturation with theme primary
+            accentHue: theme.primary.h,
+            accentSaturation: theme.primary.s,
+          },
+        }));
+        setTimeout(() => get().applyToDOM(), 0);
+      },
+
+      getCurrentTheme: () => {
+        const { tokens } = get();
+        return THEME_BY_ID[tokens.themeId] || THEME_BY_ID[DEFAULT_THEME_ID];
+      },
+
       resetTokens: () => {
         logger.info("tokens_reset");
         set({ tokens: { ...DEFAULT_TOKENS } });
@@ -82,47 +112,42 @@ export const useDesignStore = create<DesignState>()(
         const { tokens } = get();
         const root = document.documentElement;
 
-        // Accent color as HSL
-        root.style.setProperty("--accent-h", String(tokens.accentHue));
-        root.style.setProperty("--accent-s", `${tokens.accentSaturation}%`);
+        // === STEP 1: Apply user-overridable design tokens ===
+        // (theme will overwrite shape/density/font tokens after this)
 
-        // Border radius
-        const radiusMap = { none: "0px", sm: "4px", md: "8px", lg: "12px", xl: "16px", full: "9999px" };
-        root.style.setProperty("--radius", radiusMap[tokens.borderRadius]);
-
-        // Font family
-        const fontMap = {
-          system: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          inter: '"Inter", -apple-system, sans-serif',
-          mono: '"JetBrains Mono", "Fira Code", monospace',
-          serif: '"Georgia", "Times New Roman", serif',
-        };
-        root.style.setProperty("--font-family", fontMap[tokens.fontFamily]);
-
-        // Font size scale
+        // Font size scale (always user-controlled)
         const sizeMap = { compact: "14px", default: "16px", large: "18px" };
         root.style.setProperty("--font-size-base", sizeMap[tokens.fontSize]);
 
-        // Density (padding/gap scale)
-        const densityMap = { compact: "0.75", default: "1", spacious: "1.25" };
-        root.style.setProperty("--density", densityMap[tokens.density]);
-
-        // Sidebar width
+        // Sidebar width (always user-controlled)
         root.style.setProperty("--sidebar-width", `${tokens.sidebarWidth}px`);
 
-        // Content max width
+        // Content max width (always user-controlled)
         const maxWidthMap = { full: "100%", xl: "1280px", "2xl": "1536px", "4xl": "1792px", "6xl": "2048px" };
         root.style.setProperty("--content-max-width", maxWidthMap[tokens.contentMaxWidth]);
 
-        // Animations
+        // Animations on/off master toggle
         if (!tokens.animationsEnabled) {
-          root.style.setProperty("--transition-duration", "0ms");
-        } else {
-          root.style.removeProperty("--transition-duration");
+          root.style.setProperty("--theme-anim-duration", "0ms");
         }
 
-        // Card style
-        root.dataset.cardStyle = tokens.cardStyle;
+        // === STEP 2: Apply theme LAST so personality wins ===
+        // Theme writes: colors, radius, density, fonts, card style, animations,
+        // background pattern, hover effects, shadows, letter spacing, weights
+        const theme = THEME_BY_ID[tokens.themeId] || THEME_BY_ID[DEFAULT_THEME_ID];
+        applyThemeToDOM(theme);
+
+        // === STEP 3: Legacy accent fallback for user hue tweaking ===
+        // Only apply if user has tweaked away from theme defaults
+        if (
+          tokens.accentHue !== theme.primary.h ||
+          tokens.accentSaturation !== theme.primary.s
+        ) {
+          root.style.setProperty("--studio-primary-h", String(tokens.accentHue));
+          root.style.setProperty("--studio-primary-s", `${tokens.accentSaturation}%`);
+          root.style.setProperty("--accent-h", String(tokens.accentHue));
+          root.style.setProperty("--accent-s", `${tokens.accentSaturation}%`);
+        }
       },
     }),
     {

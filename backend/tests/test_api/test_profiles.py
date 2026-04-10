@@ -126,13 +126,12 @@ async def test_list_versions_with_versions(client: AsyncClient, db_session):
     assert create.status_code == 201
     pid = create.json()["id"]
 
-    # Insert a ModelVersion and commit so the HTTP handler's SELECT sees the row.
-    # The `client` fixture overrides get_db with the same db_session, so we must
-    # commit rather than just flush to make the data visible within the same
-    # SQLite connection that the ASGI handler will query.
+    # Insert a ModelVersion and flush so the HTTP handler's SELECT sees the row.
+    # The `client` fixture overrides get_db with the same db_session, so flush
+    # (not commit) keeps the savepoint open for proper test isolation.
     version = ModelVersion(profile_id=pid, version_number=1)
     db_session.add(version)
-    await db_session.commit()
+    await db_session.flush()
 
     resp = await client.get(f"/api/v1/profiles/{pid}/versions")
     assert resp.status_code == 200
@@ -153,7 +152,7 @@ async def test_activate_version_success(client: AsyncClient, db_session):
 
     version = ModelVersion(profile_id=pid, version_number=1)
     db_session.add(version)
-    await db_session.commit()
+    await db_session.flush()
     ver_id = version.id
 
     resp = await client.post(f"/api/v1/profiles/{pid}/activate-version/{ver_id}")

@@ -1,14 +1,25 @@
+// TODO: Add Zod schemas for API response validation. Zod is already a dependency
+// but is currently unused. Each API method should validate the response shape
+// against a Zod schema to catch backend contract changes at runtime.
+// See: https://zod.dev/ for schema definition patterns.
+
 import type {
   AudioDesignFile,
   AudioQualityBrief,
   AudioSample,
   ApiKeyResponse,
+  BackupResponse,
+  HealingIncident,
+  HealingStatus,
+  McpTestResult,
   PersonaPreset,
   PronunciationEntry,
   Provider,
   ProviderConfigResponse,
   ProviderHealth,
   ProviderTestResponse,
+  SystemInfo,
+  SystemSetting,
   TrainingJob,
   UsageAnalytics,
   Voice,
@@ -285,21 +296,12 @@ class ApiClient {
 
   // Self-Healing
   getHealingStatus() {
-    return this.request<{
-      enabled: boolean;
-      running: boolean;
-      uptime_seconds: number;
-      incidents_handled: number;
-      health: { healthy: boolean; consecutive_failures: number; checks_count: number };
-      telemetry: { current_error_rate: number; avg_error_rate: number; snapshots_count: number };
-      logs: { errors_last_minute: number; errors_last_5_minutes: number; total_tracked: number };
-      mcp?: { enabled: boolean; fixes_this_hour: number; max_fixes_per_hour: number; total_fixes: number };
-    }>("/healing/status");
+    return this.request<HealingStatus>("/healing/status");
   }
   getHealingIncidents(limit = 50, severity?: string) {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (severity) qs.set("severity", severity);
-    return this.request<{ incidents: { id: string; severity: string; category: string; title: string; description: string | null; action_taken: string | null; action_detail: string | null; outcome: string; created_at: string }[]; count: number }>(`/healing/incidents?${qs}`);
+    return this.request<{ incidents: HealingIncident[]; count: number }>(`/healing/incidents?${qs}`);
   }
   forceHealthCheck() {
     return this.request<{ healthy: boolean; checks: Record<string, string>; consecutive_failures: number }>("/healing/check", { method: "POST" });
@@ -458,6 +460,46 @@ class ApiClient {
   }
   listCollections() {
     return this.request<{ collections: string[] }>("/favorites/collections");
+  }
+
+  // ── Admin System Settings ─────────────────────────────────────────────
+
+  listSettings(category?: string) {
+    const path = category ? `/admin/settings/${category}` : "/admin/settings";
+    return this.request<SystemSetting[]>(path);
+  }
+  getSetting(category: string, key: string) {
+    return this.request<SystemSetting>(`/admin/settings/${category}/${key}`);
+  }
+  updateSetting(category: string, key: string, data: { value: string; value_type?: string; is_secret?: boolean; description?: string }) {
+    return this.request<SystemSetting>(`/admin/settings/${category}/${key}`, { method: "PUT", body: JSON.stringify(data) });
+  }
+  bulkUpdateSettings(category: string, settings: Array<{ key: string; value: string; value_type?: string; is_secret?: boolean; description?: string }>) {
+    return this.request<SystemSetting[]>("/admin/settings", { method: "PUT", body: JSON.stringify({ category, settings }) });
+  }
+  deleteSetting(category: string, key: string) {
+    return this.request<{ deleted: boolean }>(`/admin/settings/${category}/${key}`, { method: "DELETE" });
+  }
+  seedSettings() {
+    return this.request<{ seeded: number; message: string }>("/admin/settings/seed", { method: "POST" });
+  }
+  getSystemInfo() {
+    return this.request<SystemInfo>("/admin/system-info");
+  }
+  backupSettings() {
+    return this.request<BackupResponse>("/admin/backup", { method: "POST" });
+  }
+  restoreSettings(data: string) {
+    return this.request<{ restored: number; message: string }>("/admin/restore", { method: "POST", body: JSON.stringify({ data }) });
+  }
+
+  // ── Healing (additional) ──────────────────────────────────────────────
+
+  testMcpBridge() {
+    return this.request<McpTestResult>("/healing/mcp/test", { method: "POST" });
+  }
+  reconfigureHealing() {
+    return this.request<{ reconfigured: boolean }>("/healing/reconfigure", { method: "POST" });
   }
 }
 

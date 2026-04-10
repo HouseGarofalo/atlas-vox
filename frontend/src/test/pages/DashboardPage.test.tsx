@@ -75,7 +75,7 @@ describe('DashboardPage', () => {
         <DashboardPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Audio Control Center')).toBeInTheDocument();
   });
 
   it('displays profile count from store', () => {
@@ -94,7 +94,8 @@ describe('DashboardPage', () => {
     );
 
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Voice Profiles (1 ready)')).toBeInTheDocument();
+    expect(screen.getByText('Voice Profiles')).toBeInTheDocument();
+    expect(screen.getByText('1 ready')).toBeInTheDocument();
   });
 
   it('displays provider health grid', () => {
@@ -117,7 +118,7 @@ describe('DashboardPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Provider Health')).toBeInTheDocument();
+    expect(screen.getByText('Provider Health Matrix')).toBeInTheDocument();
     expect(screen.getByText('Kokoro')).toBeInTheDocument();
   });
 
@@ -148,9 +149,8 @@ describe('DashboardPage', () => {
       </MemoryRouter>,
     );
 
-    // "Active Training Jobs" appears both as a stat label and section heading when jobs exist
-    const matches = screen.getAllByText('Active Training Jobs');
-    expect(matches.length).toBeGreaterThanOrEqual(1);
+    // New dashboard uses "Training Console" for section, "Training Jobs" for stat label
+    expect(screen.getByText('Training Jobs')).toBeInTheDocument();
   });
 
   it('shows recent syntheses count', () => {

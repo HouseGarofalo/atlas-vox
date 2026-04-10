@@ -8,12 +8,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.rate_limit import limiter
 from app.schemas.synthesis import (
     BatchSynthesisRequest,
     SynthesisRequest,
     SynthesisResponse,
 )
-from app.core.rate_limit import limiter
 from app.services.synthesis_service import (
     batch_synthesize,
     get_history,

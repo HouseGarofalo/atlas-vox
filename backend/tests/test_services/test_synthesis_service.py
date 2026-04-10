@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -207,6 +208,12 @@ async def test_batch_synthesize(db_session: AsyncSession):
     mock_provider = AsyncMock()
     mock_provider.synthesize = AsyncMock(side_effect=lambda *_a, **_kw: _fresh_result())
 
+    # Wrap db_session in a factory so batch_synthesize reuses the test session
+    # instead of creating independent sessions that can't see savepoint data.
+    @asynccontextmanager
+    async def _test_session_factory():
+        yield db_session
+
     with patch(
         "app.services.synthesis_service.provider_registry.get_provider",
         return_value=mock_provider,
@@ -215,6 +222,7 @@ async def test_batch_synthesize(db_session: AsyncSession):
             db_session,
             lines=["Line one.", "Line two.", "Line three."],
             profile_id=profile.id,
+            _session_factory=_test_session_factory,
         )
 
     assert len(results) == 3
@@ -237,6 +245,10 @@ async def test_batch_synthesize_skips_empty_lines(db_session: AsyncSession):
         )
     )
 
+    @asynccontextmanager
+    async def _test_session_factory():
+        yield db_session
+
     with patch(
         "app.services.synthesis_service.provider_registry.get_provider",
         return_value=mock_provider,
@@ -245,6 +257,7 @@ async def test_batch_synthesize_skips_empty_lines(db_session: AsyncSession):
             db_session,
             lines=["Valid line.", "", "   ", "Another valid line."],
             profile_id=profile.id,
+            _session_factory=_test_session_factory,
         )
 
     assert len(results) == 2

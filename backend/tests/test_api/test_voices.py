@@ -116,7 +116,7 @@ async def test_preview_voice_cache_hit(client: AsyncClient):
     text = "Hello, this is a preview of my voice."
 
     # Pre-create the expected cache file
-    key = f"{provider}_{voice_id}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
+    key = f"{provider}_{voice_id}_{hashlib.sha256(text.encode()).hexdigest()[:16]}"
     preview_dir = Path(settings.storage_path) / "output" / "previews"
     preview_dir.mkdir(parents=True, exist_ok=True)
     preview_file = preview_dir / f"{key}.wav"

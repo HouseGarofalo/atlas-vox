@@ -19,7 +19,6 @@ from app.services.profile_service import (
     create_profile,
     delete_profile,
     get_profile,
-    list_profiles,
     list_profiles_with_counts,
     profile_to_response,
     update_profile,

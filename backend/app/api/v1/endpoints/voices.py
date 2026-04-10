@@ -2,6 +2,7 @@
 
 
 import hashlib
+import time
 from pathlib import Path
 
 import structlog
@@ -20,6 +21,10 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/voices", tags=["voices"])
 
+# Cache for voice listings with TTL
+_voice_cache: dict[str, tuple[list[dict], float]] = {}
+_VOICE_CACHE_TTL = 300.0  # 5 minutes
+
 
 @router.get("")
 async def list_all_voices(
@@ -29,26 +34,52 @@ async def list_all_voices(
 ) -> JSONResponse:
     """Aggregate voices from all available providers into a single list."""
     logger.info("list_all_voices_called", limit=limit, offset=offset)
-    voices: list[dict] = []
-    for name in provider_registry.list_available():
-        display_name = PROVIDER_DISPLAY_NAMES.get(name, name)
-        try:
-            provider = provider_registry.get_provider(name)
-            provider_voices = await provider.list_voices()
-            for v in provider_voices:
-                voices.append(
+
+    # Check cache first
+    now = time.monotonic()
+    cache_key = "all_voices"
+    cached = _voice_cache.get(cache_key)
+
+    if cached and (now - cached[1]) < _VOICE_CACHE_TTL:
+        voices = cached[0]
+        logger.info("list_all_voices_cache_hit", total=len(voices))
+    else:
+        import asyncio
+
+        async def _get_voices(provider_name: str) -> list[dict]:
+            display_name = PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+            try:
+                provider = provider_registry.get_provider(provider_name)
+                provider_voices = await provider.list_voices()
+                return [
                     {
                         "voice_id": v.voice_id,
                         "name": v.name,
                         "language": v.language,
                         "gender": v.gender,
-                        "provider": name,
+                        "provider": provider_name,
                         "provider_display": display_name,
                     }
-                )
-        except Exception as exc:
-            logger.warning("voice_list_failed", provider=name, error=str(exc))
-            continue
+                    for v in provider_voices
+                ]
+            except Exception as exc:
+                logger.warning("voice_list_failed", provider=provider_name, error=str(exc))
+                return []
+
+        # Parallelize voice list retrieval from all providers
+        available_providers = provider_registry.list_available()
+        tasks = [_get_voices(name) for name in available_providers]
+        results = await asyncio.gather(*tasks)
+
+        # Flatten results
+        voices: list[dict] = []
+        for result in results:
+            voices.extend(result)
+
+        # Cache the results
+        _voice_cache[cache_key] = (voices, now)
+        logger.info("list_all_voices_cached", total=len(voices))
+
     total = len(voices)
     paginated = voices[offset : offset + limit]
     logger.info("list_all_voices_returned", total=total, count=len(paginated))
@@ -82,7 +113,7 @@ async def preview_voice(request: Request, data: VoicePreviewRequest, user: Curre
     text = data.text or DEFAULT_PREVIEW_TEXT
 
     # Build a deterministic cache key
-    key = f"{data.provider}_{data.voice_id}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
+    key = f"{data.provider}_{data.voice_id}_{hashlib.sha256(text.encode()).hexdigest()[:16]}"
     preview_dir = Path(settings.storage_path) / "output" / "previews"
     preview_dir.mkdir(parents=True, exist_ok=True)
     preview_file = preview_dir / f"{key}.wav"

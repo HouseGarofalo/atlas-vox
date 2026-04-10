@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     # GPU Service (remote provider bridge)
     gpu_service_url: str = ""  # e.g., "http://host.docker.internal:8200"
     gpu_service_timeout: int = 120
+    gpu_service_api_key: str = ""
+
+    # Self-healing engine
+    healing_enabled: bool = True
 
     @field_validator("cors_origins", mode="before")
     @classmethod

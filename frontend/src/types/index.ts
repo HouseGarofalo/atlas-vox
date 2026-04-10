@@ -173,7 +173,47 @@ export interface HealingStatus {
   health: { healthy: boolean; consecutive_failures: number; checks_count: number };
   telemetry: { current_error_rate: number; avg_error_rate: number; snapshots_count: number };
   logs: { errors_last_minute: number; errors_last_5_minutes: number; total_tracked: number };
-  mcp?: { enabled: boolean; fixes_this_hour: number; max_fixes_per_hour: number; total_fixes: number };
+  detector?: {
+    health_failure_threshold: number;
+    error_rate_spike_multiplier: number;
+    latency_p99_threshold_ms: number;
+    errors_per_minute_threshold: number;
+    celery_backlog_threshold: number;
+    memory_threshold_mb: number;
+    disk_usage_threshold_pct: number;
+  };
+  mcp?: {
+    enabled: boolean;
+    server_path: string;
+    server_exists: boolean;
+    project_root: string;
+    project_root_exists: boolean;
+    fixes_this_hour: number;
+    max_fixes_per_hour: number;
+    total_fixes: number;
+    recent_fixes: McpFixEntry[];
+  };
+}
+
+export interface McpFixEntry {
+  timestamp: number;
+  event_rule: string;
+  event_title: string;
+  task: string;
+  result: string;
+  success: boolean;
+}
+
+export interface McpTestResult {
+  claude_cli_found: boolean;
+  claude_cli_version: string | null;
+  claude_cli_path?: string;
+  server_path_valid: boolean;
+  server_path: string;
+  project_root_valid: boolean;
+  project_root: string;
+  enabled: boolean;
+  ready: boolean;
 }
 
 export interface HealingIncident {
@@ -275,5 +315,42 @@ export interface VoiceFavoriteItem {
   provider: string;
   voice_id: string;
   collection_name: string | null;
+  created_at: string;
+}
+
+// ── Admin System Settings ───────────────────────────────────────────────
+
+export interface SystemSetting {
+  id: string;
+  category: string;
+  key: string;
+  value: string;
+  value_type: "string" | "int" | "float" | "bool" | "json";
+  is_secret: boolean;
+  description: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SystemInfo {
+  app_name: string;
+  app_env: string;
+  version: string;
+  debug: boolean;
+  uptime_seconds: number;
+  database_type: string;
+  provider_count: number;
+  active_providers: number;
+  profile_count: number;
+  total_synthesis: number;
+  redis_connected: boolean;
+  celery_connected: boolean;
+  healing_enabled: boolean;
+  healing_running: boolean;
+}
+
+export interface BackupResponse {
+  data: string;
+  settings_count: number;
   created_at: string;
 }

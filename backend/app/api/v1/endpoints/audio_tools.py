@@ -55,6 +55,7 @@ from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.schemas.audio_tools import (
+    MAX_UPLOAD_BYTES,
     AnalyzeRequest,
     AnalyzeResponse,
     AudioFileInfo,
@@ -67,7 +68,6 @@ from app.schemas.audio_tools import (
     ExportResponse,
     IsolateFileRequest,
     IsolateFileResponse,
-    MAX_UPLOAD_BYTES,
     QualityIssueBrief,
     TrimRequest,
 )

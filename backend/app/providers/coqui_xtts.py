@@ -67,7 +67,6 @@ class CoquiXTTSProvider(TTSProvider):
                             return _orig_ta_load(filepath, *a, **kw)
                         except (ImportError, OSError):
                             import librosa
-                            import numpy as np
                             audio_np, sr = librosa.load(str(filepath), sr=22050, mono=True)
                             return torch.FloatTensor(audio_np).unsqueeze(0), sr
                     torchaudio.load = _librosa_load

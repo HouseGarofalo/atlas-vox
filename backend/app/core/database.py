@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-
 import structlog
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -29,6 +27,7 @@ if settings.is_sqlite:
         """Enable WAL journal mode for better concurrent read performance."""
         cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
         logger.info("sqlite_wal_mode_enabled")
 

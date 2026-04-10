@@ -47,5 +47,5 @@ export default defineConfig({
   ],
 
   /* Don't auto-start dev server — we test against Docker or a running server */
-  webServer: process.env.E2E_BASE_URL ? undefined : undefined,
+  webServer: undefined,
 });

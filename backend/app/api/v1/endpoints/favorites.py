@@ -21,12 +21,29 @@ class FavoriteCreate(BaseModel):
     collection_name: str | None = None
 
 
-@router.get("")
+class FavoriteResponse(BaseModel):
+    id: str
+    provider: str
+    voice_id: str
+    collection_name: str | None
+    created_at: str
+
+
+class FavoriteListResponse(BaseModel):
+    favorites: list[FavoriteResponse]
+    count: int
+
+
+class CollectionListResponse(BaseModel):
+    collections: list[str]
+
+
+@router.get("", response_model=FavoriteListResponse)
 async def list_favorites(
     db: DbSession,
     user: CurrentUser,
     collection: str | None = Query(None),
-) -> dict:
+) -> FavoriteListResponse:
     """List all voice favorites, optionally filtered by collection."""
     user_id = user.get("sub", "local-user") if user else "local-user"
     query = select(VoiceFavorite).where(VoiceFavorite.user_id == user_id)
@@ -36,23 +53,23 @@ async def list_favorites(
 
     result = await db.execute(query)
     favorites = result.scalars().all()
-    return {
-        "favorites": [
-            {
-                "id": f.id,
-                "provider": f.provider,
-                "voice_id": f.voice_id,
-                "collection_name": f.collection_name,
-                "created_at": f.created_at.isoformat(),
-            }
+    return FavoriteListResponse(
+        favorites=[
+            FavoriteResponse(
+                id=f.id,
+                provider=f.provider,
+                voice_id=f.voice_id,
+                collection_name=f.collection_name,
+                created_at=f.created_at.isoformat(),
+            )
             for f in favorites
         ],
-        "count": len(favorites),
-    }
+        count=len(favorites),
+    )
 
 
-@router.get("/collections")
-async def list_collections(db: DbSession, user: CurrentUser) -> dict:
+@router.get("/collections", response_model=CollectionListResponse)
+async def list_collections(db: DbSession, user: CurrentUser) -> CollectionListResponse:
     """List all named collections for the current user."""
     user_id = user.get("sub", "local-user") if user else "local-user"
     result = await db.execute(
@@ -62,11 +79,11 @@ async def list_collections(db: DbSession, user: CurrentUser) -> dict:
         .distinct()
     )
     collections = [row[0] for row in result.all()]
-    return {"collections": sorted(collections)}
+    return CollectionListResponse(collections=sorted(collections))
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def add_favorite(data: FavoriteCreate, db: DbSession, user: CurrentUser) -> dict:
+@router.post("", response_model=FavoriteResponse, status_code=status.HTTP_201_CREATED)
+async def add_favorite(data: FavoriteCreate, db: DbSession, user: CurrentUser) -> FavoriteResponse:
     """Add a voice to favorites."""
     user_id = user.get("sub", "local-user") if user else "local-user"
 
@@ -91,13 +108,13 @@ async def add_favorite(data: FavoriteCreate, db: DbSession, user: CurrentUser) -
     db.add(fav)
     await db.flush()
     logger.info("favorite_added", provider=data.provider, voice_id=data.voice_id)
-    return {
-        "id": fav.id,
-        "provider": fav.provider,
-        "voice_id": fav.voice_id,
-        "collection_name": fav.collection_name,
-        "created_at": fav.created_at.isoformat(),
-    }
+    return FavoriteResponse(
+        id=fav.id,
+        provider=fav.provider,
+        voice_id=fav.voice_id,
+        collection_name=fav.collection_name,
+        created_at=fav.created_at.isoformat(),
+    )
 
 
 @router.delete("/{favorite_id}", status_code=status.HTTP_204_NO_CONTENT)

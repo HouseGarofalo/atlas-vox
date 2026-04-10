@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import structlog
 from argon2 import PasswordHasher
-from jose import ExpiredSignatureError, JWTError, jwt
+from jwt.exceptions import ExpiredSignatureError, PyJWTError
 
 from app.core.config import settings
 
@@ -36,10 +37,15 @@ def verify_api_key(api_key: str, hashed: str) -> bool:
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
-    expire = datetime.now(UTC) + (
+    now = datetime.now(UTC)
+    expire = now + (
         expires_delta or timedelta(minutes=settings.jwt_expire_minutes)
     )
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "iat": now,
+        "iss": "atlas-vox"
+    })
     token = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     logger.info(
         "access_token_created",
@@ -52,12 +58,17 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 def decode_access_token(token: str) -> dict | None:
     """Decode and validate a JWT token. Returns claims or None."""
     try:
-        claims = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            issuer="atlas-vox"
+        )
         logger.debug("access_token_decoded", subject=claims.get("sub"))
         return claims
     except ExpiredSignatureError:
         logger.warning("access_token_decode_failed", reason="expired")
         return None
-    except JWTError as exc:
+    except PyJWTError as exc:
         logger.warning("access_token_decode_failed", reason="invalid", detail=str(exc))
         return None

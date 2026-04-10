@@ -58,7 +58,7 @@ async def list_presets(
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> PresetListResponse:
-    """List all persona presets (seeds system defaults on first call)."""
+    """List all persona presets."""
     logger.info("list_presets_called", limit=limit, offset=offset)
     await _seed_system_presets(db)
     result = await db.execute(

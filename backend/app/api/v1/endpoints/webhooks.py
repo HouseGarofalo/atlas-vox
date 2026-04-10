@@ -49,10 +49,14 @@ async def create_webhook(
             detail=f"Invalid events: {', '.join(invalid)}. Valid: {', '.join(sorted(VALID_EVENTS))}",
         )
 
+    # Encrypt webhook secret if provided
+    from app.core.encryption import encrypt_value
+    encrypted_secret = encrypt_value(data.secret) if data.secret else None
+
     webhook = Webhook(
         url=data.url,
         events=",".join(data.events),
-        secret=data.secret,
+        secret=encrypted_secret,
         active=True,
     )
     db.add(webhook)
@@ -78,7 +82,9 @@ async def update_webhook(
     if data.events is not None:
         webhook.events = ",".join(data.events)
     if data.secret is not None:
-        webhook.secret = data.secret
+        # Encrypt webhook secret if provided
+        from app.core.encryption import encrypt_value
+        webhook.secret = encrypt_value(data.secret) if data.secret else None
     if data.active is not None:
         webhook.active = data.active
     await db.flush()

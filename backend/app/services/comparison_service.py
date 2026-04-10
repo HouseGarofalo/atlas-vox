@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import async_session_factory
 from app.models.voice_profile import VoiceProfile
 from app.services.synthesis_service import synthesize
 
@@ -19,11 +22,10 @@ async def compare_voices(
     speed: float = 1.0,
     pitch: float = 0.0,
 ) -> list[dict]:
-    """Synthesize the same text with multiple profiles sequentially.
+    """Synthesize the same text with multiple profiles concurrently.
 
-    Sequential due to shared DB session; each synthesis is internally async.
-    Profile existence is validated inside synthesize(), so no pre-validation loop
-    is needed — it would only issue redundant queries.
+    Each profile gets its own DB session to avoid async session conflicts
+    when running in parallel via asyncio.gather.
     """
     if len(profile_ids) < 2:
         from app.core.exceptions import ValidationError
@@ -36,18 +38,20 @@ async def compare_voices(
         profile_ids=profile_ids,
     )
 
-    results = []
-    for pid in profile_ids:
+    async def _synth_one(pid: str) -> dict:
+        """Synthesize for a single profile using its own session."""
         try:
-            synth_result = await synthesize(
-                db, text=text, profile_id=pid, speed=speed, pitch=pitch,
-            )
+            async with async_session_factory() as session:
+                synth_result = await synthesize(
+                    session, text=text, profile_id=pid, speed=speed, pitch=pitch,
+                )
 
-            # Fetch profile name for the response — synthesize() already validated it exists
-            prof_result = await db.execute(
-                select(VoiceProfile).where(VoiceProfile.id == pid)
-            )
-            profile = prof_result.scalar_one_or_none()
+                # Fetch profile name for the response
+                prof_result = await session.execute(
+                    select(VoiceProfile).where(VoiceProfile.id == pid)
+                )
+                profile = prof_result.scalar_one_or_none()
+                await session.commit()
 
             logger.debug(
                 "comparison_profile_synthesized",
@@ -55,17 +59,17 @@ async def compare_voices(
                 provider=synth_result["provider_name"],
                 latency_ms=synth_result["latency_ms"],
             )
-            results.append({
+            return {
                 "profile_id": pid,
                 "profile_name": profile.name if profile else pid,
                 "provider_name": synth_result["provider_name"],
                 "audio_url": synth_result["audio_url"],
                 "duration_seconds": synth_result.get("duration_seconds"),
                 "latency_ms": synth_result["latency_ms"],
-            })
+            }
         except Exception as e:
             logger.error("comparison_failed", profile_id=pid, error=str(e))
-            results.append({
+            return {
                 "profile_id": pid,
                 "profile_name": pid,
                 "provider_name": "error",
@@ -73,11 +77,13 @@ async def compare_voices(
                 "duration_seconds": None,
                 "latency_ms": 0,
                 "error": str(e),
-            })
+            }
+
+    results = await asyncio.gather(*[_synth_one(pid) for pid in profile_ids])
 
     logger.info(
         "comparison_completed",
         result_count=len(results),
         error_count=sum(1 for r in results if "error" in r),
     )
-    return results
+    return list(results)

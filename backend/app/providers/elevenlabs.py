@@ -569,22 +569,41 @@ class ElevenLabsProvider(TTSProvider):
     async def stream_synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
     ) -> AsyncIterator[bytes]:
+        import asyncio
+        import concurrent.futures
+
         client = self._get_client()
         model_id = self._get_model_id()
         voice_settings = self._build_voice_settings()
 
-        def _gen():
-            return list(client.text_to_speech.convert(
-                voice_id=voice_id,
-                text=text,
-                model_id=model_id,
-                output_format="mp3_44100_128",
-                voice_settings=voice_settings,
-            ))
+        queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
 
-        chunks = await run_sync(_gen)
-        for chunk in chunks:
-            yield chunk
+        def _produce():
+            try:
+                for chunk in client.text_to_speech.convert(
+                    voice_id=voice_id,
+                    text=text,
+                    model_id=model_id,
+                    output_format="mp3_44100_128",
+                    voice_settings=voice_settings,
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        executor.submit(_produce)
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
 
 
 # ---------------------------------------------------------------------------

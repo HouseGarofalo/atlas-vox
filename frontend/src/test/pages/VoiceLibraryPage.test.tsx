@@ -105,7 +105,7 @@ describe('VoiceLibraryPage', () => {
         <VoiceLibraryPage />
       </MemoryRouter>,
     );
-    expect(screen.getByPlaceholderText('Search voices...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search voices/i)).toBeInTheDocument();
   });
 
   it('renders filter dropdowns', () => {
@@ -146,9 +146,7 @@ describe('VoiceLibraryPage', () => {
         <VoiceLibraryPage />
       </MemoryRouter>,
     );
-    expect(
-      screen.getByText('No voices available. Check that providers are configured in Admin.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('No Voices Available')).toBeInTheDocument();
   });
 
   it('renders voice cards when voices exist', () => {
@@ -184,7 +182,7 @@ describe('VoiceLibraryPage', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('Heart')).toBeInTheDocument();
-    expect(screen.getByText('Use Voice')).toBeInTheDocument();
+    expect(screen.getByText('Create Profile')).toBeInTheDocument();
   });
 
   it('shows error state', () => {
@@ -203,7 +201,9 @@ describe('VoiceLibraryPage', () => {
         <VoiceLibraryPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Failed to load voices: Network error')).toBeInTheDocument();
+    expect(
+      screen.getByText('Failed to load voice library: Network error'),
+    ).toBeInTheDocument();
   });
 
   it('calls fetchAllVoices on mount', () => {
@@ -224,7 +224,7 @@ describe('VoiceLibraryPage', () => {
       </MemoryRouter>,
     );
 
-    const searchInput = screen.getByPlaceholderText('Search voices...');
+    const searchInput = screen.getByPlaceholderText(/Search voices/i);
     fireEvent.change(searchInput, { target: { value: 'test' } });
 
     // setFilter should NOT have been called yet with the search value

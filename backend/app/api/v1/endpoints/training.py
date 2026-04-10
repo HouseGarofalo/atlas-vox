@@ -123,7 +123,10 @@ async def training_progress_ws(websocket: WebSocket, job_id: str, token: str | N
         from app.core.security import verify_api_key
         from app.models.api_key import ApiKey
         async with _sf() as _db:
-            result = await _db.execute(_sel(ApiKey).where(ApiKey.active == True))  # noqa: E712
+            key_prefix = token[:12] if len(token) >= 12 else token
+            result = await _db.execute(
+                _sel(ApiKey).where(ApiKey.active == True, ApiKey.key_prefix == key_prefix)  # noqa: E712
+            )
             keys = result.scalars().all()
             valid = any(verify_api_key(token, k.key_hash) for k in keys)
         if not valid:

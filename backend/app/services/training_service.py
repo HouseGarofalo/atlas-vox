@@ -97,8 +97,8 @@ async def start_training(
     celery_task = train_model.delay(job.id)
     job.celery_task_id = celery_task.id
 
-    # Single commit ensures celery_task_id is set before the worker reads the job
-    await db.commit()
+    # Flush ensures celery_task_id is set before auto-commit
+    await db.flush()
 
     logger.info(
         "training_started",
@@ -167,9 +167,9 @@ async def cancel_job(db: AsyncSession, job_id: str) -> TrainingJob:
 
     job.status = "cancelled"
     job.completed_at = datetime.now(UTC)
-    await db.commit()
+    await db.flush()
 
-    # Revoke Celery task AFTER commit so DB state is consistent
+    # Revoke Celery task AFTER flush so DB state is consistent
     if celery_task_id:
         from app.tasks.celery_app import celery_app
 

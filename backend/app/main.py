@@ -31,6 +31,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("database_initialized")
 
+    # Seed system settings defaults (only creates missing ones)
+    from app.core.database import async_session_factory
+    from app.services.system_settings_service import SystemSettingsService
+
+    async with async_session_factory() as session:
+        seeded = await SystemSettingsService.seed_defaults(session)
+        await session.commit()
+        if seeded:
+            logger.info("system_settings_seeded", count=seeded)
+
+    # Seed system presets (persona defaults) on startup
+    from app.api.v1.endpoints.presets import _seed_system_presets
+
+    async with async_session_factory() as session:
+        await _seed_system_presets(session)
+        await session.commit()
+        logger.info("system_presets_seeded")
+
     # Verify Redis connectivity
     try:
         import redis
@@ -52,15 +70,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await discover_gpu_providers()
     logger.info("providers_configured")
 
-    # Start self-healing engine
+    # Start self-healing engine (gated by config)
     from app.healing.engine import healing_engine
-    await healing_engine.start()
-    logger.info("self_healing_started")
+    if settings.healing_enabled:
+        await healing_engine.start()
+        logger.info("self_healing_started")
+    else:
+        logger.info("self_healing_disabled")
 
     yield
 
     # Stop self-healing engine
-    await healing_engine.stop()
+    if settings.healing_enabled:
+        await healing_engine.stop()
 
     # Graceful shutdown
     from app.core.database import engine
@@ -72,7 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Atlas Vox",
     description="Intelligent Voice Training & Customization Platform",
-    version="0.1.0",
+    version=settings.app_version,
     lifespan=lifespan,
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
@@ -104,9 +126,10 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_exception_handler(Exception, global_exception_handler)
 
 # Rate limiting
-from app.core.rate_limit import limiter  # noqa: E402
 from slowapi import _rate_limit_exceeded_handler  # noqa: E402
 from slowapi.errors import RateLimitExceeded  # noqa: E402
+
+from app.core.rate_limit import limiter  # noqa: E402
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -115,6 +138,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # --- Telemetry endpoint ---
 from app.core.dependencies import CurrentUser  # noqa: E402
 
+
 @app.get("/api/v1/telemetry", tags=["telemetry"])
 async def get_telemetry(user: CurrentUser) -> dict:
     """Return in-process telemetry metrics snapshot (requires auth)."""
@@ -122,13 +146,11 @@ async def get_telemetry(user: CurrentUser) -> dict:
 
 
 # Mount API router
-from app.api.v1.router import api_router  # noqa: E402
-from app.mcp.transport import router as mcp_router  # noqa: E402
-
 # OpenAI-compatible TTS endpoint (mounted at /v1/audio/speech, not /api/v1)
 from app.api.v1.endpoints.openai_compat import router as openai_compat_router  # noqa: E402
-
+from app.api.v1.router import api_router  # noqa: E402
 from app.healing.endpoints import router as healing_router  # noqa: E402
+from app.mcp.transport import router as mcp_router  # noqa: E402
 
 app.include_router(api_router)
 app.include_router(mcp_router)
@@ -137,7 +159,8 @@ app.include_router(healing_router, prefix="/api/v1")
 
 
 # --- Metrics endpoint (Prometheus / JSON) ---
-from fastapi.responses import JSONResponse, Response as FastAPIResponse  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi.responses import Response as FastAPIResponse
 
 
 @app.get("/api/v1/metrics", tags=["monitoring"])
@@ -149,8 +172,8 @@ async def get_metrics(user: CurrentUser):  # type: ignore[return]
     """
     try:
         from prometheus_client import (
-            generate_latest,
             CONTENT_TYPE_LATEST,
+            generate_latest,
         )
 
         # If prometheus_client is available, expose its default registry

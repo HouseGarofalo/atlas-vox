@@ -45,9 +45,9 @@ def get_fernet_key() -> Fernet:
             "Set a dedicated ENCRYPTION_KEY to decouple JWT rotation from encrypted data.",
         )
     if secret == "change-me-in-production":
-        logger.warning(
-            "encryption_key_insecure",
-            hint="Encryption is using the default insecure key. Set ENCRYPTION_KEY to a strong random value.",
+        raise RuntimeError(
+            "Cannot encrypt with the default insecure key. "
+            "Set ENCRYPTION_KEY or change JWT_SECRET_KEY from the default."
         )
 
     kdf = HKDF(

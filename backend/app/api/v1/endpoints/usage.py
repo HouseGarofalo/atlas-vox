@@ -40,48 +40,87 @@ async def get_usage(
     """Get usage analytics for the specified time period."""
     since = datetime.now(UTC) - timedelta(days=days)
 
-    # Base query
-    query = select(UsageEvent).where(UsageEvent.created_at >= since)
+    # Base aggregation query by provider
+    provider_query = select(
+        UsageEvent.provider_name,
+        func.sum(UsageEvent.characters).label("total_characters"),
+        func.count().label("total_requests"),
+        func.avg(UsageEvent.duration_ms).label("avg_duration_ms"),
+    ).where(UsageEvent.created_at >= since)
+
     if provider:
-        query = query.where(UsageEvent.provider_name == provider)
+        provider_query = provider_query.where(UsageEvent.provider_name == provider)
 
-    result = await db.execute(query)
-    events = result.scalars().all()
+    provider_query = provider_query.group_by(UsageEvent.provider_name)
+    provider_result = await db.execute(provider_query)
+    provider_rows = provider_result.fetchall()
 
-    # Aggregate by provider
+    # Build provider breakdown
     by_provider: dict[str, dict] = {}
     total_chars = 0
     total_cost = 0.0
     total_requests = 0
 
-    for e in events:
-        p = e.provider_name
-        if p not in by_provider:
-            by_provider[p] = {"characters": 0, "requests": 0, "cost_usd": 0.0, "avg_latency_ms": 0, "latencies": []}
-        by_provider[p]["characters"] += e.characters
-        by_provider[p]["requests"] += 1
-        cost = (e.characters / 1000) * DEFAULT_COST_PER_1K.get(p, 0.0)
-        by_provider[p]["cost_usd"] += cost
-        if e.duration_ms:
-            by_provider[p]["latencies"].append(e.duration_ms)
-        total_chars += e.characters
+    for row in provider_rows:
+        p = row.provider_name
+        chars = row.total_characters or 0
+        requests = row.total_requests or 0
+        avg_latency = int(row.avg_duration_ms or 0)
+        cost = (chars / 1000) * DEFAULT_COST_PER_1K.get(p, 0.0)
+
+        by_provider[p] = {
+            "characters": chars,
+            "requests": requests,
+            "cost_usd": round(cost, 6),
+            "avg_latency_ms": avg_latency,
+        }
+
+        total_chars += chars
         total_cost += cost
-        total_requests += 1
+        total_requests += requests
 
-    # Calculate average latencies
-    for p_data in by_provider.values():
-        lats = p_data.pop("latencies")
-        p_data["avg_latency_ms"] = int(sum(lats) / len(lats)) if lats else 0
+    # Daily breakdown aggregation
+    daily_query = select(
+        func.strftime('%Y-%m-%d', UsageEvent.created_at).label("day"),
+        func.sum(UsageEvent.characters).label("total_characters"),
+        func.count().label("total_requests"),
+    ).where(UsageEvent.created_at >= since)
 
-    # Daily breakdown
+    if provider:
+        daily_query = daily_query.where(UsageEvent.provider_name == provider)
+
+    daily_query = daily_query.group_by(func.strftime('%Y-%m-%d', UsageEvent.created_at))
+    daily_result = await db.execute(daily_query)
+    daily_rows = daily_result.fetchall()
+
     daily: dict[str, dict] = {}
-    for e in events:
-        day = e.created_at.strftime("%Y-%m-%d")
-        if day not in daily:
-            daily[day] = {"characters": 0, "requests": 0, "cost_usd": 0.0}
-        daily[day]["characters"] += e.characters
-        daily[day]["requests"] += 1
-        daily[day]["cost_usd"] += (e.characters / 1000) * DEFAULT_COST_PER_1K.get(e.provider_name, 0.0)
+    for row in daily_rows:
+        day = row.day
+        chars = row.total_characters or 0
+        requests = row.total_requests or 0
+
+        # Calculate cost for the day - need provider breakdown for accurate cost
+        day_cost_query = select(
+            UsageEvent.provider_name,
+            func.sum(UsageEvent.characters).label("chars"),
+        ).where(
+            UsageEvent.created_at >= since,
+            func.strftime('%Y-%m-%d', UsageEvent.created_at) == day,
+        )
+        if provider:
+            day_cost_query = day_cost_query.where(UsageEvent.provider_name == provider)
+        day_cost_query = day_cost_query.group_by(UsageEvent.provider_name)
+
+        day_cost_result = await db.execute(day_cost_query)
+        day_cost_rows = day_cost_result.fetchall()
+
+        day_cost = sum((r.chars / 1000) * DEFAULT_COST_PER_1K.get(r.provider_name, 0.0) for r in day_cost_rows)
+
+        daily[day] = {
+            "characters": chars,
+            "requests": requests,
+            "cost_usd": round(day_cost, 6),
+        }
 
     return {
         "period_days": days,

@@ -42,7 +42,16 @@ class PronunciationResponse(BaseModel):
     updated_at: str
 
 
-@router.get("")
+class PronunciationListResponse(BaseModel):
+    entries: list[PronunciationResponse]
+    count: int
+
+
+class PronunciationImportResponse(BaseModel):
+    imported: int
+
+
+@router.get("", response_model=PronunciationListResponse)
 async def list_entries(
     db: DbSession,
     user: CurrentUser,
@@ -51,7 +60,7 @@ async def list_entries(
     search: str | None = Query(None),
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
-) -> dict:
+) -> PronunciationListResponse:
     """List pronunciation dictionary entries with optional filters."""
     query = select(PronunciationEntry)
     if language:
@@ -62,30 +71,31 @@ async def list_entries(
         # Global entries (no profile) by default
         query = query.where(PronunciationEntry.profile_id.is_(None))
     if search:
-        query = query.where(PronunciationEntry.word.ilike(f"%{search}%"))
+        escaped = search.replace("%", "\\%").replace("_", "\\_")
+        query = query.where(PronunciationEntry.word.ilike(f"%{escaped}%", escape="\\"))
     query = query.order_by(PronunciationEntry.word).offset(offset).limit(limit)
 
     result = await db.execute(query)
     entries = result.scalars().all()
-    return {
-        "entries": [
-            {
-                "id": e.id,
-                "word": e.word,
-                "ipa": e.ipa,
-                "language": e.language,
-                "profile_id": e.profile_id,
-                "created_at": e.created_at.isoformat(),
-                "updated_at": e.updated_at.isoformat(),
-            }
+    return PronunciationListResponse(
+        entries=[
+            PronunciationResponse(
+                id=e.id,
+                word=e.word,
+                ipa=e.ipa,
+                language=e.language,
+                profile_id=e.profile_id,
+                created_at=e.created_at.isoformat(),
+                updated_at=e.updated_at.isoformat(),
+            )
             for e in entries
         ],
-        "count": len(entries),
-    }
+        count=len(entries),
+    )
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_entry(data: PronunciationCreate, db: DbSession, user: CurrentUser) -> dict:
+@router.post("", response_model=PronunciationResponse, status_code=status.HTTP_201_CREATED)
+async def create_entry(data: PronunciationCreate, db: DbSession, user: CurrentUser) -> PronunciationResponse:
     """Create a pronunciation dictionary entry."""
     entry = PronunciationEntry(
         id=str(uuid.uuid4()),
@@ -99,19 +109,19 @@ async def create_entry(data: PronunciationCreate, db: DbSession, user: CurrentUs
     # Invalidate pronunciation cache for affected profile
     _pronunciation_cache.pop(data.profile_id or "__global__", None)
     logger.info("pronunciation_created", word=data.word, ipa=data.ipa)
-    return {
-        "id": entry.id,
-        "word": entry.word,
-        "ipa": entry.ipa,
-        "language": entry.language,
-        "profile_id": entry.profile_id,
-        "created_at": entry.created_at.isoformat(),
-        "updated_at": entry.updated_at.isoformat(),
-    }
+    return PronunciationResponse(
+        id=entry.id,
+        word=entry.word,
+        ipa=entry.ipa,
+        language=entry.language,
+        profile_id=entry.profile_id,
+        created_at=entry.created_at.isoformat(),
+        updated_at=entry.updated_at.isoformat(),
+    )
 
 
-@router.put("/{entry_id}")
-async def update_entry(entry_id: str, data: PronunciationUpdate, db: DbSession, user: CurrentUser) -> dict:
+@router.put("/{entry_id}", response_model=PronunciationResponse)
+async def update_entry(entry_id: str, data: PronunciationUpdate, db: DbSession, user: CurrentUser) -> PronunciationResponse:
     """Update a pronunciation dictionary entry."""
     result = await db.execute(select(PronunciationEntry).where(PronunciationEntry.id == entry_id))
     entry = result.scalar_one_or_none()
@@ -128,15 +138,15 @@ async def update_entry(entry_id: str, data: PronunciationUpdate, db: DbSession, 
     # Invalidate pronunciation cache for the affected profile
     _pronunciation_cache.pop(entry.profile_id or "__global__", None)
     logger.info("pronunciation_updated", entry_id=entry_id)
-    return {
-        "id": entry.id,
-        "word": entry.word,
-        "ipa": entry.ipa,
-        "language": entry.language,
-        "profile_id": entry.profile_id,
-        "created_at": entry.created_at.isoformat(),
-        "updated_at": entry.updated_at.isoformat(),
-    }
+    return PronunciationResponse(
+        id=entry.id,
+        word=entry.word,
+        ipa=entry.ipa,
+        language=entry.language,
+        profile_id=entry.profile_id,
+        created_at=entry.created_at.isoformat(),
+        updated_at=entry.updated_at.isoformat(),
+    )
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -152,8 +162,8 @@ async def delete_entry(entry_id: str, db: DbSession, user: CurrentUser) -> None:
     logger.info("pronunciation_deleted", entry_id=entry_id)
 
 
-@router.post("/import")
-async def import_csv(file: UploadFile, db: DbSession, user: CurrentUser) -> dict:
+@router.post("/import", response_model=PronunciationImportResponse)
+async def import_csv(file: UploadFile, db: DbSession, user: CurrentUser) -> PronunciationImportResponse:
     """Import pronunciation entries from a CSV file (columns: word, ipa, language)."""
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
@@ -175,7 +185,7 @@ async def import_csv(file: UploadFile, db: DbSession, user: CurrentUser) -> dict
     # Invalidate entire pronunciation cache after bulk import
     _pronunciation_cache.clear()
     logger.info("pronunciation_imported", count=created)
-    return {"imported": created}
+    return PronunciationImportResponse(imported=created)
 
 
 @router.get("/export")

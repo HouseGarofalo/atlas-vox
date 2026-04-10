@@ -24,6 +24,10 @@ export const useSettingsStore = create<SettingsState>()(
           const next = state.theme === "light" ? "dark" : "light";
           logger.info("toggleTheme", { from: state.theme, to: next });
           document.documentElement.classList.toggle("dark", next === "dark");
+          // Re-apply active theme so its neutral palette picks up the new mode
+          import("./designStore").then(({ useDesignStore }) => {
+            useDesignStore.getState().applyToDOM();
+          });
           return { theme: next };
         }),
       setDefaultProvider: (provider) => {

@@ -32,10 +32,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg dark:bg-gray-800">
-        <h1 className="mb-6 text-2xl font-bold text-gray-900 dark:text-white">Atlas Vox</h1>
-        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+      <div className="w-full max-w-md rounded-xl p-8 shadow-lg" style={{ backgroundColor: 'var(--color-bg)' }}>
+        <h1 className="mb-6 text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Atlas Vox</h1>
+        <p className="mb-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           Enter your JWT token or API key to continue.
         </p>
         {error && (
@@ -48,7 +48,8 @@ export default function LoginPage() {
           value={token}
           onChange={(e) => { setToken(e.target.value); setError(""); }}
           placeholder="JWT token or API key"
-          className="mb-4 w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+          className="mb-4 w-full rounded-lg px-4 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--color-border)' }}
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
           aria-label="Authentication token"
         />

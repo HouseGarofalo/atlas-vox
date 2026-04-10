@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings

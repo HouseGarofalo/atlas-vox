@@ -3,7 +3,7 @@
 import re
 
 import structlog
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser
@@ -36,13 +36,23 @@ async def import_from_url(data: URLImportRequest, user: CurrentUser) -> TextImpo
     """Extract readable text from a URL using readability heuristics."""
     logger.info("text_import_url", url=data.url)
 
+    # Import SSRF protection from webhook dispatcher
+    from app.services.webhook_dispatcher import _is_url_safe
+
+    # SSRF protection: validate URL before fetching
+    if not await _is_url_safe(data.url):
+        raise HTTPException(
+            status_code=400,
+            detail="URL blocked: private/internal addresses are not allowed for security reasons"
+        )
+
     try:
         import httpx
     except ImportError:
         raise HTTPException(status_code=501, detail="httpx not installed")
 
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
             resp = await client.get(data.url, headers={"User-Agent": "Atlas-Vox-TextImport/1.0"})
             resp.raise_for_status()
             html = resp.text
@@ -99,8 +109,9 @@ async def import_from_file(file: UploadFile, user: CurrentUser) -> TextImportRes
 
     elif ext == "pdf":
         try:
-            import pdfplumber
             import io
+
+            import pdfplumber
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 pages = []
                 for page in pdf.pages:
@@ -113,8 +124,9 @@ async def import_from_file(file: UploadFile, user: CurrentUser) -> TextImportRes
 
     elif ext == "docx":
         try:
-            import docx
             import io
+
+            import docx
             doc = docx.Document(io.BytesIO(content))
             text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
         except ImportError:

@@ -254,8 +254,12 @@ async def discover_gpu_providers() -> None:
     try:
         import httpx
 
+        headers = {}
+        if settings.gpu_service_api_key:
+            headers["Authorization"] = f"Bearer {settings.gpu_service_api_key}"
+
         async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{settings.gpu_service_url}/providers")
+            resp = await client.get(f"{settings.gpu_service_url}/providers", headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 discovered: list[str] = []

@@ -40,6 +40,7 @@ def test_jwt_secret_accepted_with_custom_key():
     s = Settings(
         auth_disabled=False,
         jwt_secret_key="my-super-secure-random-key-12345",
+        encryption_key="another-secure-key-for-encryption-12345",
         database_url="sqlite+aiosqlite:///test.db",
     )
     assert s.jwt_secret_key == "my-super-secure-random-key-12345"

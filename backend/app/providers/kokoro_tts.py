@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import time
 from collections.abc import AsyncIterator
@@ -116,7 +117,7 @@ class KokoroTTSProvider(TTSProvider):
         #   Second letter: gender (f=female, m=male)
         #   Underscore + name
         default_voices = [
-            # --- American English Female (af_) --- 14 voices
+            # --- American English Female (af_) --- 11 voices
             VoiceInfo(voice_id="af_heart", name="Heart (American Female)", language="en", gender="Female"),
             VoiceInfo(voice_id="af_alloy", name="Alloy (American Female)", language="en", gender="Female"),
             VoiceInfo(voice_id="af_aoede", name="Aoede (American Female)", language="en", gender="Female"),

@@ -7,7 +7,6 @@ removal so that TTS providers receive clean, pronounceable text.
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
 import structlog
 

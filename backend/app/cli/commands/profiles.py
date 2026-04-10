@@ -108,7 +108,8 @@ def export_profiles(
 
     async def _export():
         from app.core.database import async_session_factory
-        from app.services.profile_service import list_profiles as _list_all, get_profile, profile_to_response
+        from app.services.profile_service import get_profile, profile_to_response
+        from app.services.profile_service import list_profiles as _list_all
 
         logger.info("cli_profiles_export", output=output, profile_id=profile_id)
         async with async_session_factory() as db:
@@ -171,7 +172,8 @@ def import_profiles(
     async def _import():
         from app.core.database import async_session_factory
         from app.schemas.profile import ProfileCreate
-        from app.services.profile_service import create_profile, list_profiles as _list_all
+        from app.services.profile_service import create_profile
+        from app.services.profile_service import list_profiles as _list_all
 
         logger.info("cli_profiles_import", input_file=input_file, count=len(profile_list))
         async with async_session_factory() as db:

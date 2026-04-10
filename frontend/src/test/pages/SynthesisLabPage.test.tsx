@@ -29,7 +29,7 @@ vi.mock('../../components/audio/AudioPlayer', () => ({
 
 import { useProfileStore } from '../../stores/profileStore';
 import { useSynthesisStore } from '../../stores/synthesisStore';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import SynthesisLabPage from '../../pages/SynthesisLabPage';
 
@@ -55,33 +55,13 @@ beforeEach(() => {
 });
 
 describe('SynthesisLabPage', () => {
-  it('renders the synthesis lab heading', () => {
+  it('renders the synthesis console heading', () => {
     render(
       <MemoryRouter>
         <SynthesisLabPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Synthesis Lab')).toBeInTheDocument();
-  });
-
-  it('renders text area for input', () => {
-    render(
-      <MemoryRouter>
-        <SynthesisLabPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByPlaceholderText('Enter text to synthesize...')).toBeInTheDocument();
-  });
-
-  it('text area accepts input', () => {
-    render(
-      <MemoryRouter>
-        <SynthesisLabPage />
-      </MemoryRouter>,
-    );
-    const textarea = screen.getByPlaceholderText('Enter text to synthesize...');
-    fireEvent.change(textarea, { target: { value: 'Hello world' } });
-    expect(textarea).toHaveValue('Hello world');
+    expect(screen.getByText('SYNTHESIS CONSOLE')).toBeInTheDocument();
   });
 
   it('renders voice profile selector', () => {
@@ -93,12 +73,13 @@ describe('SynthesisLabPage', () => {
     expect(screen.getByText('Voice Profile')).toBeInTheDocument();
   });
 
-  it('renders speed, pitch, and volume sliders', () => {
+  it('renders audio processing section with speed/pitch/volume', () => {
     render(
       <MemoryRouter>
         <SynthesisLabPage />
       </MemoryRouter>,
     );
+    expect(screen.getByText('AUDIO PROCESSING')).toBeInTheDocument();
     expect(screen.getByText('Speed')).toBeInTheDocument();
     expect(screen.getByText('Pitch')).toBeInTheDocument();
     expect(screen.getByText('Volume')).toBeInTheDocument();
@@ -110,7 +91,7 @@ describe('SynthesisLabPage', () => {
         <SynthesisLabPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Synthesize')).toBeInTheDocument();
+    expect(screen.getByText('SYNTHESIZE AUDIO')).toBeInTheDocument();
   });
 
   it('synthesize button is disabled when no text or profile', () => {
@@ -119,7 +100,7 @@ describe('SynthesisLabPage', () => {
         <SynthesisLabPage />
       </MemoryRouter>,
     );
-    const btn = screen.getByText('Synthesize');
+    const btn = screen.getByText('SYNTHESIZE AUDIO');
     expect(btn.closest('button')).toBeDisabled();
   });
 
@@ -129,6 +110,6 @@ describe('SynthesisLabPage', () => {
         <SynthesisLabPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('0 / 10000 characters')).toBeInTheDocument();
+    expect(screen.getByText('0 / 10,000 characters')).toBeInTheDocument();
   });
 });

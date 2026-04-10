@@ -432,8 +432,9 @@ async def _cancel_training(args: dict) -> dict:
 async def _list_presets(args: dict) -> dict:
     if err := _check_scope("read"):
         return err
-    from app.core.database import async_session_factory
     from sqlalchemy import select
+
+    from app.core.database import async_session_factory
     from app.models.persona_preset import PersonaPreset
 
     async with async_session_factory() as db:

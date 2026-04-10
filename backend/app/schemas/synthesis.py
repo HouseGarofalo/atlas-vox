@@ -84,7 +84,7 @@ class BatchSynthesisRequest(BaseModel):
 
 class CompareRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
-    profile_ids: list[str] = Field(..., min_length=2, max_length=10)
+    profile_ids: list[str] = Field(..., min_length=2)
     speed: float = 1.0
     pitch: float = 0.0
 

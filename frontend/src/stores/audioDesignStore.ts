@@ -1,28 +1,13 @@
 import { create } from "zustand";
 import { api } from "../services/api";
+import type { AudioDesignFile, AudioQualityBrief } from "../types";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger("AudioDesignStore");
 
-export interface AudioClip {
-  file_id: string;
-  filename: string;
-  original_filename: string;
-  duration_seconds: number;
-  sample_rate: number;
-  channels: number;
-  format: string;
-  file_size_bytes: number;
-  audio_url: string;
-}
-
-export interface QualityBrief {
-  passed: boolean;
-  score: number;
-  snr_db: number | null;
-  rms_db: number | null;
-  issues: { code: string; severity: string; message: string }[];
-}
+// Re-export types from centralized types file for backward compatibility
+export type AudioClip = AudioDesignFile;
+export type QualityBrief = AudioQualityBrief;
 
 export interface AnalysisResult {
   file_id: string;

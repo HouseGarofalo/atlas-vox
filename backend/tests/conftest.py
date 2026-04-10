@@ -20,6 +20,7 @@ _test_db = os.path.join(tempfile.gettempdir(), f"atlas_vox_test_{os.getpid()}.db
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_test_db}"
 os.environ["AUTH_DISABLED"] = "true"
 os.environ["DEBUG"] = "false"
+os.environ["ENCRYPTION_KEY"] = "test-encryption-key-for-unit-tests"
 
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 

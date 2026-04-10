@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -42,8 +43,20 @@ BLOCKED_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
 
 _ALLOWED_SCHEMES = {"http", "https"}
 
+# Module-level HTTP client singleton
+_http_client = None
 
-def _is_url_safe(url: str) -> bool:
+
+def _get_client():
+    """Get or create the singleton HTTP client."""
+    global _http_client
+    if _http_client is None:
+        import httpx
+        _http_client = httpx.AsyncClient(timeout=10, follow_redirects=False)
+    return _http_client
+
+
+async def _is_url_safe(url: str) -> bool:
     """Reject URLs pointing to internal/private networks (SSRF protection).
 
     Checks performed in order:
@@ -75,7 +88,8 @@ def _is_url_safe(url: str) -> bool:
 
     # 3. DNS resolution — resolve to IPs and block any private/reserved address.
     try:
-        addr_infos = socket.getaddrinfo(host, None)
+        loop = asyncio.get_event_loop()
+        addr_infos = await loop.getaddrinfo(host, None)
     except (socket.gaierror, OSError):
         # DNS resolution failure — treat as unsafe to avoid silent bypass.
         logger.warning("webhook_dns_resolution_failed", host=host)
@@ -133,10 +147,13 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
 
         headers = {"Content-Type": "application/json"}
         if wh.secret:
-            headers["X-Atlas-Vox-Signature"] = f"sha256={_sign_payload(payload, wh.secret)}"
+            # Decrypt webhook secret before using for HMAC signing
+            from app.core.encryption import decrypt_value
+            decrypted_secret = decrypt_value(wh.secret)
+            headers["X-Atlas-Vox-Signature"] = f"sha256={_sign_payload(payload, decrypted_secret)}"
 
         # SSRF protection: block internal/private URLs
-        if not _is_url_safe(wh.url):
+        if not await _is_url_safe(wh.url):
             deliveries.append({
                 "webhook_id": wh.id, "url": wh.url,
                 "status_code": None, "success": False,
@@ -146,9 +163,8 @@ async def dispatch_event(db: AsyncSession, event: str, data: dict) -> list[dict]
             continue
 
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-                resp = await client.post(wh.url, content=payload, headers=headers)
+            client = _get_client()
+            resp = await client.post(wh.url, content=payload, headers=headers)
             deliveries.append({
                 "webhook_id": wh.id,
                 "url": wh.url,

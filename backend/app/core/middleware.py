@@ -92,7 +92,13 @@ telemetry = TelemetryMetrics()
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Logs every HTTP request/response with timing and request ID tracing."""
+    """Logs every HTTP request/response with timing and request ID tracing.
+
+    TODO: Replace BaseHTTPMiddleware with a pure ASGI middleware for better
+    performance. BaseHTTPMiddleware wraps the entire request/response cycle in
+    a task, preventing zero-copy streaming and adding overhead per request.
+    See: https://www.starlette.io/middleware/#pure-asgi-middleware
+    """
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -172,16 +178,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 async def global_exception_handler(request: Request, exc: Exception) -> Response:
     """Catch-all exception handler that logs unhandled errors."""
     from starlette.responses import JSONResponse
+
     from app.core.exceptions import (
         AtlasVoxError,
-        NotFoundError,
-        ValidationError,
-        ProviderError,
-        ServiceError,
         AuthenticationError,
         AuthorizationError,
+        NotFoundError,
+        ProviderError,
+        ServiceError,
         StorageError,
-        TrainingError
+        TrainingError,
+        ValidationError,
     )
 
     request_id = getattr(request.state, "request_id", "unknown")

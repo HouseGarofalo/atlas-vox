@@ -2,7 +2,7 @@
 
 import structlog
 from fastapi import APIRouter, Query
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
 from app.core.dependencies import CurrentUser, DbSession, require_scope
 from app.healing.engine import healing_engine
@@ -90,3 +90,18 @@ async def request_review(context: str = Query(..., min_length=10), user: Current
     """Request a read-only code review from Claude Code."""
     result = await healing_engine.mcp_bridge.review_code(context)
     return {"context": context, "review": result}
+
+
+@router.post("/mcp/test")
+async def test_mcp_connection(user: CurrentUser = None, _admin=require_scope("admin")):
+    """Test MCP bridge connectivity and readiness."""
+    result = await healing_engine.mcp_bridge.test_connection()
+    return result
+
+
+@router.post("/reconfigure")
+async def reconfigure_healing(user: CurrentUser = None, _admin=require_scope("admin")):
+    """Reload healing configuration from the database without full restart."""
+    result = await healing_engine.reconfigure()
+    logger.info("healing_reconfigured", result=result)
+    return result

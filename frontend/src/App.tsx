@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import AppLayout from "./components/layout/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -21,6 +21,7 @@ const VoiceLibraryPage = lazy(() => import("./pages/VoiceLibraryPage"));
 const HelpPage = lazy(() => import("./pages/HelpPage"));
 const DocsPage = lazy(() => import("./pages/DocsPage"));
 // AdminPage superseded by ProvidersPage — /admin redirects to /providers
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 const DesignSystemPage = lazy(() => import("./pages/DesignSystemPage"));
 const HealingPage = lazy(() => import("./pages/HealingPage"));
 const AudioDesignPage = lazy(() => import("./pages/AudioDesignPage"));
@@ -81,7 +82,7 @@ function App() {
             <Route path="settings" element={<Page component={SettingsPage} />} />
             <Route path="help" element={<Page component={HelpPage} />} />
             <Route path="docs" element={<Page component={DocsPage} />} />
-            <Route path="admin" element={<Navigate to="/providers" replace />} />
+            <Route path="admin" element={<Page component={AdminPage} />} />
             <Route path="design" element={<Page component={DesignSystemPage} />} />
             <Route path="healing" element={<Page component={HealingPage} />} />
             <Route path="history" element={<Page component={HistoryPage} />} />

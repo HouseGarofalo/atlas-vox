@@ -68,6 +68,7 @@ class MCPServer:
             return self._error_response(msg_id, -32603, str(e))
 
     async def _handle_initialize(self, params: dict) -> dict:
+        from app.core.config import settings
         self.initialized = True
         return {
             "protocolVersion": "2024-11-05",
@@ -77,7 +78,7 @@ class MCPServer:
             },
             "serverInfo": {
                 "name": "atlas-vox",
-                "version": "0.1.0",
+                "version": settings.app_version,
             },
         }
 

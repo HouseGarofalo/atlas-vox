@@ -1,6 +1,7 @@
 """Bridge to Claude Code Agent MCP server for code-level fixes."""
 
 import asyncio
+import shutil
 import subprocess
 import time
 from collections import deque
@@ -13,11 +14,9 @@ from app.healing.detector import AnomalyEvent
 
 logger = structlog.get_logger("atlas_vox.healing.mcp")
 
-# Path to the Claude Code Agent MCP server
-MCP_SERVER_PATH = Path(
-    "E:/Repos/HouseGarofalo/claude-tools/mcp-servers/claude-code-agent/server.py"
-)
-PROJECT_ROOT = Path("E:/Repos/HouseGarofalo/atlas-vox")
+# Default paths — overridden at runtime by engine._load_config_from_db()
+DEFAULT_SERVER_PATH = Path("mcp-servers/claude-code-agent/server.py")
+DEFAULT_PROJECT_ROOT = Path(".")
 
 
 class MCPBridge:
@@ -25,8 +24,8 @@ class MCPBridge:
 
     def __init__(
         self,
-        server_path: Path = MCP_SERVER_PATH,
-        project_root: Path = PROJECT_ROOT,
+        server_path: Path = DEFAULT_SERVER_PATH,
+        project_root: Path = DEFAULT_PROJECT_ROOT,
         max_fixes_per_hour: int = 3,
         timeout: int = 300,
     ):
@@ -42,6 +41,67 @@ class MCPBridge:
         cutoff = time.time() - 3600
         return sum(1 for t in self._fix_timestamps if t > cutoff)
 
+    async def test_connection(self) -> dict[str, Any]:
+        """Test MCP bridge connectivity and readiness.
+
+        Checks:
+        1. Claude CLI exists in PATH
+        2. MCP server script path is valid (if configured)
+        3. Project root directory exists
+        4. Claude CLI responds to --version
+
+        Returns dict with test results.
+        """
+        results: dict[str, Any] = {
+            "claude_cli_found": False,
+            "claude_cli_version": None,
+            "server_path_valid": False,
+            "server_path": str(self.server_path),
+            "project_root_valid": False,
+            "project_root": str(self.project_root),
+            "enabled": self.enabled,
+            "ready": False,
+        }
+
+        # Check 1: Claude CLI in PATH
+        claude_path = shutil.which("claude")
+        results["claude_cli_found"] = claude_path is not None
+        if claude_path:
+            results["claude_cli_path"] = claude_path
+
+        # Check 2: MCP server path
+        results["server_path_valid"] = self.server_path.exists()
+
+        # Check 3: Project root
+        results["project_root_valid"] = self.project_root.exists()
+
+        # Check 4: Claude CLI version
+        if claude_path:
+            try:
+                version_result = await asyncio.to_thread(
+                    subprocess.run,
+                    ["claude", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if version_result.returncode == 0:
+                    results["claude_cli_version"] = (
+                        version_result.stdout.strip()[:100]
+                    )
+            except Exception as e:
+                results["claude_cli_version"] = f"Error: {e}"
+
+        # Overall readiness: CLI found + project root valid
+        results["ready"] = (
+            results["claude_cli_found"]
+            and results["project_root_valid"]
+            and self.enabled
+        )
+
+        logger.info("mcp_connection_test", **results)
+        return results
+
     async def request_fix(self, event: AnomalyEvent) -> str:
         """Request a code fix from Claude Code Agent."""
         if not self.enabled:
@@ -55,10 +115,6 @@ class MCPBridge:
                 f"Rate limited: {self._fixes_this_hour()}"
                 f"/{self.max_fixes_per_hour} fixes this hour"
             )
-
-        if not self.server_path.exists():
-            logger.error("mcp_server_not_found", path=str(self.server_path))
-            return f"MCP server not found at {self.server_path}"
 
         # Build the task prompt from the anomaly event
         task = self._build_task_prompt(event)
@@ -91,11 +147,12 @@ class MCPBridge:
             return f"MCP fix failed: {e}"
 
     def _sanitize(self, text: str) -> str:
-        """Remove shell metacharacters and limit length."""
+        """Remove shell metacharacters from task descriptions."""
+        import re
         if not text:
             return ""
-        # Remove potential command injection characters
-        sanitized = text.replace("`", "").replace("$", "").replace("$(", "").replace(";", "")
+        sanitized = re.sub(r'[`$;|&<>{}\n\r\\]', '', text)
+        sanitized = sanitized.replace("$(", "").replace("#{", "")
         return sanitized[:500]
 
     def _build_task_prompt(self, event: AnomalyEvent) -> str:
@@ -176,6 +233,8 @@ Report:
             "enabled": self.enabled,
             "server_path": str(self.server_path),
             "server_exists": self.server_path.exists(),
+            "project_root": str(self.project_root),
+            "project_root_exists": self.project_root.exists(),
             "fixes_this_hour": self._fixes_this_hour(),
             "max_fixes_per_hour": self.max_fixes_per_hour,
             "total_fixes": len(self._fix_history),

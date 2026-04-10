@@ -1,26 +1,57 @@
-import { Outlet } from "react-router-dom";
-import Sidebar from "./Sidebar";
-import Header from "./Header";
+import { useDesignStore } from "../../stores/designStore";
+import StudioShell from "./shells/StudioShell";
+import MinimalShell from "./shells/MinimalShell";
+import CommandShell from "./shells/CommandShell";
+import JarvisShell from "./shells/JarvisShell";
+import AtlasShell from "./shells/AtlasShell";
+import BentoShell from "./shells/BentoShell";
 
+/**
+ * AppLayout dispatches to one of six completely different app shells
+ * based on the active theme's `layout` field. Each shell is a distinct
+ * React component tree with its own nav, header, and chrome.
+ */
 export default function AppLayout() {
+  const theme = useDesignStore((state) => state.getCurrentTheme());
+
+  // Skip-to-content link is rendered by all shells indirectly via the main tag.
+  // Render a top-level skip link here so it's always accessible regardless of shell.
+  const skipLink = (
+    <a
+      href="#main-content"
+      className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[200] focus:rounded-xl focus:bg-primary-500 focus:px-6 focus:py-3 focus:text-white focus:shadow-xl focus:outline-none font-medium"
+    >
+      Skip to main content
+    </a>
+  );
+
+  let shell;
+  switch (theme.layout) {
+    case "minimal":
+      shell = <MinimalShell />;
+      break;
+    case "command":
+      shell = <CommandShell />;
+      break;
+    case "jarvis":
+      shell = <JarvisShell />;
+      break;
+    case "atlas":
+      shell = <AtlasShell />;
+      break;
+    case "bento":
+      shell = <BentoShell />;
+      break;
+    case "studio":
+    default:
+      shell = <StudioShell />;
+      break;
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Skip-to-content link for keyboard/screen-reader users (WCAG 2.1 AA) */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-lg focus:bg-primary-500 focus:px-4 focus:py-2 focus:text-white focus:shadow-lg focus:outline-none"
-      >
-        Skip to content
-      </a>
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden sidebar-offset">
-        <Header />
-        <main id="main-content" className="flex-1 overflow-y-auto p-4 sm:p-6" tabIndex={-1}>
-          <div style={{ maxWidth: 'var(--content-max-width)' }} className="mx-auto">
-            <Outlet />
-          </div>
-        </main>
-      </div>
-    </div>
+    <>
+      {skipLink}
+      {shell}
+    </>
   );
 }
