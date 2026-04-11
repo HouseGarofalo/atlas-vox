@@ -82,6 +82,24 @@ async def client(db_session: AsyncSession):
     app.dependency_overrides.clear()
 
 
+# ---------------------------------------------------------------------------
+# Auth helpers — used by test_auth.py and integration tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def auth_token():
+    """Generate a valid JWT access token for testing."""
+    from app.core.security import create_access_token
+
+    return create_access_token(subject="test-user", scopes=["read", "write", "admin"])
+
+
+@pytest.fixture
+def auth_headers(auth_token: str):
+    """HTTP headers with a valid Bearer token."""
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Clean up the per-worker test database file after the session ends."""
     try:
