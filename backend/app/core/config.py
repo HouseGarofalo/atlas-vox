@@ -32,10 +32,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./atlas_vox.db"
 
     # Authentication
-    auth_disabled: bool = True
+    auth_disabled: bool = False
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440
+    jwt_expire_minutes: int = 1440  # Legacy alias — kept for backward compat
+    jwt_access_expire_minutes: int = 15
+    jwt_refresh_expire_days: int = 7
 
     # Encryption — separate from JWT so rotating JWT secret doesn't break encrypted data.
     # If empty, falls back to jwt_secret_key for backward compatibility.
@@ -86,6 +88,7 @@ class Settings(BaseSettings):
 
     # Self-healing engine
     healing_enabled: bool = True
+    healing_mcp_enabled: bool = False
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -99,7 +102,7 @@ class Settings(BaseSettings):
     def validate_secrets(self) -> "Settings":
         """Ensure real secrets are set when authentication is enabled."""
         if not self.auth_disabled:
-            if self.jwt_secret_key == "change-me-in-production":
+            if "change-me" in self.jwt_secret_key.lower():
                 raise ValueError(
                     "jwt_secret_key must be changed from the default value when "
                     "AUTH_DISABLED is False. Set a strong random secret in JWT_SECRET_KEY."
@@ -110,7 +113,7 @@ class Settings(BaseSettings):
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
         if self.is_production:
-            if self.jwt_secret_key == "change-me-in-production":
+            if "change-me" in self.jwt_secret_key.lower():
                 raise ValueError(
                     "jwt_secret_key must be changed from the default in production."
                 )
@@ -118,6 +121,15 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ENCRYPTION_KEY must be set in production to protect provider API keys. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            if "change-me" in self.encryption_key.lower() or "docker-dev" in self.encryption_key.lower():
+                raise ValueError(
+                    "ENCRYPTION_KEY contains a default value. "
+                    "Generate a strong key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            if len(self.jwt_secret_key) < 32:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be at least 32 characters in production"
                 )
             if self.encryption_key == self.jwt_secret_key:
                 import warnings

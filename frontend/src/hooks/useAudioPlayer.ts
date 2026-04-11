@@ -73,7 +73,14 @@ export function useAudioPlayer(): AudioPlayerState & AudioPlayerActions {
       setCurrentUrl(url);
     }
 
-    audioRef.current.play();
+    audioRef.current.play().catch((err) => {
+      setIsPlaying(false);
+      setLoading(false);
+      // DOMException: play() request interrupted is benign (user navigated quickly)
+      if (err.name !== "AbortError") {
+        console.error("Audio play failed:", err);
+      }
+    });
     setIsPlaying(true);
   }, [currentUrl]);
 

@@ -7,7 +7,6 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-import httpx
 import structlog
 
 logger = structlog.get_logger("atlas_vox.healing")
@@ -41,6 +40,46 @@ class LogEvent:
     extra: dict = field(default_factory=dict)
 
 
+async def _check_health_direct() -> dict:
+    """Run health checks directly without HTTP, bypassing auth.
+
+    Performs a lightweight database connectivity check — the same logic as
+    the ``/api/v1/health`` endpoint but invoked in-process so that the
+    healing monitor doesn't need to authenticate against itself.
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_session_factory
+
+    checks: dict[str, str] = {}
+    healthy = True
+
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+    except Exception as exc:
+        logger.error("health_direct_db_failed", error=str(exc))
+        checks["database"] = "error"
+        healthy = False
+
+    return {
+        "status": "healthy" if healthy else "degraded",
+        "checks": checks,
+    }
+
+
+def _collect_telemetry_direct() -> dict:
+    """Read telemetry snapshot directly from the in-process singleton.
+
+    Avoids an HTTP round-trip (and the auth requirement) by importing the
+    telemetry object from the middleware module.
+    """
+    from app.core.middleware import telemetry
+
+    return telemetry.snapshot()
+
+
 class HealthWatchdog:
     """Polls the health endpoint and tracks consecutive failures."""
 
@@ -66,20 +105,18 @@ class HealthWatchdog:
 
     async def check_now(self) -> HealthSnapshot:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.base_url}/api/v1/health")
-                data = resp.json()
-                snap = HealthSnapshot(
-                    timestamp=time.time(),
-                    healthy=data.get("status") == "healthy",
-                    checks=data.get("checks", {}),
-                )
-                if snap.healthy:
-                    self.consecutive_failures = 0
-                else:
-                    self.consecutive_failures += 1
-                self.history.append(snap)
-                return snap
+            data = await _check_health_direct()
+            snap = HealthSnapshot(
+                timestamp=time.time(),
+                healthy=data.get("status") == "healthy",
+                checks=data.get("checks", {}),
+            )
+            if snap.healthy:
+                self.consecutive_failures = 0
+            else:
+                self.consecutive_failures += 1
+            self.history.append(snap)
+            return snap
         except Exception as e:
             self.consecutive_failures += 1
             snap = HealthSnapshot(timestamp=time.time(), healthy=False, error=str(e))
@@ -120,7 +157,7 @@ class HealthWatchdog:
 
 
 class TelemetryCollector:
-    """Polls the telemetry endpoint and computes error rate trends."""
+    """Collects telemetry data and computes error rate trends."""
 
     def __init__(
         self, base_url: str = "http://127.0.0.1:8100", interval: float = 15.0
@@ -145,26 +182,24 @@ class TelemetryCollector:
 
     async def collect_now(self) -> TelemetrySnapshot:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.base_url}/api/v1/telemetry")
-                data = resp.json()
-                total_req = data.get("total_requests", 0)
-                total_err = data.get("total_errors", 0)
-                delta_req = max(total_req - self._prev_requests, 0)
-                delta_err = max(total_err - self._prev_errors, 0)
-                error_rate = (delta_err / delta_req * 100) if delta_req > 0 else 0.0
-                self._prev_requests = total_req
-                self._prev_errors = total_err
-                snap = TelemetrySnapshot(
-                    timestamp=time.time(),
-                    total_requests=total_req,
-                    total_errors=total_err,
-                    error_rate=error_rate,
-                    status_counts=data.get("status_counts", {}),
-                    endpoint_latencies=data.get("endpoint_latencies", {}),
-                )
-                self.history.append(snap)
-                return snap
+            data = _collect_telemetry_direct()
+            total_req = data.get("total_requests", 0)
+            total_err = data.get("total_errors", 0)
+            delta_req = max(total_req - self._prev_requests, 0)
+            delta_err = max(total_err - self._prev_errors, 0)
+            error_rate = (delta_err / delta_req * 100) if delta_req > 0 else 0.0
+            self._prev_requests = total_req
+            self._prev_errors = total_err
+            snap = TelemetrySnapshot(
+                timestamp=time.time(),
+                total_requests=total_req,
+                total_errors=total_err,
+                error_rate=error_rate,
+                status_counts=data.get("status_counts", {}),
+                endpoint_latencies=data.get("endpoint_latencies", {}),
+            )
+            self.history.append(snap)
+            return snap
         except Exception as e:
             logger.error("telemetry_collect_error", error=str(e))
             snap = TelemetrySnapshot(timestamp=time.time())

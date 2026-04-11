@@ -14,6 +14,7 @@ from app.core.database import init_db
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import (
     RequestLoggingMiddleware,
+    SecurityHeadersMiddleware,
     global_exception_handler,
     telemetry,
 )
@@ -52,12 +53,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Verify Redis connectivity
     try:
         import redis
+        from urllib.parse import urlparse, urlunparse
 
         r = redis.Redis.from_url(settings.redis_url, socket_timeout=3)
         r.ping()
-        logger.info("redis_connected", url=settings.redis_url, db=r.connection_pool.connection_kwargs.get("db", 0))
+        parsed = urlparse(settings.redis_url)
+        safe_url = urlunparse(parsed._replace(
+            netloc=f"***@{parsed.hostname}:{parsed.port}" if parsed.password else parsed.netloc
+        ))
+        logger.info("redis_connected", url=safe_url, db=r.connection_pool.connection_kwargs.get("db", 0))
     except Exception as exc:
-        logger.warning("redis_unavailable", url=settings.redis_url, error=str(exc))
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(settings.redis_url)
+        safe_url = urlunparse(parsed._replace(
+            netloc=f"***@{parsed.hostname}:{parsed.port}" if parsed.password else parsed.netloc
+        ))
+        logger.warning("redis_unavailable", url=safe_url, error=str(exc))
 
     from app.services.provider_registry import (
         discover_gpu_providers,
@@ -119,6 +130,9 @@ app.add_middleware(
     expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
 )
 
+# Security headers (adds X-Content-Type-Options, X-Frame-Options, etc.)
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Request logging & telemetry middleware (outermost — measures full lifecycle)
 app.add_middleware(RequestLoggingMiddleware)
 
@@ -160,7 +174,7 @@ app.include_router(healing_router, prefix="/api/v1")
 
 # --- Metrics endpoint (Prometheus / JSON) ---
 from fastapi.responses import JSONResponse  # noqa: E402
-from fastapi.responses import Response as FastAPIResponse
+from fastapi.responses import Response as FastAPIResponse  # noqa: E402
 
 
 @app.get("/api/v1/metrics", tags=["monitoring"])

@@ -103,10 +103,16 @@ async def test_tools_call_list_voices(mcp: MCPServer):
 
     with patch("app.core.database.async_session_factory", return_value=mock_db_cm):
         with patch("app.services.profile_service.list_profiles", new=AsyncMock(return_value=fake_profiles)):
-            response = await mcp.handle_message(json.dumps({
-                "jsonrpc": "2.0", "id": 10, "method": "tools/call",
-                "params": {"name": "atlas_vox_list_voices", "arguments": {}},
-            }))
+            # Set auth context with read scope (required since default scopes are now empty)
+            from app.mcp.tools import _mcp_auth_ctx_var
+            token = _mcp_auth_ctx_var.set({"sub": "test", "scopes": ["read", "write", "admin"]})
+            try:
+                response = await mcp.handle_message(json.dumps({
+                    "jsonrpc": "2.0", "id": 10, "method": "tools/call",
+                    "params": {"name": "atlas_vox_list_voices", "arguments": {}},
+                }))
+            finally:
+                _mcp_auth_ctx_var.reset(token)
 
     data = json.loads(response)
     assert "result" in data

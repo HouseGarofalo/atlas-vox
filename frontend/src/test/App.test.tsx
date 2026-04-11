@@ -85,13 +85,19 @@ vi.mock('../stores/adminStore', () => ({
 
 vi.mock('../stores/authStore', () => {
   const mockAuthStore = {
-    token: 'mock-token',
     apiKey: null,
     user: { sub: 'test-user', scopes: ['admin'] },
     isAuthenticated: true,
-    setToken: vi.fn(),
-    setApiKey: vi.fn(),
+    isLoading: false,
+    error: null,
+    authDisabled: false,
+    login: vi.fn(),
     logout: vi.fn(),
+    refreshToken: vi.fn(),
+    fetchMe: vi.fn(),
+    setApiKey: vi.fn(),
+    setAuthDisabled: vi.fn(),
+    clearAuth: vi.fn(),
     hasScope: vi.fn().mockReturnValue(true),
   };
 

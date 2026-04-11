@@ -9,11 +9,6 @@ vi.mock('../../utils/logger', () => ({
   }),
 }));
 
-// Mock zustand persist middleware
-vi.mock('zustand/middleware', () => ({
-  persist: (fn: any) => fn,
-}));
-
 import { useAuthStore } from '../../stores/authStore';
 
 describe('AuthStore', () => {
@@ -21,88 +16,144 @@ describe('AuthStore', () => {
     vi.clearAllMocks();
     // Reset store state
     useAuthStore.setState({
-      token: null,
       apiKey: null,
       user: null,
       isAuthenticated: false,
-    });
-  });
-
-  describe('setToken', () => {
-    it('parses JWT payload correctly', () => {
-      // Create a mock JWT token
-      const payload = { sub: 'user123', scopes: ['read', 'write'] };
-      const token = `header.${btoa(JSON.stringify(payload))}.signature`;
-
-      useAuthStore.getState().setToken(token);
-
-      const state = useAuthStore.getState();
-      expect(state.token).toBe(token);
-      expect(state.user).toEqual({
-        sub: 'user123',
-        scopes: ['read', 'write'],
-      });
-      expect(state.isAuthenticated).toBe(true);
-    });
-
-    it('handles malformed JWT token gracefully', () => {
-      const token = 'malformed.token.here';
-
-      useAuthStore.getState().setToken(token);
-
-      const state = useAuthStore.getState();
-      expect(state.token).toBe(token);
-      expect(state.user).toEqual({
-        sub: 'unknown',
-        scopes: [],
-      });
-      expect(state.isAuthenticated).toBe(true);
-    });
-
-    it('defaults to admin scope when no scopes in JWT', () => {
-      const payload = { sub: 'user123' };
-      const token = `header.${btoa(JSON.stringify(payload))}.signature`;
-
-      useAuthStore.getState().setToken(token);
-
-      const state = useAuthStore.getState();
-      expect(state.user?.scopes).toEqual(['admin']);
+      isLoading: false,
+      error: null,
+      authDisabled: false,
     });
   });
 
   describe('setApiKey', () => {
-    it('sets api-key-user with admin scope', () => {
-      const apiKey = 'test-api-key-123';
+    it('sets api key and attempts to validate via /auth/me', async () => {
+      // Mock fetch to return user info
+      const mockResponse = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ sub: 'key-user', scopes: ['read', 'write'] }),
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      useAuthStore.getState().setApiKey(apiKey);
+      await useAuthStore.getState().setApiKey('test-api-key-123');
 
       const state = useAuthStore.getState();
-      expect(state.apiKey).toBe(apiKey);
-      expect(state.user).toEqual({
-        sub: 'api-key-user',
-        scopes: ['admin'],
-      });
+      expect(state.apiKey).toBe('test-api-key-123');
+      expect(state.user).toEqual({ sub: 'key-user', scopes: ['read', 'write'] });
+      expect(state.isAuthenticated).toBe(true);
+    });
+
+    it('falls back gracefully when /auth/me fails', async () => {
+      // Mock fetch to fail
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+
+      await useAuthStore.getState().setApiKey('test-api-key-123');
+
+      const state = useAuthStore.getState();
+      expect(state.apiKey).toBe('test-api-key-123');
+      expect(state.user).toEqual({ sub: 'api-key-user', scopes: [] });
       expect(state.isAuthenticated).toBe(true);
     });
   });
 
+  describe('login', () => {
+    it('calls /auth/login and then fetchMe on success', async () => {
+      const loginResponse = { ok: true, json: vi.fn().mockResolvedValue({}) };
+      const meResponse = { ok: true, json: vi.fn().mockResolvedValue({ sub: 'user1', scopes: ['admin'] }) };
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce(loginResponse)
+        .mockResolvedValueOnce(meResponse);
+
+      await useAuthStore.getState().login('user@test.com', 'password123');
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user).toEqual({ sub: 'user1', scopes: ['admin'] });
+    });
+
+    it('sets error on login failure', async () => {
+      const failResponse = {
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({ detail: 'Invalid credentials' }),
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue(failResponse);
+
+      await expect(useAuthStore.getState().login('bad@test.com', 'wrong')).rejects.toThrow('Invalid credentials');
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.error).toBe('Invalid credentials');
+    });
+  });
+
   describe('logout', () => {
-    it('clears all auth state', () => {
+    it('clears all auth state', async () => {
       // First set some auth state
       useAuthStore.setState({
-        token: 'test-token',
         apiKey: 'test-key',
         user: { sub: 'test', scopes: ['admin'] },
         isAuthenticated: true,
       });
 
-      useAuthStore.getState().logout();
+      // Mock the logout endpoint
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+      await useAuthStore.getState().logout();
 
       const state = useAuthStore.getState();
-      expect(state.token).toBeNull();
       expect(state.apiKey).toBeNull();
       expect(state.user).toBeNull();
       expect(state.isAuthenticated).toBe(false);
+    });
+
+    it('clears state even if logout request fails', async () => {
+      useAuthStore.setState({
+        apiKey: 'test-key',
+        user: { sub: 'test', scopes: ['admin'] },
+        isAuthenticated: true,
+      });
+
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+
+      await useAuthStore.getState().logout();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+    });
+  });
+
+  describe('clearAuth', () => {
+    it('resets all auth state synchronously', () => {
+      useAuthStore.setState({
+        apiKey: 'key',
+        user: { sub: 'u', scopes: ['admin'] },
+        isAuthenticated: true,
+        error: 'some error',
+        isLoading: true,
+        authDisabled: true,
+      });
+
+      useAuthStore.getState().clearAuth();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(state.apiKey).toBeNull();
+      expect(state.error).toBeNull();
+      expect(state.isLoading).toBe(false);
+      expect(state.authDisabled).toBe(false);
+    });
+  });
+
+  describe('setAuthDisabled', () => {
+    it('sets admin user in auth-disabled mode', () => {
+      useAuthStore.getState().setAuthDisabled();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.authDisabled).toBe(true);
+      expect(state.user).toEqual({ sub: 'local-user', scopes: ['admin'] });
     });
   });
 
@@ -140,6 +191,81 @@ describe('AuthStore', () => {
       });
 
       expect(useAuthStore.getState().hasScope('any-scope')).toBe(true);
+    });
+  });
+
+  describe('fetchMe', () => {
+    it('fetches user info and updates state', async () => {
+      const mockResponse = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ sub: 'user123', scopes: ['read', 'write'] }),
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+      await useAuthStore.getState().fetchMe();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user).toEqual({ sub: 'user123', scopes: ['read', 'write'] });
+      expect(state.isLoading).toBe(false);
+    });
+
+    it('uses API key in Authorization header when set', async () => {
+      useAuthStore.setState({ apiKey: 'my-api-key' });
+
+      const mockResponse = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ sub: 'key-user', scopes: [] }),
+      };
+      globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+      await useAuthStore.getState().fetchMe();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/auth/me'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer my-api-key',
+          }),
+        }),
+      );
+    });
+
+    it('throws on failure', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+
+      await expect(useAuthStore.getState().fetchMe()).rejects.toThrow('HTTP 401');
+    });
+  });
+
+  describe('refreshToken', () => {
+    it('refreshes and fetches user info', async () => {
+      const refreshResponse = { ok: true, json: vi.fn().mockResolvedValue({}) };
+      const meResponse = { ok: true, json: vi.fn().mockResolvedValue({ sub: 'user1', scopes: ['admin'] }) };
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce(refreshResponse)
+        .mockResolvedValueOnce(meResponse);
+
+      await useAuthStore.getState().refreshToken();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user).toEqual({ sub: 'user1', scopes: ['admin'] });
+    });
+
+    it('clears auth on refresh failure', async () => {
+      useAuthStore.setState({
+        isAuthenticated: true,
+        user: { sub: 'old', scopes: ['admin'] },
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+
+      await useAuthStore.getState().refreshToken();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
     });
   });
 });

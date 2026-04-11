@@ -7,7 +7,7 @@
  *   Escape          — Close modals
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface ShortcutHandler {
   key: string;
@@ -24,9 +24,14 @@ const isInputFocused = () => {
 };
 
 export function useKeyboardShortcuts(shortcuts: ShortcutHandler[]) {
+  // Store shortcuts in a ref to avoid re-registering the event listener
+  // every time the caller re-creates the shortcuts array.
+  const shortcutsRef = useRef(shortcuts);
+  shortcutsRef.current = shortcuts;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      for (const s of shortcuts) {
+      for (const s of shortcutsRef.current) {
         const ctrlMatch = s.ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey);
         const shiftMatch = s.shift ? e.shiftKey : !e.shiftKey;
 
@@ -43,7 +48,7 @@ export function useKeyboardShortcuts(shortcuts: ShortcutHandler[]) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [shortcuts]);
+  }, []); // Empty deps — handler reads from ref
 }
 
 /** All available shortcuts for the help modal. */

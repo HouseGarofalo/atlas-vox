@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
+import threading
 
 import structlog
 from sqlalchemy import select
@@ -67,7 +69,8 @@ class ProviderRegistry:
     """Manages provider instances and provides discovery.
 
     Thread-safe: uses an asyncio.Lock to prevent race conditions during
-    lazy provider instantiation under concurrent requests.
+    lazy provider instantiation under concurrent async requests, and a
+    threading.Lock for the sync path used by Celery/MCP workers.
     """
 
     def __init__(self) -> None:
@@ -75,13 +78,15 @@ class ProviderRegistry:
         self._config_overrides: dict[str, dict] = {}
         self._gpu_providers: dict[str, TTSProvider] = {}
         self._lock = asyncio.Lock()
+        self._sync_lock = threading.Lock()
 
     def get_provider(self, name: str) -> TTSProvider:
         """Get or create a provider instance by name (sync fast path).
 
         For the initial instantiation of a provider, use ``get_provider_async``
-        which holds the lock.  This sync version is safe for already-instantiated
-        providers (the common path after startup).
+        which holds the async lock.  This sync version uses a threading.Lock
+        with double-check locking for safe concurrent access from Celery
+        workers and other sync callers.
         """
         # Fast path — no lock needed for existing instances
         if name in self._gpu_providers:
@@ -93,13 +98,17 @@ class ProviderRegistry:
             from app.core.exceptions import NotFoundError
             raise NotFoundError("Provider", name)
 
-        # Slow path — instantiate under lock (sync fallback)
-        instance = PROVIDER_CLASSES[name]()
-        if name in self._config_overrides:
-            instance.configure(self._config_overrides[name])
-        self._instances[name] = instance
-        logger.info("provider_instantiated", provider=name)
-        return self._instances[name]
+        # Slow path — instantiate under lock with double-check
+        with self._sync_lock:
+            if name in self._instances:
+                return self._instances[name]
+
+            instance = PROVIDER_CLASSES[name]()
+            if name in self._config_overrides:
+                instance.configure(self._config_overrides[name])
+            self._instances[name] = instance
+            logger.info("provider_instantiated", provider=name)
+            return self._instances[name]
 
     async def get_provider_async(self, name: str) -> TTSProvider:
         """Get or create a provider instance by name (async, lock-protected)."""
@@ -126,14 +135,25 @@ class ProviderRegistry:
             return self._instances[name]
 
     def apply_config(self, name: str, config: dict) -> None:
-        """Store config overrides and force provider reload."""
-        self._config_overrides[name] = config
-        self._instances.pop(name, None)
+        """Store config overrides and force provider reload.
+
+        Thread-safe: acquires the sync lock to prevent races between
+        Celery workers and concurrent callers.  The config is deep-copied
+        so that the caller's dict cannot mutate registry state after the call.
+        """
+        with self._sync_lock:
+            self._config_overrides[name] = copy.deepcopy(config)
+            self._instances.pop(name, None)
         logger.info("provider_config_applied", provider=name)
 
     def get_provider_config(self, name: str) -> dict:
-        """Return stored config overrides for a provider."""
-        return self._config_overrides.get(name, {})
+        """Return a deep copy of stored config overrides for a provider.
+
+        Returns a copy so callers cannot accidentally mutate registry state.
+        """
+        with self._sync_lock:
+            cfg = self._config_overrides.get(name, {})
+            return copy.deepcopy(cfg)
 
     def list_available(self) -> list[str]:
         """List all registered provider names (local + GPU)."""
@@ -275,12 +295,15 @@ async def discover_gpu_providers() -> None:
 
                     from app.providers.remote_provider import RemoteProvider
 
-                    provider_registry._gpu_providers[name] = RemoteProvider(
+                    remote = RemoteProvider(
                         name=name,
                         display_name=display,
                         gpu_service_url=settings.gpu_service_url,
                         timeout=settings.gpu_service_timeout,
                     )
+                    # Mutate the registry under the sync lock
+                    with provider_registry._sync_lock:
+                        provider_registry._gpu_providers[name] = remote
                     discovered.append(name)
                     logger.info(
                         "gpu_provider_discovered",

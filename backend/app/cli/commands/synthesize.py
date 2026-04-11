@@ -77,12 +77,13 @@ def synthesize_text(
 
 def _play_audio(path: str) -> None:
     """Attempt to play audio using system default player."""
+    import os
     import subprocess
     import sys
 
     try:
         if sys.platform == "win32":
-            subprocess.Popen(["start", "", path], shell=True)
+            os.startfile(path)
         elif sys.platform == "darwin":
             subprocess.Popen(["afplay", path])
         else:

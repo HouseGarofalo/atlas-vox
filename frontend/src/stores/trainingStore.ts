@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "../services/api";
 import type { TrainingJob } from "../types";
 import { createLogger } from "../utils/logger";
+import { getErrorMessage } from "../utils/errors";
 
 const logger = createLogger("TrainingStore");
 
@@ -28,7 +29,7 @@ export const useTrainingStore = create<TrainingState>((set) => ({
       logger.info("fetchJobs_success", { count: jobs.length });
       set({ jobs, loading: false });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to fetch jobs";
+      const message = getErrorMessage(e);
       logger.error("fetchJobs_failed", { error: message });
       set({ error: message, loading: false });
     }
@@ -36,10 +37,17 @@ export const useTrainingStore = create<TrainingState>((set) => ({
 
   startTraining: async (profileId, data = {}) => {
     logger.info("startTraining", { profileId, provider: data.provider_name });
-    const job = await api.startTraining(profileId, data);
-    logger.info("startTraining_success", { jobId: job.id });
-    set((s) => ({ jobs: [job, ...s.jobs] }));
-    return job;
+    try {
+      const job = await api.startTraining(profileId, data);
+      logger.info("startTraining_success", { jobId: job.id });
+      set((s) => ({ jobs: [job, ...s.jobs], error: null }));
+      return job;
+    } catch (e: unknown) {
+      const message = getErrorMessage(e);
+      logger.error("startTraining_failed", { profileId, error: message });
+      set({ error: message });
+      throw e;
+    }
   },
 
   cancelJob: async (jobId) => {

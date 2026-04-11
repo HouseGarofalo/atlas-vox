@@ -259,9 +259,10 @@ async def restore_settings(
         decrypted = decrypt_value(body.data)
         settings_data = json.loads(decrypted)
     except Exception as e:
+        logger.error("admin_restore_failed", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid backup data: {e}",
+            detail="Invalid or corrupted backup data. Ensure the backup was created by this system.",
         )
 
     count = await SystemSettingsService.import_all(db, settings_data)

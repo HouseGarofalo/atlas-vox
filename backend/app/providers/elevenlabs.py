@@ -577,7 +577,7 @@ class ElevenLabsProvider(TTSProvider):
         voice_settings = self._build_voice_settings()
 
         queue = asyncio.Queue()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _produce():
             try:
@@ -595,15 +595,18 @@ class ElevenLabsProvider(TTSProvider):
                 loop.call_soon_threadsafe(queue.put_nowait, None)
 
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        executor.submit(_produce)
+        try:
+            executor.submit(_produce)
 
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            if isinstance(item, Exception):
-                raise item
-            yield item
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+        finally:
+            executor.shutdown(wait=False)
 
 
 # ---------------------------------------------------------------------------

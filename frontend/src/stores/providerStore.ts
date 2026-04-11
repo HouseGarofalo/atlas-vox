@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "../services/api";
 import type { Provider } from "../types";
 import { createLogger } from "../utils/logger";
+import { getErrorMessage } from "../utils/errors";
 
 const logger = createLogger("ProviderStore");
 
@@ -36,7 +37,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       logger.info("fetchProviders_success", { count: providers.length });
       set({ providers, loading: false, lastFetchedAt: Date.now() });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to fetch providers";
+      const message = getErrorMessage(e);
       logger.error("fetchProviders_failed", { error: message });
       set({ error: message, loading: false });
     }
@@ -53,7 +54,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         providers: s.providers.map((p) => (p.name === name ? { ...p, health } : p)),
       }));
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Health check failed";
+      const message = getErrorMessage(e);
       logger.error("checkHealth_failed", { provider: name, error: message });
       set((s) => ({
         providers: s.providers.map((p) =>

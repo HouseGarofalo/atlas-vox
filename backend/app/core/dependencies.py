@@ -7,13 +7,18 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_factory
-from app.core.security import decode_access_token, verify_api_key
+from app.core.security import (
+    decode_access_token,
+    decode_refresh_token,
+    is_token_blacklisted,
+    verify_api_key,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +51,7 @@ async def get_current_user(
 
     Supports:
     - AUTH_DISABLED=true: returns a default admin user
-    - Bearer <jwt>: validates JWT token
+    - Bearer <jwt>: validates JWT token (checks blacklist via jti)
     - Bearer avx_<key>: validates API key against the database
     """
     if settings.auth_disabled:
@@ -81,6 +86,53 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+    # Check token blacklist (logout invalidation)
+    jti = claims.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        logger.warning("auth_failed", reason="token_blacklisted", jti=jti)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+        )
+
+    return claims
+
+
+async def get_current_user_from_refresh(
+    refresh_token: Annotated[str | None, Cookie()] = None,
+) -> dict:
+    """Validate a refresh token from an httpOnly cookie.
+
+    Used exclusively by the ``POST /auth/refresh`` endpoint.
+    """
+    if settings.auth_disabled:
+        return {"sub": "local-user", "scopes": ["admin"]}
+
+    if not refresh_token:
+        logger.warning("refresh_auth_failed", reason="missing_cookie")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+
+    claims = decode_refresh_token(refresh_token)
+    if claims is None:
+        logger.warning("refresh_auth_failed", reason="invalid_or_expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    # Check blacklist
+    jti = claims.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        logger.warning("refresh_auth_failed", reason="token_blacklisted", jti=jti)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+        )
+
     return claims
 
 
@@ -132,6 +184,7 @@ async def _authenticate_api_key(raw_key: str) -> dict:
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[dict | None, Depends(get_current_user)]
+RefreshUser = Annotated[dict, Depends(get_current_user_from_refresh)]
 
 
 def require_scope(*scopes: str):

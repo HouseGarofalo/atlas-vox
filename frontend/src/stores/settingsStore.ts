@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createLogger } from "../utils/logger";
+import { useDesignStore } from "./designStore";
 
 const logger = createLogger("SettingsStore");
 
@@ -25,9 +26,7 @@ export const useSettingsStore = create<SettingsState>()(
           logger.info("toggleTheme", { from: state.theme, to: next });
           document.documentElement.classList.toggle("dark", next === "dark");
           // Re-apply active theme so its neutral palette picks up the new mode
-          import("./designStore").then(({ useDesignStore }) => {
-            useDesignStore.getState().applyToDOM();
-          });
+          useDesignStore.getState().applyToDOM();
           return { theme: next };
         }),
       setDefaultProvider: (provider) => {

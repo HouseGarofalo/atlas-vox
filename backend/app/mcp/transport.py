@@ -79,6 +79,9 @@ async def mcp_sse_endpoint(request: Request) -> StreamingResponse:
     auth_ctx = await _verify_mcp_auth(request.headers.get("authorization"))
     # Store auth context in request state so downstream tool calls can access it.
     request.state.mcp_auth = auth_ctx
+    # Also set the ContextVar so tool handlers can read it via _mcp_auth_ctx_var.
+    from app.mcp.tools import _mcp_auth_ctx_var
+    _mcp_auth_ctx_var.set(auth_ctx)
 
     async def event_stream():
         # Send initial connection event

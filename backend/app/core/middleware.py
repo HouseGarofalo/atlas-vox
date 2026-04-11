@@ -13,9 +13,9 @@ from typing import Any
 _UUID_PATTERN = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.IGNORECASE)
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = structlog.get_logger("atlas_vox.middleware")
 
@@ -26,7 +26,12 @@ logger = structlog.get_logger("atlas_vox.middleware")
 
 @dataclass
 class TelemetryMetrics:
-    """In-process telemetry counters (threadsafe via GIL for single-process)."""
+    """In-process telemetry counters (threadsafe via GIL for single-process).
+
+    Note: In multi-worker deployments (uvicorn --workers N), each worker
+    maintains independent counters. For accurate aggregation across workers,
+    use an external metrics system like Prometheus.
+    """
 
     total_requests: int = 0
     total_errors: int = 0
@@ -87,27 +92,62 @@ telemetry = TelemetryMetrics()
 
 
 # ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+
+
+class SecurityHeadersMiddleware:
+    """Add security headers to all responses."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend([
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    (b"x-xss-protection", b"0"),  # Modern browsers: rely on CSP instead
+                    (b"permissions-policy", b"microphone=(), camera=(), geolocation=()"),
+                ])
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+# ---------------------------------------------------------------------------
 # Request logging middleware
 # ---------------------------------------------------------------------------
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Logs every HTTP request/response with timing and request ID tracing.
+class RequestLoggingMiddleware:
+    """Pure ASGI middleware for request logging with timing and request ID tracing.
 
-    TODO: Replace BaseHTTPMiddleware with a pure ASGI middleware for better
-    performance. BaseHTTPMiddleware wraps the entire request/response cycle in
-    a task, preventing zero-copy streaming and adding overhead per request.
-    See: https://www.starlette.io/middleware/#pure-asgi-middleware
+    Unlike BaseHTTPMiddleware, this does not buffer the response body, enabling
+    zero-copy streaming and reducing per-request overhead.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        # Generate a unique request ID
-        request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:16])
-        request.state.request_id = request_id
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        # Bind request ID to structlog context for the duration of the request
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:16])
+        scope.setdefault("state", {})
+        scope["state"]["request_id"] = request_id
+
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
@@ -124,8 +164,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         )
 
         start = time.perf_counter()
+        status_code = 500  # Default in case send is never called
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                # Inject tracing headers
+                headers = list(message.get("headers", []))
+                headers.append((b"x-request-id", request_id.encode()))
+                latency_ms = round((time.perf_counter() - start) * 1000, 2)
+                headers.append((b"x-response-time-ms", str(latency_ms).encode()))
+                message["headers"] = headers
+            await send(message)
+
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_wrapper)
         except Exception as exc:
             latency_ms = round((time.perf_counter() - start) * 1000, 2)
             logger.error(
@@ -141,14 +195,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
-        status_code = response.status_code
 
         # Record telemetry
         telemetry.record_request(method, path, status_code, latency_ms)
-
-        # Add tracing headers to response
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Response-Time-Ms"] = str(latency_ms)
 
         # Log level based on status
         log_data = dict(
@@ -167,7 +216,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             logger.info("request_completed", **log_data)
 
         structlog.contextvars.clear_contextvars()
-        return response
 
 
 # ---------------------------------------------------------------------------

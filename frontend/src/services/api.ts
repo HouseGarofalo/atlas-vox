@@ -104,19 +104,17 @@ class ApiClient {
       delete (headers as Record<string, string>)["Content-Type"];
     }
 
-    // Inject auth headers
-    const { token, apiKey, authDisabled } = useAuthStore.getState();
-    if (!authDisabled) {
-      if (token) {
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-      } else if (apiKey) {
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
-      }
+    // Inject auth header only for API key mode.
+    // JWT auth uses httpOnly cookies sent automatically via credentials: 'include'.
+    const { apiKey, authDisabled } = useAuthStore.getState();
+    if (!authDisabled && apiKey) {
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
     }
 
     logger.info("API request", { method, url });
 
-    const response = await this.fetchWithRetry(url, { ...options, headers });
+    // credentials: 'include' ensures httpOnly cookies (JWT) are sent with every request
+    const response = await this.fetchWithRetry(url, { ...options, headers, credentials: "include" });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));

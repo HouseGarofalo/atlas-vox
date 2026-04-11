@@ -7,6 +7,7 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Query
 from sqlalchemy import text
+from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.dependencies import CurrentUser, DbSession, require_scope
@@ -27,7 +28,7 @@ async def health_check(db: DbSession) -> dict:
         return {"status": "healthy"}
     except Exception as exc:
         logger.error("health_check_db_failed", error=str(exc))
-        return {"status": "degraded"}
+        return JSONResponse({"status": "degraded"}, status_code=503)
 
 
 @router.get("/health/details")
@@ -73,11 +74,16 @@ async def health_check_details(db: DbSession, user: CurrentUser) -> dict:
         checks["storage"] = "error"
         overall_healthy = False
 
-    return {
-        "status": "healthy" if overall_healthy else "degraded",
-        "checks": checks,
-        "version": settings.app_version,
-    }
+    if overall_healthy:
+        return {
+            "status": "healthy",
+            "checks": checks,
+            "version": settings.app_version,
+        }
+    return JSONResponse(
+        {"status": "degraded", "checks": checks, "version": settings.app_version},
+        status_code=503,
+    )
 
 
 @router.get("/storage/stats")

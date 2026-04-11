@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -161,8 +162,22 @@ class TTSProvider(ABC):
     _runtime_config: dict | None = None
 
     def configure(self, config: dict) -> None:
-        """Apply runtime configuration overrides."""
-        self._runtime_config = config
+        """Apply runtime configuration overrides.
+
+        Stores a deep copy of the config so callers cannot mutate internal state
+        by modifying the dict they passed in.
+        """
+        self._runtime_config = copy.deepcopy(config)
+
+    def get_config_snapshot(self) -> dict:
+        """Return a frozen (deep-copied) snapshot of the current runtime config.
+
+        Safe to pass across threads / tasks — mutations to the returned dict
+        do not affect the provider's internal state.
+        """
+        if self._runtime_config is None:
+            return {}
+        return copy.deepcopy(self._runtime_config)
 
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """Get config value, checking runtime overrides first, then fallback."""

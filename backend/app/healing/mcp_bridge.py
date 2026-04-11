@@ -1,6 +1,7 @@
 """Bridge to Claude Code Agent MCP server for code-level fixes."""
 
 import asyncio
+import shlex
 import shutil
 import subprocess
 import time
@@ -10,6 +11,7 @@ from typing import Any
 
 import structlog
 
+from app.core.config import settings
 from app.healing.detector import AnomalyEvent
 
 logger = structlog.get_logger("atlas_vox.healing.mcp")
@@ -107,6 +109,9 @@ class MCPBridge:
         if not self.enabled:
             return "MCP bridge disabled"
 
+        if not settings.healing_mcp_enabled:
+            return "MCP bridge disabled via HEALING_MCP_ENABLED setting"
+
         if self._fixes_this_hour() >= self.max_fixes_per_hour:
             logger.warning(
                 "mcp_rate_limit", fixes_this_hour=self._fixes_this_hour()
@@ -147,13 +152,12 @@ class MCPBridge:
             return f"MCP fix failed: {e}"
 
     def _sanitize(self, text: str) -> str:
-        """Remove shell metacharacters from task descriptions."""
-        import re
+        """Sanitize user-influenced data for safe inclusion in shell commands."""
         if not text:
             return ""
-        sanitized = re.sub(r'[`$;|&<>{}\n\r\\]', '', text)
-        sanitized = sanitized.replace("$(", "").replace("#{", "")
-        return sanitized[:500]
+        # shlex.quote wraps the string in single-quotes, escaping any embedded
+        # single-quotes — this is safer than a regex allowlist.
+        return shlex.quote(text[:500])
 
     def _build_task_prompt(self, event: AnomalyEvent) -> str:
         """Build a task prompt for Claude Code from an anomaly event."""

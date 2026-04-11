@@ -33,7 +33,4 @@ class TrainingJob(Base):
     )
 
     # Relationships
-    profile: Mapped[VoiceProfile] = relationship("VoiceProfile", back_populates="training_jobs")
-
-
-from app.models.voice_profile import VoiceProfile  # noqa: E402
+    profile: Mapped["VoiceProfile"] = relationship("VoiceProfile", back_populates="training_jobs")

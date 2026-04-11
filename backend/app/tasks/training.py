@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +15,11 @@ from app.tasks.celery_app import celery_app
 from app.tasks.utils import run_async
 
 logger = structlog.get_logger(__name__)
+
+# Thread lock for provider registry access in Celery worker processes.
+# asyncio.Lock() is meaningless here because Celery tasks run in separate
+# processes/threads, not in an asyncio event loop.
+_registry_lock = threading.Lock()
 
 
 def _ensure_wav(file_path: Path) -> Path:
@@ -77,10 +83,12 @@ async def _load_job_and_samples(db, job_id: str, task):
         select(ProviderModel).where(ProviderModel.name == job.provider_name)
     )
     prov_row = prov_result.scalar_one_or_none()
-    if prov_row and prov_row.config_json:
-        provider_registry.apply_config(job.provider_name, json.loads(prov_row.config_json))
 
-    provider = provider_registry.get_provider(job.provider_name)
+    with _registry_lock:
+        if prov_row and prov_row.config_json:
+            provider_registry.apply_config(job.provider_name, json.loads(prov_row.config_json))
+
+        provider = provider_registry.get_provider(job.provider_name)
     capabilities = await provider.get_capabilities()
 
     sample_result = await db.execute(

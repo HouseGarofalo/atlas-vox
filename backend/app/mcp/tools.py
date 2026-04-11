@@ -17,9 +17,10 @@ logger = structlog.get_logger(__name__)
 
 _mcp_auth_ctx_var: ContextVar[dict[str, Any]] = ContextVar(
     "_mcp_auth_ctx_var",
-    # Default: admin (used when auth is disabled and the context var was never
-    # set, e.g. in unit tests that call handlers directly).
-    default={"sub": "local-user", "scopes": ["admin"]},
+    # Default: no scopes.  When auth is disabled the transport layer explicitly
+    # sets admin scopes; the default here is intentionally restrictive so that
+    # an un-set context var never silently grants elevated privileges.
+    default={"sub": "anonymous", "scopes": []},
 )
 
 
@@ -249,13 +250,9 @@ async def _get_training_status(args: dict) -> dict:
 
 async def _manage_profile(args: dict) -> dict:
     action = args["action"]
-    # delete requires write scope; create/update require read scope as a minimum.
-    if action == "delete":
-        if err := _check_scope("write"):
-            return err
-    else:
-        if err := _check_scope("read"):
-            return err
+    # All profile mutations require write scope.
+    if err := _check_scope("write"):
+        return err
 
     from app.core.database import async_session_factory
     from app.schemas.profile import ProfileCreate, ProfileUpdate
@@ -459,6 +456,21 @@ async def _configure_provider(args: dict) -> dict:
 
     if config:
         provider_registry.apply_config(name, config)
+
+        # Persist configuration to the database
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.models.provider import Provider
+
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Provider).where(Provider.name == name)
+            )
+            provider = result.scalar_one_or_none()
+            if provider:
+                provider.config_json = json.dumps(config)
+                await session.commit()
 
     return {"provider": name, "config_applied": bool(config), "status": "ok"}
 

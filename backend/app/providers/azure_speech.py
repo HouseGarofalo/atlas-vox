@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import time
 import uuid
@@ -434,7 +435,7 @@ class AzureSpeechProvider(TTSProvider):
     ) -> AudioResult:
         import azure.cognitiveservices.speech as speechsdk
 
-        config = self._get_config()
+        config = copy.deepcopy(self._get_config())
         self._apply_output_format(config, settings_.output_format)
         sample_rate, ext = self._format_info(settings_.output_format)
 
@@ -488,7 +489,7 @@ class AzureSpeechProvider(TTSProvider):
         """Stream synthesis using Azure SDK PullAudioOutputStream."""
         import azure.cognitiveservices.speech as speechsdk
 
-        config = self._get_config()
+        config = copy.deepcopy(self._get_config())
         self._apply_output_format(config, settings_.output_format)
 
         if voice_id.startswith("cnv:"):
@@ -553,7 +554,7 @@ class AzureSpeechProvider(TTSProvider):
         """Synthesize with word timing data for subtitle/karaoke features."""
         import azure.cognitiveservices.speech as speechsdk
 
-        config = self._get_config()
+        config = copy.deepcopy(self._get_config())
         self._apply_output_format(config, settings_.output_format)
         sample_rate, ext = self._format_info(settings_.output_format)
 

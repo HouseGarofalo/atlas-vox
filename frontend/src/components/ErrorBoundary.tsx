@@ -34,15 +34,15 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="flex items-center justify-center min-h-[200px] p-8">
           <div className="text-center">
-            <h2 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+            <h2 className="text-lg font-semibold text-[var(--color-text)] mb-2">
               Something went wrong
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            <p className="text-sm text-[var(--color-text-secondary)] mb-4">
               {this.state.error?.message}
             </p>
             <button
               onClick={() => this.setState({ hasError: false, error: null })}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+              className="px-4 py-2 bg-primary-500 text-white rounded-[var(--radius)] hover:bg-primary-600 text-sm transition-colors"
             >
               Try Again
             </button>

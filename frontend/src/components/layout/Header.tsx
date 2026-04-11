@@ -1,4 +1,4 @@
-import { Moon, Sun, Paintbrush, Power, Volume2 } from "lucide-react";
+import { Moon, Sun, Paintbrush, Volume2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -7,7 +7,6 @@ import ThemeQuickSwitcher from "../theme/ThemeQuickSwitcher";
 
 export default function Header() {
   const { theme, toggleTheme } = useSettingsStore();
-  const [isOnline, setIsOnline] = useState(true);
   const [clockTime, setClockTime] = useState(() => new Date().toLocaleTimeString());
 
   // Static decorative VU level — only animate when real audio is playing
@@ -31,9 +30,9 @@ export default function Header() {
         {/* System status indicator */}
         <div className="hidden sm:flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-led-green animate-led-pulse' : 'bg-led-red'}`} />
+            <div className="w-2 h-2 rounded-full bg-led-green animate-led-pulse" />
             <span className="text-xs font-mono text-[var(--color-text-secondary)] uppercase tracking-wider">
-              {isOnline ? 'System Online' : 'Offline'}
+              System Online
             </span>
           </div>
 
@@ -78,22 +77,6 @@ export default function Header() {
             <Moon className="h-5 w-5" />
           )}
           <div className="absolute inset-0 bg-gradient-gold opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-200" />
-        </button>
-
-        {/* Power/Status Button */}
-        <button
-          onClick={() => setIsOnline(!isOnline)}
-          className={`group relative rounded-xl p-3 transition-all duration-200 border ${
-            isOnline
-              ? 'text-led-green bg-led-green/10 border-led-green/20 hover:bg-led-green/20'
-              : 'text-[var(--color-text-secondary)] border-transparent hover:bg-[var(--color-hover)]'
-          }`}
-          aria-label={isOnline ? "System online" : "System offline"}
-        >
-          <Power className="h-4 w-4" />
-          {isOnline && (
-            <div className="absolute -top-1 -right-1 w-2 h-2 bg-led-green rounded-full animate-led-pulse" />
-          )}
         </button>
       </div>
     </header>

@@ -9,6 +9,10 @@ interface AudioPlayerProps {
   compact?: boolean;
 }
 
+/** Map compact flag to wavesurfer height without re-initializing. */
+const COMPACT_HEIGHT = 32;
+const FULL_HEIGHT = 48;
+
 export function AudioPlayer({ src, compact }: AudioPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<any>(null);
@@ -18,6 +22,7 @@ export function AudioPlayer({ src, compact }: AudioPlayerProps) {
   const [muted, setMuted] = useState(false);
   const [ready, setReady] = useState(false);
 
+  // Initialize wavesurfer only when src changes (not compact)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -37,7 +42,7 @@ export function AudioPlayer({ src, compact }: AudioPlayerProps) {
           barWidth: 2,
           barGap: 1,
           barRadius: 2,
-          height: compact ? 32 : 48,
+          height: compact ? COMPACT_HEIGHT : FULL_HEIGHT,
           normalize: true,
           url: src,
         });
@@ -81,7 +86,15 @@ export function AudioPlayer({ src, compact }: AudioPlayerProps) {
       setCurrentTime(0);
       setDuration(0);
     };
-  }, [src, compact]);
+  }, [src]); // compact intentionally excluded — height updated via setOptions below
+
+  // Update wavesurfer height when compact changes without re-initializing
+  useEffect(() => {
+    const ws = wavesurferRef.current;
+    if (ws && ws.setOptions) {
+      ws.setOptions({ height: compact ? COMPACT_HEIGHT : FULL_HEIGHT });
+    }
+  }, [compact]);
 
   const toggle = useCallback(() => {
     const ws = wavesurferRef.current;

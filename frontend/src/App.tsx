@@ -43,17 +43,21 @@ function App() {
   useEffect(() => {
     logger.info("app_mounted");
 
-    // Auto-authenticate when AUTH_DISABLED=true on backend
-    const { isAuthenticated, setAuthDisabled } = useAuthStore.getState();
+    // Auto-authenticate when AUTH_DISABLED=true on backend,
+    // or try to restore session via httpOnly cookie
+    const { isAuthenticated, setAuthDisabled, fetchMe } = useAuthStore.getState();
     if (!isAuthenticated) {
-      fetch("/api/v1/auth/status")
+      fetch("/api/v1/auth/status", { credentials: "include" })
         .then(res => res.json())
         .then(data => {
           if (data.auth_disabled) {
             setAuthDisabled();
             logger.info("auto_authenticated", { reason: "AUTH_DISABLED" });
           } else {
-            logger.info("auth_required");
+            // Try restoring session from existing httpOnly cookie
+            fetchMe()
+              .then(() => logger.info("session_restored"))
+              .catch(() => logger.info("auth_required"));
           }
         })
         .catch(() => {

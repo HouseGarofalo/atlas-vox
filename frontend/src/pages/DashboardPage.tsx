@@ -186,7 +186,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="mt-4 flex justify-center">
-                <VUMeter level={healthyProviders / providers.length * 100} barCount={8} height={20} />
+                <VUMeter level={providers.length > 0 ? (healthyProviders / providers.length * 100) : 0} barCount={8} height={20} />
               </div>
             </Card>
           </div>
@@ -319,7 +319,7 @@ export default function DashboardPage() {
           >
             <Card variant="console" className="overflow-hidden">
               <div className="space-y-3">
-                {history.slice(0, 5).map((item: any, index) => (
+                {history.slice(0, 5).map((item: { id: string; text: string; provider_name: string; latency_ms: number; created_at: string }, index) => (
                   <div
                     key={item.id}
                     className="flex items-center gap-4 p-3 rounded-lg bg-studio-charcoal/30 hover:bg-studio-charcoal/50 transition-all duration-300"

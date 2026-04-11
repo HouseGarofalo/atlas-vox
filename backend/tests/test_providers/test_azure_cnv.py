@@ -311,14 +311,27 @@ class TestSynthesizeCustomVoice:
         async def fake_run_sync(fn, *a, **kw):
             return fn()
 
+        # Since synthesize() now uses copy.deepcopy(config), we need to
+        # intercept the deepcopy to get a reference to the actual config used.
+        configs_used = []
+        original_deepcopy = __import__("copy").deepcopy
+        def capturing_deepcopy(obj):
+            result = MagicMock(wraps=obj) if isinstance(obj, MagicMock) else original_deepcopy(obj)
+            configs_used.append(result)
+            return result
+
         with patch.object(provider, "_get_config", return_value=mock_config), \
              patch.object(provider, "prepare_output_path", return_value=Path("/tmp/test.wav")), \
              patch("app.providers.azure_speech.run_sync", side_effect=fake_run_sync), \
+             patch("app.providers.azure_speech.copy.deepcopy", side_effect=capturing_deepcopy), \
              patch.dict("sys.modules", modules):
             await provider.synthesize("Hello", "cnv:MyVoice:ep-123", SynthesisSettings())
 
-        assert mock_config.endpoint_id == "ep-123"
-        assert mock_config.speech_synthesis_voice_name == "MyVoice"
+        # Verify the deepcopied config had endpoint_id and voice name set
+        assert len(configs_used) == 1
+        used_config = configs_used[0]
+        assert used_config.endpoint_id == "ep-123"
+        assert used_config.speech_synthesis_voice_name == "MyVoice"
         mock_synth.speak_text_async.assert_called_once()
 
 

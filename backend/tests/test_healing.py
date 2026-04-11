@@ -326,6 +326,7 @@ class TestMCPBridge:
 
     @pytest.mark.asyncio
     async def test_request_fix_rate_limited(self):
+        from unittest.mock import patch
         from app.healing.mcp_bridge import MCPBridge
         bridge = MCPBridge(max_fixes_per_hour=1)
         bridge._fix_timestamps.append(time.time())
@@ -333,7 +334,9 @@ class TestMCPBridge:
             rule="test", severity="warning", category="test",
             title="Test", description="Test",
         )
-        result = await bridge.request_fix(event)
+        with patch("app.healing.mcp_bridge.settings") as mock_settings:
+            mock_settings.healing_mcp_enabled = True
+            result = await bridge.request_fix(event)
         assert "Rate limited" in result
 
     @pytest.mark.asyncio

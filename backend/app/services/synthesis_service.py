@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -46,6 +47,9 @@ _PRONUNCIATION_CACHE_MAX_SIZE = 100
 
 # Compiled regex cache for pronunciation patterns
 _regex_cache: dict[str, re.Pattern] = {}
+
+# Lock for thread-safe pronunciation cache access
+_cache_lock = asyncio.Lock()
 
 
 def _split_text(text: str, max_chars: int = CHUNK_MAX_CHARS_DEFAULT) -> list[str]:
@@ -113,43 +117,44 @@ async def _apply_pronunciation(db: AsyncSession, text: str, profile_id: str) -> 
     cache_key_global = "__global__"
     cache_key_profile = profile_id
 
-    cached_global = _pronunciation_cache.get(cache_key_global)
-    cached_profile = _pronunciation_cache.get(cache_key_profile)
+    async with _cache_lock:
+        cached_global = _pronunciation_cache.get(cache_key_global)
+        cached_profile = _pronunciation_cache.get(cache_key_profile)
 
-    if (
-        cached_global is not None
-        and (now - cached_global[1]) < _PRONUNCIATION_CACHE_TTL
-        and cached_profile is not None
-        and (now - cached_profile[1]) < _PRONUNCIATION_CACHE_TTL
-    ):
-        entries = cached_global[0] + cached_profile[0]
-    else:
-        result = await db.execute(
-            select(PronunciationEntry).where(
-                or_(
-                    PronunciationEntry.profile_id.is_(None),
-                    PronunciationEntry.profile_id == profile_id,
+        if (
+            cached_global is not None
+            and (now - cached_global[1]) < _PRONUNCIATION_CACHE_TTL
+            and cached_profile is not None
+            and (now - cached_profile[1]) < _PRONUNCIATION_CACHE_TTL
+        ):
+            entries = cached_global[0] + cached_profile[0]
+        else:
+            result = await db.execute(
+                select(PronunciationEntry).where(
+                    or_(
+                        PronunciationEntry.profile_id.is_(None),
+                        PronunciationEntry.profile_id == profile_id,
+                    )
                 )
             )
-        )
-        all_entries = result.scalars().all()
+            all_entries = result.scalars().all()
 
-        global_entries = [e for e in all_entries if e.profile_id is None]
-        profile_entries = [e for e in all_entries if e.profile_id == profile_id]
+            global_entries = [e for e in all_entries if e.profile_id is None]
+            profile_entries = [e for e in all_entries if e.profile_id == profile_id]
 
-        _pronunciation_cache[cache_key_global] = (global_entries, now)
-        _pronunciation_cache[cache_key_profile] = (profile_entries, now)
+            _pronunciation_cache[cache_key_global] = (global_entries, now)
+            _pronunciation_cache[cache_key_profile] = (profile_entries, now)
 
-        # Evict oldest entries if cache exceeds max size
-        if len(_pronunciation_cache) > _PRONUNCIATION_CACHE_MAX_SIZE:
-            oldest_keys = sorted(
-                _pronunciation_cache,
-                key=lambda k: _pronunciation_cache[k][1],
-            )[:_PRONUNCIATION_CACHE_MAX_SIZE // 2]
-            for k in oldest_keys:
-                del _pronunciation_cache[k]
+            # Evict oldest entries if cache exceeds max size
+            if len(_pronunciation_cache) > _PRONUNCIATION_CACHE_MAX_SIZE:
+                oldest_keys = sorted(
+                    _pronunciation_cache,
+                    key=lambda k: _pronunciation_cache[k][1],
+                )[:_PRONUNCIATION_CACHE_MAX_SIZE // 2]
+                for k in oldest_keys:
+                    del _pronunciation_cache[k]
 
-        entries = global_entries + profile_entries
+            entries = global_entries + profile_entries
 
     if not entries:
         return text
@@ -241,6 +246,35 @@ async def _apply_preset(db: AsyncSession, preset_id: str, synth_settings: Synthe
     synth_settings.pitch = preset.pitch
     synth_settings.volume = preset.volume
     return synth_settings
+
+
+async def _fire_synthesis_webhook_background(
+    synthesis_id: str,
+    profile_id: str,
+    provider_name: str,
+    latency_ms: int,
+    duration_seconds: float | None = None,
+) -> None:
+    """Background webhook dispatch with its own DB session.
+
+    Uses an independent session so the request-scoped session is not leaked
+    into a background task that outlives the request.
+    """
+    from app.core.database import async_session_factory
+    from app.services.webhook_dispatcher import fire_synthesis_complete
+
+    try:
+        async with async_session_factory() as session:
+            await fire_synthesis_complete(
+                session,
+                synthesis_id=synthesis_id,
+                profile_id=profile_id,
+                provider_name=provider_name,
+                latency_ms=latency_ms,
+                duration_seconds=duration_seconds,
+            )
+    except Exception as exc:
+        logger.warning("webhook_synthesis_background_failed", error=str(exc))
 
 
 async def synthesize(
@@ -413,9 +447,7 @@ async def synthesize(
     try:
         import asyncio
 
-        from app.services.webhook_dispatcher import fire_synthesis_complete
-        asyncio.create_task(fire_synthesis_complete(
-            db,
+        asyncio.create_task(_fire_synthesis_webhook_background(
             synthesis_id=history.id,
             profile_id=profile_id,
             provider_name=profile.provider_name,

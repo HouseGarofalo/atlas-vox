@@ -26,6 +26,7 @@ export default function ProfilesPage() {
   const [createMode, setCreateMode] = useState<"choose" | "training" | "design">("choose");
   const [form, setForm] = useState({ name: "", description: "", language: "en", provider_name: "" });
   const [compareProfile, setCompareProfile] = useState<VoiceProfile | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Voice Design state
   const [designDescription, setDesignDescription] = useState("");
@@ -57,7 +58,6 @@ export default function ProfilesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this profile?")) return;
     logger.info("profile_delete", { profile_id: id });
     try {
       await deleteProfile(id);
@@ -66,6 +66,8 @@ export default function ProfilesPage() {
     } catch (e: unknown) {
       logger.error("profile_delete_error", { profile_id: id, error: getErrorMessage(e) });
       toast.error(getErrorMessage(e));
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -156,7 +158,7 @@ export default function ProfilesPage() {
             <ProfileCard
               key={profile.id}
               profile={profile}
-              onDelete={() => handleDelete(profile.id)}
+              onDelete={() => { setDeleteTarget(profile.id); }}
               onTrain={() => { logger.info("navigate_train", { profile_id: profile.id }); navigate(`/training?profile=${profile.id}`); }}
               onSynthesize={() => { logger.info("navigate_synthesize", { profile_id: profile.id }); navigate(`/synthesis?profile=${profile.id}`); }}
               onCompare={() => { logger.info("version_compare_open", { profile_id: profile.id }); setCompareProfile(profile); }}
@@ -164,6 +166,30 @@ export default function ProfilesPage() {
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Profile"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            Are you sure you want to delete this profile? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { if (deleteTarget) handleDelete(deleteTarget); }}
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Version Compare Modal */}
       <VersionCompareModal

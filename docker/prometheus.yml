@@ -12,9 +12,4 @@ scrape_configs:
           service: "atlas-vox"
           component: "backend"
 
-  - job_name: "atlas-vox-redis"
-    static_configs:
-      - targets: ["atlas-vox-redis:6379"]
-        labels:
-          service: "atlas-vox"
-          component: "redis"
+  # For Redis metrics, deploy redis_exporter as a sidecar

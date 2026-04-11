@@ -11,6 +11,9 @@ from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
+# Module-level flag to ensure WAL mode is only logged on first connection
+_wal_mode_logged = False
+
 connect_args = {}
 if settings.is_sqlite:
     connect_args["check_same_thread"] = False
@@ -25,11 +28,14 @@ if settings.is_sqlite:
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_wal_mode(dbapi_conn: object, connection_record: object) -> None:
         """Enable WAL journal mode for better concurrent read performance."""
+        global _wal_mode_logged
         cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
-        logger.info("sqlite_wal_mode_enabled")
+        if not _wal_mode_logged:
+            logger.info("sqlite_wal_mode_enabled")
+            _wal_mode_logged = True
 
 else:
     engine = create_async_engine(
@@ -58,30 +64,15 @@ class Base(DeclarativeBase):
 
 
 async def init_db() -> None:
-    """Create all tables and add any missing columns for existing tables."""
+    """Create all tables (development/testing convenience).
+
+    For production deployments, use Alembic migrations instead:
+        alembic upgrade head
+    """
     logger.info("db_init_start")
     async with engine.begin() as conn:
+        # create_all is idempotent — safe for dev/test but production should use Alembic
         await conn.run_sync(Base.metadata.create_all)
 
-        # For SQLite: add columns that may be missing on existing tables.
-        # create_all only creates NEW tables, not new columns on existing ones.
-        if settings.is_sqlite:
-            from sqlalchemy import inspect, text
-
-            def _add_missing_columns(sync_conn):
-                inspector = inspect(sync_conn)
-                for table in Base.metadata.sorted_tables:
-                    if not inspector.has_table(table.name):
-                        continue
-                    existing = {c["name"] for c in inspector.get_columns(table.name)}
-                    for col in table.columns:
-                        if col.name not in existing:
-                            col_type = col.type.compile(sync_conn.dialect)
-                            sync_conn.execute(text(
-                                f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}"
-                            ))
-                            logger.info("db_column_added", table=table.name, column=col.name)
-
-            await conn.run_sync(_add_missing_columns)
-
+    # Schema migrations are handled by Alembic. Run: alembic upgrade head
     logger.info("db_init_complete")

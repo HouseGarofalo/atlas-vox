@@ -12,6 +12,9 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/import-text", tags=["text-import"])
 
+# Maximum upload size for imported text files (20 MB)
+MAX_FILE_SIZE = 20 * 1024 * 1024
+
 
 class URLImportRequest(BaseModel):
     url: str = Field(..., min_length=10, max_length=2000)
@@ -96,9 +99,9 @@ async def import_from_file(file: UploadFile, user: CurrentUser) -> TextImportRes
         raise HTTPException(status_code=400, detail="No filename provided")
 
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
-    content = await file.read()
 
-    if len(content) > 20 * 1024 * 1024:
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large. Maximum 20MB.")
 
     text = ""

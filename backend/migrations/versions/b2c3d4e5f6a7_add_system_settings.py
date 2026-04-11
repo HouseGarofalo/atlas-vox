@@ -1,20 +1,21 @@
-"""Add system_settings table.
+"""add system_settings table
 
-Revision ID: 001_add_system_settings
-Revises: None
-Create Date: 2026-04-10
+Revision ID: b2c3d4e5f6a7
+Revises: a1b2c3d4e5f6
+Create Date: 2026-04-10 12:00:00.000000
+
 """
-
-from __future__ import annotations
+from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
-# revision identifiers
-revision = "001_add_system_settings"
-down_revision = None
-branch_labels = None
-depends_on = None
+
+# revision identifiers, used by Alembic.
+revision: str = 'b2c3d4e5f6a7'
+down_revision: Union[str, None] = 'a1b2c3d4e5f6'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
