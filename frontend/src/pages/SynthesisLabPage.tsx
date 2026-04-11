@@ -86,7 +86,7 @@ export default function SynthesisLabPage() {
   // ElevenLabs voice settings
   const [stability, setStability] = useState(0.5);
   const [similarityBoost, setSimilarityBoost] = useState(0.75);
-  const [style] = useState(0);
+  const style = 0; // ElevenLabs style exaggeration — static, no UI control yet
   const [speakerBoost, setSpeakerBoost] = useState(false);
 
   // Batch mode

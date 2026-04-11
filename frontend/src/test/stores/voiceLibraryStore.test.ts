@@ -112,7 +112,8 @@ describe("VoiceLibraryStore", () => {
 
   describe("filteredVoices", () => {
     beforeEach(() => {
-      useVoiceLibraryStore.setState({ voices: mockVoices });
+      // Must set both voices and _filteredVoices since filteredVoices() reads cached result
+      useVoiceLibraryStore.setState({ voices: mockVoices, _filteredVoices: mockVoices });
     });
 
     it("returns all voices with no filters", () => {

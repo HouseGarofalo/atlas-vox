@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import io
+import json
 import time
 import uuid
 import zipfile
@@ -32,6 +33,9 @@ from app.providers.base import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# Module-level cache for hardcoded Azure voice data loaded from JSON.
+_azure_voices_cache: list[VoiceInfo] | None = None
 
 # Azure Custom Voice API version
 CNV_API_VERSION = "2024-02-01-preview"
@@ -890,226 +894,30 @@ class AzureSpeechProvider(TTSProvider):
 
     @staticmethod
     def _hardcoded_english_voices() -> list[VoiceInfo]:
-        """Comprehensive catalog of Azure English neural voices (130+)."""
-        entries = [
-            # ================================================================
-            # en-US — United States (91 voices)
-            # ================================================================
-            # --- DragonHD Premium ---
-            ("en-US-Ava:DragonHDLatestNeural", "Ava DragonHD (US)", "en-US", "Female"),
-            ("en-US-Andrew:DragonHDLatestNeural", "Andrew DragonHD (US)", "en-US", "Male"),
-            ("en-US-Adam:DragonHDLatestNeural", "Adam DragonHD (US)", "en-US", "Male"),
-            ("en-US-Alloy:DragonHDLatestNeural", "Alloy DragonHD (US)", "en-US", "Male"),
-            ("en-US-Aria:DragonHDLatestNeural", "Aria DragonHD (US)", "en-US", "Female"),
-            ("en-US-Bree:DragonHDLatestNeural", "Bree DragonHD (US)", "en-US", "Female"),
-            ("en-US-Brian:DragonHDLatestNeural", "Brian DragonHD (US)", "en-US", "Male"),
-            ("en-US-Davis:DragonHDLatestNeural", "Davis DragonHD (US)", "en-US", "Male"),
-            ("en-US-Emma:DragonHDLatestNeural", "Emma DragonHD (US)", "en-US", "Female"),
-            ("en-US-Emma2:DragonHDLatestNeural", "Emma2 DragonHD (US)", "en-US", "Female"),
-            ("en-US-Jane:DragonHDLatestNeural", "Jane DragonHD (US)", "en-US", "Female"),
-            ("en-US-Jenny:DragonHDLatestNeural", "Jenny DragonHD (US)", "en-US", "Female"),
-            ("en-US-Nova:DragonHDLatestNeural", "Nova DragonHD (US)", "en-US", "Female"),
-            ("en-US-Phoebe:DragonHDLatestNeural", "Phoebe DragonHD (US)", "en-US", "Female"),
-            ("en-US-Serena:DragonHDLatestNeural", "Serena DragonHD (US)", "en-US", "Female"),
-            ("en-US-Steffan:DragonHDLatestNeural", "Steffan DragonHD (US)", "en-US", "Male"),
-            ("en-US-Andrew2:DragonHDLatestNeural", "Andrew2 DragonHD (US)", "en-US", "Male"),
-            ("en-US-Andrew3:DragonHDLatestNeural", "Andrew3 DragonHD (US)", "en-US", "Male"),
-            ("en-US-Ava3:DragonHDLatestNeural", "Ava3 DragonHD (US)", "en-US", "Female"),
-            # --- DragonHD Omni ---
-            ("en-US-Andrew:DragonHDOmniLatestNeural", "Andrew DragonHD Omni (US)", "en-US", "Male"),
-            ("en-US-Caleb:DragonHDOmniLatestNeural", "Caleb DragonHD Omni (US)", "en-US", "Male"),
-            ("en-US-Dana:DragonHDOmniLatestNeural", "Dana DragonHD Omni (US)", "en-US", "Female"),
-            ("en-US-Lewis:DragonHDOmniLatestNeural", "Lewis DragonHD Omni (US)", "en-US", "Male"),
-            ("en-US-Phoebe:DragonHDOmniLatestNeural", "Phoebe DragonHD Omni (US)", "en-US", "Female"),
-            ("en-US-Ava:DragonHDOmniLatestNeural", "Ava DragonHD Omni (US)", "en-US", "Female"),
-            # --- DragonHD Flash ---
-            ("en-US-Jimmie:DragonHDFlashLatestNeural", "Jimmie DragonHD Flash (US)", "en-US", "Male"),
-            ("en-US-Tiana:DragonHDFlashLatestNeural", "Tiana DragonHD Flash (US)", "en-US", "Female"),
-            ("en-US-Tyler:DragonHDFlashLatestNeural", "Tyler DragonHD Flash (US)", "en-US", "Male"),
-            # --- MultiTalker ---
-            ("en-US-MultiTalker-Ava-Andrew:DragonHDLatestNeural", "MultiTalker Ava-Andrew (US)", "en-US", "Neutral"),
-            ("en-US-MultiTalker-Ava-Steffan:DragonHDLatestNeural", "MultiTalker Ava-Steffan (US)", "en-US", "Neutral"),
-            ("en-US-Multitalker-Set1:DragonHDLatestNeural", "MultiTalker Set1 (US)", "en-US", "Neutral"),
-            # --- Multilingual ---
-            ("en-US-AvaMultilingualNeural", "Ava Multilingual (US)", "en-US", "Female"),
-            ("en-US-AndrewMultilingualNeural", "Andrew Multilingual (US)", "en-US", "Male"),
-            ("en-US-AmandaMultilingualNeural", "Amanda Multilingual (US)", "en-US", "Female"),
-            ("en-US-AdamMultilingualNeural", "Adam Multilingual (US)", "en-US", "Male"),
-            ("en-US-EmmaMultilingualNeural", "Emma Multilingual (US)", "en-US", "Female"),
-            ("en-US-PhoebeMultilingualNeural", "Phoebe Multilingual (US)", "en-US", "Female"),
-            ("en-US-BrianMultilingualNeural", "Brian Multilingual (US)", "en-US", "Male"),
-            ("en-US-CoraMultilingualNeural", "Cora Multilingual (US)", "en-US", "Female"),
-            ("en-US-ChristopherMultilingualNeural", "Christopher Multilingual (US)", "en-US", "Male"),
-            ("en-US-BrandonMultilingualNeural", "Brandon Multilingual (US)", "en-US", "Male"),
-            ("en-US-DavisMultilingualNeural", "Davis Multilingual (US)", "en-US", "Male"),
-            ("en-US-DerekMultilingualNeural", "Derek Multilingual (US)", "en-US", "Male"),
-            ("en-US-DustinMultilingualNeural", "Dustin Multilingual (US)", "en-US", "Male"),
-            ("en-US-EvelynMultilingualNeural", "Evelyn Multilingual (US)", "en-US", "Female"),
-            ("en-US-JennyMultilingualNeural", "Jenny Multilingual (US)", "en-US", "Female"),
-            ("en-US-LewisMultilingualNeural", "Lewis Multilingual (US)", "en-US", "Male"),
-            ("en-US-LolaMultilingualNeural", "Lola Multilingual (US)", "en-US", "Female"),
-            ("en-US-NancyMultilingualNeural", "Nancy Multilingual (US)", "en-US", "Female"),
-            ("en-US-RyanMultilingualNeural", "Ryan Multilingual (US)", "en-US", "Male"),
-            ("en-US-SamuelMultilingualNeural", "Samuel Multilingual (US)", "en-US", "Male"),
-            ("en-US-SerenaMultilingualNeural", "Serena Multilingual (US)", "en-US", "Female"),
-            ("en-US-SteffanMultilingualNeural", "Steffan Multilingual (US)", "en-US", "Male"),
-            # --- Turbo Multilingual ---
-            ("en-US-AlloyTurboMultilingualNeural", "Alloy Turbo (US)", "en-US", "Male"),
-            ("en-US-EchoTurboMultilingualNeural", "Echo Turbo (US)", "en-US", "Male"),
-            ("en-US-FableTurboMultilingualNeural", "Fable Turbo (US)", "en-US", "Neutral"),
-            ("en-US-OnyxTurboMultilingualNeural", "Onyx Turbo (US)", "en-US", "Male"),
-            ("en-US-NovaTurboMultilingualNeural", "Nova Turbo (US)", "en-US", "Female"),
-            ("en-US-ShimmerTurboMultilingualNeural", "Shimmer Turbo (US)", "en-US", "Female"),
-            ("en-US-AshTurboMultilingualNeural", "Ash Turbo (US)", "en-US", "Male"),
-            # --- Standard Neural (with styles) ---
-            ("en-US-JennyNeural", "Jenny (US)", "en-US", "Female"),
-            ("en-US-GuyNeural", "Guy (US)", "en-US", "Male"),
-            ("en-US-AriaNeural", "Aria (US)", "en-US", "Female"),
-            ("en-US-DavisNeural", "Davis (US)", "en-US", "Male"),
-            ("en-US-JaneNeural", "Jane (US)", "en-US", "Female"),
-            ("en-US-JasonNeural", "Jason (US)", "en-US", "Male"),
-            ("en-US-SaraNeural", "Sara (US)", "en-US", "Female"),
-            ("en-US-TonyNeural", "Tony (US)", "en-US", "Male"),
-            ("en-US-NancyNeural", "Nancy (US)", "en-US", "Female"),
-            ("en-US-KaiNeural", "Kai (US)", "en-US", "Male"),
-            ("en-US-LunaNeural", "Luna (US)", "en-US", "Female"),
-            # --- Standard Neural (no styles) ---
-            ("en-US-AvaNeural", "Ava (US)", "en-US", "Female"),
-            ("en-US-AndrewNeural", "Andrew (US)", "en-US", "Male"),
-            ("en-US-EmmaNeural", "Emma (US)", "en-US", "Female"),
-            ("en-US-BrianNeural", "Brian (US)", "en-US", "Male"),
-            ("en-US-AmberNeural", "Amber (US)", "en-US", "Female"),
-            ("en-US-AnaNeural", "Ana (US, Child)", "en-US", "Female"),
-            ("en-US-AshleyNeural", "Ashley (US)", "en-US", "Female"),
-            ("en-US-BrandonNeural", "Brandon (US)", "en-US", "Male"),
-            ("en-US-ChristopherNeural", "Christopher (US)", "en-US", "Male"),
-            ("en-US-CoraNeural", "Cora (US)", "en-US", "Female"),
-            ("en-US-ElizabethNeural", "Elizabeth (US)", "en-US", "Female"),
-            ("en-US-EricNeural", "Eric (US)", "en-US", "Male"),
-            ("en-US-JacobNeural", "Jacob (US)", "en-US", "Male"),
-            ("en-US-MichelleNeural", "Michelle (US)", "en-US", "Female"),
-            ("en-US-MonicaNeural", "Monica (US)", "en-US", "Female"),
-            ("en-US-RogerNeural", "Roger (US)", "en-US", "Male"),
-            ("en-US-SteffanNeural", "Steffan (US)", "en-US", "Male"),
-            # --- Special ---
-            ("en-US-AIGenerate1Neural", "AI Generate 1 (US)", "en-US", "Male"),
-            ("en-US-AIGenerate2Neural", "AI Generate 2 (US)", "en-US", "Female"),
-            ("en-US-BlueNeural", "Blue (US)", "en-US", "Neutral"),
-            # ================================================================
-            # en-GB — United Kingdom (18 voices)
-            # ================================================================
-            ("en-GB-Ada:DragonHDLatestNeural", "Ada DragonHD (UK)", "en-GB", "Female"),
-            ("en-GB-Ollie:DragonHDLatestNeural", "Ollie DragonHD (UK)", "en-GB", "Male"),
-            ("en-GB-AdaMultilingualNeural", "Ada Multilingual (UK)", "en-GB", "Female"),
-            ("en-GB-OllieMultilingualNeural", "Ollie Multilingual (UK)", "en-GB", "Male"),
-            ("en-GB-SoniaNeural", "Sonia (UK)", "en-GB", "Female"),
-            ("en-GB-RyanNeural", "Ryan (UK)", "en-GB", "Male"),
-            ("en-GB-LibbyNeural", "Libby (UK)", "en-GB", "Female"),
-            ("en-GB-AbbiNeural", "Abbi (UK)", "en-GB", "Female"),
-            ("en-GB-AlfieNeural", "Alfie (UK)", "en-GB", "Male"),
-            ("en-GB-BellaNeural", "Bella (UK)", "en-GB", "Female"),
-            ("en-GB-ElliotNeural", "Elliot (UK)", "en-GB", "Male"),
-            ("en-GB-EthanNeural", "Ethan (UK)", "en-GB", "Male"),
-            ("en-GB-HollieNeural", "Hollie (UK)", "en-GB", "Female"),
-            ("en-GB-MaisieNeural", "Maisie (UK, Child)", "en-GB", "Female"),
-            ("en-GB-NoahNeural", "Noah (UK)", "en-GB", "Male"),
-            ("en-GB-OliverNeural", "Oliver (UK)", "en-GB", "Male"),
-            ("en-GB-OliviaNeural", "Olivia (UK)", "en-GB", "Female"),
-            ("en-GB-ThomasNeural", "Thomas (UK)", "en-GB", "Male"),
-            # ================================================================
-            # en-AU — Australia (15 voices)
-            # ================================================================
-            ("en-AU-WilliamMultilingualNeural", "William Multilingual (AU)", "en-AU", "Male"),
-            ("en-AU-NatashaNeural", "Natasha (AU)", "en-AU", "Female"),
-            ("en-AU-WilliamNeural", "William (AU)", "en-AU", "Male"),
-            ("en-AU-AnnetteNeural", "Annette (AU)", "en-AU", "Female"),
-            ("en-AU-CarlyNeural", "Carly (AU)", "en-AU", "Female"),
-            ("en-AU-DarrenNeural", "Darren (AU)", "en-AU", "Male"),
-            ("en-AU-DuncanNeural", "Duncan (AU)", "en-AU", "Male"),
-            ("en-AU-ElsieNeural", "Elsie (AU)", "en-AU", "Female"),
-            ("en-AU-FreyaNeural", "Freya (AU)", "en-AU", "Female"),
-            ("en-AU-JoanneNeural", "Joanne (AU)", "en-AU", "Female"),
-            ("en-AU-KenNeural", "Ken (AU)", "en-AU", "Male"),
-            ("en-AU-KimNeural", "Kim (AU)", "en-AU", "Female"),
-            ("en-AU-NeilNeural", "Neil (AU)", "en-AU", "Male"),
-            ("en-AU-TimNeural", "Tim (AU)", "en-AU", "Male"),
-            ("en-AU-TinaNeural", "Tina (AU)", "en-AU", "Female"),
-            # ================================================================
-            # en-IN — India (17 voices)
-            # ================================================================
-            ("en-IN-Meera:DragonHDLatestNeural", "Meera DragonHD (IN)", "en-IN", "Female"),
-            ("en-IN-Aarti:DragonHDLatestNeural", "Aarti DragonHD (IN)", "en-IN", "Female"),
-            ("en-IN-Arjun:DragonHDLatestNeural", "Arjun DragonHD (IN)", "en-IN", "Male"),
-            ("en-IN-AartiIndicNeural", "Aarti Indic (IN)", "en-IN", "Female"),
-            ("en-IN-ArjunIndicNeural", "Arjun Indic (IN)", "en-IN", "Male"),
-            ("en-IN-NeerjaIndicNeural", "Neerja Indic (IN)", "en-IN", "Female"),
-            ("en-IN-PrabhatIndicNeural", "Prabhat Indic (IN)", "en-IN", "Male"),
-            ("en-IN-AaravNeural", "Aarav (IN)", "en-IN", "Male"),
-            ("en-IN-AashiNeural", "Aashi (IN)", "en-IN", "Female"),
-            ("en-IN-AartiNeural", "Aarti (IN)", "en-IN", "Female"),
-            ("en-IN-ArjunNeural", "Arjun (IN)", "en-IN", "Male"),
-            ("en-IN-AnanyaNeural", "Ananya (IN)", "en-IN", "Female"),
-            ("en-IN-KavyaNeural", "Kavya (IN)", "en-IN", "Female"),
-            ("en-IN-KunalNeural", "Kunal (IN)", "en-IN", "Male"),
-            ("en-IN-NeerjaNeural", "Neerja (IN)", "en-IN", "Female"),
-            ("en-IN-PrabhatNeural", "Prabhat (IN)", "en-IN", "Male"),
-            ("en-IN-RehaanNeural", "Rehaan (IN)", "en-IN", "Male"),
-            # ================================================================
-            # en-CA — Canada (2 voices)
-            # ================================================================
-            ("en-CA-ClaraNeural", "Clara (CA)", "en-CA", "Female"),
-            ("en-CA-LiamNeural", "Liam (CA)", "en-CA", "Male"),
-            # ================================================================
-            # en-IE — Ireland (2 voices)
-            # ================================================================
-            ("en-IE-EmilyNeural", "Emily (IE)", "en-IE", "Female"),
-            ("en-IE-ConnorNeural", "Connor (IE)", "en-IE", "Male"),
-            # ================================================================
-            # en-NZ — New Zealand (2 voices)
-            # ================================================================
-            ("en-NZ-MollyNeural", "Molly (NZ)", "en-NZ", "Female"),
-            ("en-NZ-MitchellNeural", "Mitchell (NZ)", "en-NZ", "Male"),
-            # ================================================================
-            # en-ZA — South Africa (2 voices)
-            # ================================================================
-            ("en-ZA-LeahNeural", "Leah (ZA)", "en-ZA", "Female"),
-            ("en-ZA-LukeNeural", "Luke (ZA)", "en-ZA", "Male"),
-            # ================================================================
-            # en-KE — Kenya (2 voices)
-            # ================================================================
-            ("en-KE-AsiliaNeural", "Asilia (KE)", "en-KE", "Female"),
-            ("en-KE-ChilembaNeural", "Chilemba (KE)", "en-KE", "Male"),
-            # ================================================================
-            # en-NG — Nigeria (2 voices)
-            # ================================================================
-            ("en-NG-EzinneNeural", "Ezinne (NG)", "en-NG", "Female"),
-            ("en-NG-AbeoNeural", "Abeo (NG)", "en-NG", "Male"),
-            # ================================================================
-            # en-PH — Philippines (2 voices)
-            # ================================================================
-            ("en-PH-RosaNeural", "Rosa (PH)", "en-PH", "Female"),
-            ("en-PH-JamesNeural", "James (PH)", "en-PH", "Male"),
-            # ================================================================
-            # en-SG — Singapore (2 voices)
-            # ================================================================
-            ("en-SG-LunaNeural", "Luna (SG)", "en-SG", "Female"),
-            ("en-SG-WayneNeural", "Wayne (SG)", "en-SG", "Male"),
-            # ================================================================
-            # en-HK — Hong Kong (2 voices)
-            # ================================================================
-            ("en-HK-YanNeural", "Yan (HK)", "en-HK", "Female"),
-            ("en-HK-SamNeural", "Sam (HK)", "en-HK", "Male"),
-        ]
-        return [
+        """Comprehensive catalog of Azure English neural voices (130+).
+
+        Voice data is loaded from ``data/azure_voices.json`` and cached at
+        module level so the file is only read once per process.
+        """
+        global _azure_voices_cache  # noqa: PLW0603
+        if _azure_voices_cache is not None:
+            return _azure_voices_cache
+
+        voices_path = Path(__file__).parent / "data" / "azure_voices.json"
+        with open(voices_path, encoding="utf-8") as fh:
+            entries: list[dict] = json.load(fh)
+
+        _azure_voices_cache = [
             VoiceInfo(
-                voice_id=vid,
-                name=name,
-                language=lang,
-                gender=gender,
+                voice_id=entry["voice_id"],
+                name=entry["name"],
+                language=entry["language"],
+                gender=entry["gender"],
                 description="Azure Neural Voice",
             )
-            for vid, name, lang, gender in entries
+            for entry in entries
         ]
+        return _azure_voices_cache
 
     async def get_capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(

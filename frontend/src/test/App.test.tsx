@@ -83,6 +83,30 @@ vi.mock('../stores/adminStore', () => ({
   }),
 }));
 
+vi.mock('../stores/designStore', () => {
+  const mockTheme = {
+    id: 'midnight-studio',
+    name: 'Midnight Studio',
+    mode: 'dark',
+    primary: { h: 220, s: 70, l: 55 },
+    colors: {},
+    radius: '0.75rem',
+  };
+  const mockDesignStore = {
+    themes: { 'midnight-studio': mockTheme },
+    activeThemeId: 'midnight-studio',
+    tokens: [mockTheme],
+    getCurrentTheme: vi.fn().mockReturnValue(mockTheme),
+    setTheme: vi.fn(),
+  };
+  const mockUseDesignStore = vi.fn((selector?: (state: typeof mockDesignStore) => unknown) => {
+    if (selector) return selector(mockDesignStore);
+    return mockDesignStore;
+  });
+  mockUseDesignStore.getState = vi.fn().mockReturnValue(mockDesignStore);
+  return { useDesignStore: mockUseDesignStore };
+});
+
 vi.mock('../stores/authStore', () => {
   const mockAuthStore = {
     apiKey: null,
@@ -179,18 +203,15 @@ describe('App', () => {
     expect(screen.getByText('Atlas Vox')).toBeInTheDocument();
   });
 
-  it('renders admin page route', async () => {
+  it('redirects /admin to /providers', async () => {
     render(
       <MemoryRouter initialEntries={['/admin']}>
         <App />
       </MemoryRouter>,
     );
-    // Should show loading spinner initially (Suspense fallback) then admin content
-    // The lazy import means we need to wait for the page to load
+    // /admin now redirects to /providers — app should still render
     await waitFor(
       () => {
-        // Admin page or its Suspense fallback (spinner) should be present
-        // At minimum the app layout should be rendered
         expect(screen.getByText('Atlas Vox')).toBeInTheDocument();
       },
       { timeout: 3000 },

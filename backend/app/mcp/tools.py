@@ -304,20 +304,22 @@ def _detect_provider(voice: str) -> str:
     if re.match(r"^[a-z]{2}_[A-Z]{2}-", voice):
         return "piper"
 
-    # Known ElevenLabs voice IDs (24-char hex-ish IDs)
-    known_elevenlabs = {
-        "21m00Tcm4TlvDq8ikWAM",  # Rachel
-        "AZnzlk1XvdvUeBnXmlld",  # Domi
-        "EXAVITQu4vr4xnSDxMaL",  # Bella
-        "ErXwobaYiN019PkySvjV",  # Antoni
-        "MF3mGyEYCl7XYWbV9V6O",  # Elli
-        "TxGEqnHWrfWFTfGW9XjX",  # Josh
-        "VR6AewLTigWG4xSOukaG",  # Arnold
-        "pNInz6obpgDQGcFmaJgB",  # Adam
-        "yoZ06aMxZJJ28mfd3POQ",  # Sam
-    }
-    if voice in known_elevenlabs:
+    # ElevenLabs voice IDs: 20-char alphanumeric strings (base62-like)
+    # Pattern covers the standard ID format used by their API
+    if re.match(r"^[A-Za-z0-9]{18,24}$", voice):
         return "elevenlabs"
+
+    # Dia/Dia2 voices: [S1], [S2] dialogue speaker tags
+    if re.match(r"^\[S\d+\]$", voice):
+        return "dia"
+
+    # CosyVoice voices: language-tag style with CosyVoice prefix
+    if voice.startswith("cosyvoice-") or re.match(r"^(Chinese|English|Japanese|Korean)-", voice):
+        return "cosyvoice"
+
+    # StyleTTS2 voices: reference audio paths or "default"
+    if voice.endswith((".wav", ".mp3", ".flac")) or voice == "default":
+        return "styletts2"
 
     # Coqui XTTS: names with spaces (e.g. "Claribel Dervla")
     if " " in voice:

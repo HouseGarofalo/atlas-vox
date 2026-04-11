@@ -1,7 +1,4 @@
-// TODO: Add Zod schemas for API response validation. Zod is already a dependency
-// but is currently unused. Each API method should validate the response shape
-// against a Zod schema to catch backend contract changes at runtime.
-// See: https://zod.dev/ for schema definition patterns.
+// API client — all backend calls go through this module.
 
 import type {
   AudioDesignFile,

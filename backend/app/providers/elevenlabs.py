@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -26,6 +27,9 @@ from app.providers.base import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# Module-level cache for premade voices loaded from JSON
+_premade_voices_cache: list[VoiceInfo] | None = None
 
 
 class ElevenLabsProvider(TTSProvider):
@@ -459,65 +463,34 @@ class ElevenLabsProvider(TTSProvider):
 
     @staticmethod
     def _hardcoded_premade_voices() -> list[VoiceInfo]:
-        """ElevenLabs' 57 premade voices available to all tiers."""
-        entries = [
-            # (voice_id, name, gender, accent, use_case)
-            ("pNInz6obpgDQGcFmaJgB", "Adam", "Male", "American", "Narration"),
-            ("Xb7hH8MSUJpSbSDYk0k2", "Alice", "Female", "British", "News"),
-            ("ErXwobaYiN019PkySvjV", "Antoni", "Male", "American", "Narration"),
-            ("VR6AewLTigWG4xSOukaG", "Arnold", "Male", "American", "Narration"),
-            ("pqHfZKP75CvOlQylNhV4", "Bill", "Male", "American", "Documentary"),
-            ("nPczCjzI2devNBz1zQrb", "Brian", "Male", "American", "Narration"),
-            ("N2lVS1w4EtoT3dr4eOWO", "Callum", "Male", "American", "Video games"),
-            ("IKne3meq5aSn9XLyUdCD", "Charlie", "Male", "Australian", "Conversational"),
-            ("XB0fDUnXU5powFXDhCwa", "Charlotte", "Female", "English-Swedish", "Video games"),
-            ("iP95p4xoKVk53GoZ742B", "Chris", "Male", "American", "Conversational"),
-            ("2EiwWnXFnvU5JabPnv8n", "Clyde", "Male", "American", "Video games"),
-            ("onwK4e9ZLuTAKqWW03F9", "Daniel", "Male", "British", "News"),
-            ("CYw3kZ02Hs0563khs1Fj", "Dave", "Male", "British-Essex", "Video games"),
-            ("AZnzlk1XvdvUeBnXmlld", "Domi", "Female", "American", "Narration"),
-            ("ThT5KcBeYPX3keUQqHPh", "Dorothy", "Female", "British", "Children's stories"),
-            ("29vD33N1CtxCmqQRPOHJ", "Drew", "Male", "American", "News"),
-            ("LcfcDJNUP1GQjkzn1xUU", "Emily", "Female", "American", "Meditation"),
-            ("g5CIjZEefAph4nQFvHAz", "Ethan", "Male", "American", "ASMR"),
-            ("D38z5RcWu1voky8WS1ja", "Fin", "Male", "Irish", "Video games"),
-            ("jsCqWAovK2LkecY7zXl4", "Freya", "Female", "American", "General"),
-            ("JBFqnCBsd6RMkjVDRZzb", "George", "Male", "British", "Narration"),
-            ("jBpfuIE2acCO8z3wKNLl", "Gigi", "Female", "American", "Animation"),
-            ("zcAOhNBS3c14rBihAFp1", "Giovanni", "Male", "English-Italian", "Audiobook"),
-            ("z9fAnlkpzviPz146aGWa", "Glinda", "Female", "American", "Video games"),
-            ("oWAxZDx7w5VEj9dCyTzz", "Grace", "Female", "American-Southern", "Audiobook"),
-            ("SOYHLrjzK2X1ezoPC6cr", "Harry", "Male", "American", "Video games"),
-            ("ZQe5CZNOzWyzPSCn5a3c", "James", "Male", "Australian", "News"),
-            ("bVMeCyTHy58xNoL34h3p", "Jeremy", "Male", "American-Irish", "Narration"),
-            ("t0jbNlBVZ17f02VDIeMI", "Jessie", "Male", "American", "Video games"),
-            ("Zlb1dXrM653N07WRdFW3", "Joseph", "Male", "British", "News"),
-            ("TxGEqnHWrfWFTfGW9XjX", "Josh", "Male", "American", "Narration"),
-            ("TX3LPaxmHKxFdv7VOQHJ", "Liam", "Male", "American", "Narration"),
-            ("pFZP5JQG7iQjIQuC4Bku", "Lily", "Female", "British", "Narration"),
-            ("XrExE9yKIg1WjnnlVkGX", "Matilda", "Female", "American", "Audiobook"),
-            ("flq6f7yk4E4fJM5XTYuZ", "Michael", "Male", "American", "Audiobook"),
-            ("zrHiDhphv9ZnVXBqCLjz", "Mimi", "Female", "English-Swedish", "Animation"),
-            ("piTKgcLEGmPE4e6mEKli", "Nicole", "Female", "American", "Audiobook"),
-            ("ODq5zmih8GrVes37Dizd", "Patrick", "Male", "American", "Video games"),
-            ("5Q0t7uMcjvnagumLfvZi", "Paul", "Male", "American", "News"),
-            ("21m00Tcm4TlvDq8ikWAM", "Rachel", "Female", "American", "Narration"),
-            ("yoZ06aMxZJJ28mfd3POQ", "Sam", "Male", "American", "Narration"),
-            ("EXAVITQu4vr4xnSDxMaL", "Sarah", "Female", "American", "News"),
-            ("pMsXgVXv3BLzUgSXRplE", "Serena", "Female", "American", "Interactive"),
-            ("GBv7mTt0atIp3Br8iCZE", "Thomas", "Male", "American", "Meditation"),
-            ("knrPHWnBmmDHMoiMeP3l", "Santa Claus", "Male", None, "Christmas"),
-        ]
-        return [
+        """ElevenLabs' premade voices available to all tiers.
+
+        Voice data is loaded from ``data/elevenlabs_voices.json`` and cached
+        at the module level so the file is only read once per process.
+        """
+        global _premade_voices_cache  # noqa: PLW0603
+        if _premade_voices_cache is not None:
+            return _premade_voices_cache
+
+        voices_path = Path(__file__).parent / "data" / "elevenlabs_voices.json"
+        with open(voices_path, encoding="utf-8") as fh:
+            entries = json.load(fh)
+
+        _premade_voices_cache = [
             VoiceInfo(
-                voice_id=vid,
-                name=name,
+                voice_id=e["voice_id"],
+                name=e["name"],
                 language="en",
-                gender=gender,
-                description=f"{accent + ' accent, ' if accent else ''}{use_case}",
+                gender=e.get("gender"),
+                description=(
+                    f"{e['accent']} accent, {e['use_case']}"
+                    if e.get("accent")
+                    else e["use_case"]
+                ),
             )
-            for vid, name, gender, accent, use_case in entries
+            for e in entries
         ]
+        return _premade_voices_cache
 
     async def get_capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(

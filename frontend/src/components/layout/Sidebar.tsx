@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
-import VUMeter from "../audio/VUMeter";
 import { createLogger } from "../../utils/logger";
 
 const logger = createLogger("Sidebar");
@@ -41,20 +40,13 @@ const navItems = [
   { to: "/providers", icon: Settings2, label: "Providers", channel: 11 },
   { to: "/api-keys", icon: Key, label: "API Keys", channel: 12 },
   { to: "/settings", icon: Settings, label: "Settings", channel: 13 },
-  { to: "/admin", icon: ShieldCheck, label: "Admin", channel: 14 },
-  { to: "/design", icon: Palette, label: "Design System", channel: 15 },
-  { to: "/healing", icon: Shield, label: "Self-Healing", channel: 16 },
-  { to: "/help", icon: HelpCircle, label: "Help", channel: 17 },
+  { to: "/design", icon: Palette, label: "Design System", channel: 14 },
+  { to: "/healing", icon: Shield, label: "Self-Healing", channel: 15 },
+  { to: "/help", icon: HelpCircle, label: "Help", channel: 16 },
 ];
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
-
-  // Static decorative VU levels — only animate when real audio is playing
-  const vuLevels: Record<number, number> = {
-    1: 35, 2: 52, 3: 28, 4: 45, 5: 60, 6: 38, 7: 55, 8: 42,
-    9: 30, 10: 48, 11: 58, 12: 33, 13: 50, 14: 25, 15: 62, 16: 40, 17: 44,
-  };
 
   return (
     <>
@@ -82,7 +74,7 @@ export default function Sidebar() {
         />
       )}
 
-      {/* Audio Mixer Sidebar */}
+      {/* Sidebar */}
       <aside
         role="navigation"
         aria-label="Main navigation"
@@ -93,19 +85,16 @@ export default function Sidebar() {
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Studio Console Header */}
+        {/* Header */}
         <div className="flex h-20 items-center gap-4 px-6 border-b border-studio-slate/20">
           <div className="relative">
-            {/* Main logo with gradient */}
             <div className="w-12 h-12 bg-gradient-studio rounded-xl shadow-lg flex items-center justify-center">
               <AudioLines className="h-7 w-7 text-white" />
             </div>
-
-            {/* Master VU meter LEDs */}
+            {/* Status LEDs */}
             <div className="absolute -right-1 -bottom-1 flex gap-1">
               <div className="w-2 h-2 bg-led-green rounded-full animate-led-pulse" />
               <div className="w-2 h-2 bg-led-yellow rounded-full opacity-60" />
-              <div className="w-2 h-2 bg-led-red rounded-full opacity-30" />
             </div>
           </div>
 
@@ -117,15 +106,9 @@ export default function Sidebar() {
               Audio Studio
             </p>
           </div>
-
-          {/* Master level indicator */}
-          <div className="flex flex-col items-center gap-1">
-            <div className="text-[10px] text-studio-silver font-mono">MSTR</div>
-            <VUMeter level={75} barCount={5} height={16} />
-          </div>
         </div>
 
-        {/* Channel Strip Navigation */}
+        {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto" aria-label="Primary">
           {navItems.map(({ to, icon: Icon, label, channel }) => (
             <NavLink
@@ -157,38 +140,18 @@ export default function Sidebar() {
               {({ isActive }) => (
                 <>
                   {/* Channel indicator LED */}
-                  <div className="flex flex-col items-center gap-1 min-w-0">
-                    <div
-                      className={clsx(
-                        "w-3 h-3 rounded-full transition-all duration-300",
-                        isActive
-                          ? "bg-primary-500 shadow-lg shadow-primary-500/50 animate-led-pulse"
-                          : "bg-studio-slate/50 group-hover:bg-studio-silver/70"
-                      )}
-                    />
-                    <span className="text-[10px] font-mono text-studio-silver/70">
-                      {channel.toString().padStart(2, '0')}
-                    </span>
-                  </div>
+                  <div
+                    className={clsx(
+                      "w-2.5 h-2.5 rounded-full shrink-0 transition-all duration-300",
+                      isActive
+                        ? "bg-primary-500 shadow-lg shadow-primary-500/50 animate-led-pulse"
+                        : "bg-studio-slate/50 group-hover:bg-studio-silver/70"
+                    )}
+                  />
 
                   <Icon className="w-5 h-5 shrink-0" />
 
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium truncate block">{label}</span>
-                    {/* Channel gain indicator */}
-                    <div className="text-[10px] font-mono text-studio-silver/70 mt-0.5">
-                      {vuLevels[channel] ? `${vuLevels[channel].toFixed(0)}%` : "---"}
-                    </div>
-                  </div>
-
-                  {/* Mini VU meter for active channels */}
-                  <div className="min-w-0">
-                    <VUMeter
-                      level={vuLevels[channel] || 0}
-                      barCount={3}
-                      height={12}
-                    />
-                  </div>
+                  <span className="font-medium truncate">{label}</span>
 
                   {/* Active channel glow effect */}
                   <div
@@ -203,19 +166,9 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        {/* Master Section */}
+        {/* Footer */}
         <div className="p-4 border-t border-studio-slate/20">
-          <div className="text-center space-y-2">
-            <div className="text-[10px] font-mono text-studio-silver uppercase tracking-wider">
-              Master Output
-            </div>
-
-            {/* Master VU Meter */}
-            <div className="flex justify-center">
-              <VUMeter level={85} barCount={12} height={24} />
-            </div>
-
-            {/* Digital readout */}
+          <div className="text-center">
             <div className="font-mono text-xs text-led-green bg-studio-obsidian/50 rounded px-2 py-1 border border-studio-slate/30">
               ATLAS VOX
             </div>
