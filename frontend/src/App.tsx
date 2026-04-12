@@ -12,13 +12,13 @@ const logger = createLogger("App");
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ProfilesPage = lazy(() => import("./pages/ProfilesPage"));
 const TrainingStudioPage = lazy(() => import("./pages/TrainingStudioPage"));
-const SynthesisLabPage = lazy(() => import("./pages/SynthesisLabPage"));
+const SynthesisLabPage = lazy(() => import("./pages/synthesis/SynthesisLabPage"));
 const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
 const ProvidersPage = lazy(() => import("./pages/ProvidersPage"));
 const ApiKeysPage = lazy(() => import("./pages/ApiKeysPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const VoiceLibraryPage = lazy(() => import("./pages/VoiceLibraryPage"));
-const HelpPage = lazy(() => import("./pages/HelpPage"));
+// HelpPage removed — /help redirects to /docs
 const DocsPage = lazy(() => import("./pages/DocsPage"));
 // AdminPage removed — /admin redirects to /providers
 const DesignSystemPage = lazy(() => import("./pages/DesignSystemPage"));
@@ -83,7 +83,7 @@ function App() {
             <Route path="providers" element={<Page component={ProvidersPage} />} />
             <Route path="api-keys" element={<Page component={ApiKeysPage} />} />
             <Route path="settings" element={<Page component={SettingsPage} />} />
-            <Route path="help" element={<Page component={HelpPage} />} />
+            <Route path="help" element={<Navigate to="/docs" replace />} />
             <Route path="docs" element={<Page component={DocsPage} />} />
             <Route path="admin" element={<Navigate to="/providers" replace />} />
             <Route path="design" element={<Page component={DesignSystemPage} />} />

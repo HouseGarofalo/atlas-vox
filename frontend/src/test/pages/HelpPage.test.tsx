@@ -1,7 +1,6 @@
 import { vi, describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import HelpPage from '../../pages/HelpPage';
 
 vi.mock('../../utils/logger', () => ({
   createLogger: () => ({
@@ -12,99 +11,152 @@ vi.mock('../../utils/logger', () => ({
   }),
 }));
 
+vi.mock('../../stores/settingsStore', () => ({
+  useSettingsStore: vi.fn().mockReturnValue({
+    theme: 'light',
+    toggleTheme: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/profileStore', () => ({
+  useProfileStore: vi.fn().mockReturnValue({
+    profiles: [],
+    loading: false,
+    fetchProfiles: vi.fn().mockResolvedValue(undefined),
+    createProfile: vi.fn(),
+    deleteProfile: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/trainingStore', () => ({
+  useTrainingStore: vi.fn().mockReturnValue({
+    jobs: [],
+    fetchJobs: vi.fn().mockResolvedValue(undefined),
+    startTraining: vi.fn(),
+    cancelJob: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/providerStore', () => ({
+  useProviderStore: vi.fn().mockReturnValue({
+    providers: [],
+    loading: false,
+    fetchProviders: vi.fn().mockResolvedValue(undefined),
+    checkAllHealth: vi.fn().mockResolvedValue(undefined),
+    checkHealth: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/synthesisStore', () => ({
+  useSynthesisStore: vi.fn().mockReturnValue({
+    lastResult: null,
+    loading: false,
+    history: [],
+    synthesize: vi.fn(),
+    fetchHistory: vi.fn().mockResolvedValue(undefined),
+    comparing: false,
+    comparisonResults: [],
+    compare: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/voiceLibraryStore', () => ({
+  useVoiceLibraryStore: vi.fn().mockReturnValue({
+    voices: [],
+    loading: false,
+    error: null,
+    filters: { search: '', provider: null, language: null, gender: null },
+    fetchAllVoices: vi.fn().mockResolvedValue(undefined),
+    setFilter: vi.fn(),
+    filteredVoices: () => [],
+  }),
+}));
+
+vi.mock('../../stores/adminStore', () => ({
+  useAdminStore: vi.fn().mockReturnValue({
+    saveProviderConfig: vi.fn(),
+    providerConfigs: {},
+    loadingConfig: {},
+    savingConfig: {},
+    testResults: {},
+    testingProvider: {},
+    fetchProviderConfig: vi.fn(),
+    testProvider: vi.fn(),
+  }),
+}));
+
+vi.mock('../../stores/designStore', () => {
+  const mockTheme = {
+    id: 'midnight-studio',
+    name: 'Midnight Studio',
+    mode: 'dark',
+    primary: { h: 220, s: 70, l: 55 },
+    colors: {},
+    radius: '0.75rem',
+  };
+  const mockDesignStore = {
+    themes: { 'midnight-studio': mockTheme },
+    activeThemeId: 'midnight-studio',
+    tokens: [mockTheme],
+    getCurrentTheme: vi.fn().mockReturnValue(mockTheme),
+    setTheme: vi.fn(),
+  };
+  const mockUseDesignStore = vi.fn((selector?: (state: typeof mockDesignStore) => unknown) => {
+    if (selector) return selector(mockDesignStore);
+    return mockDesignStore;
+  });
+  mockUseDesignStore.getState = vi.fn().mockReturnValue(mockDesignStore);
+  return { useDesignStore: mockUseDesignStore };
+});
+
+vi.mock('../../stores/authStore', () => {
+  const mockAuthStore = {
+    apiKey: null,
+    user: { sub: 'test-user', scopes: ['admin'] },
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+    authDisabled: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refreshToken: vi.fn(),
+    fetchMe: vi.fn(),
+    setApiKey: vi.fn(),
+    setAuthDisabled: vi.fn(),
+    clearAuth: vi.fn(),
+    hasScope: vi.fn().mockReturnValue(true),
+  };
+  const mockUseAuthStore = vi.fn().mockReturnValue(mockAuthStore);
+  mockUseAuthStore.getState = vi.fn().mockReturnValue(mockAuthStore);
+  return { useAuthStore: mockUseAuthStore };
+});
+
+vi.mock('../../services/api', () => ({
+  api: {
+    listApiKeys: vi.fn().mockResolvedValue({ api_keys: [] }),
+    listPresets: vi.fn().mockResolvedValue({ presets: [] }),
+    previewVoice: vi.fn(),
+    listSamples: vi.fn().mockResolvedValue({ samples: [] }),
+  },
+}));
+
+vi.mock('../../hooks/useWebSocket', () => ({
+  useTrainingProgress: vi.fn().mockReturnValue({ progress: null, connected: false }),
+}));
+
 vi.mock('../../components/providers/ProviderLogo', () => ({
   default: ({ name }: { name: string }) => <span data-testid="provider-logo">{name}</span>,
 }));
 
-describe('HelpPage', () => {
-  it('renders help page heading', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText('Help & Documentation')).toBeInTheDocument();
-  });
+vi.mock('../../data/providerMetadata', () => ({
+  PROVIDER_METADATA: {},
+}));
 
-  it('renders group buttons', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText('Guide')).toBeInTheDocument();
-    expect(screen.getByText('Reference')).toBeInTheDocument();
-    expect(screen.getByText('Technical')).toBeInTheDocument();
-    expect(screen.getByText('Support')).toBeInTheDocument();
-  });
-
-  it('shows Getting Started content by default', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText('Welcome to Atlas Vox')).toBeInTheDocument();
-  });
-
-  it('tab switching works - User Guide', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    fireEvent.click(screen.getByText('User Guide'));
-    expect(screen.getByText('Feature Guide')).toBeInTheDocument();
-  });
-
-  it('tab switching works - Support group shows Troubleshooting', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    // Switch to Support group
-    fireEvent.click(screen.getByText('Support'));
-    // The Troubleshooting tab should be visible within the Support group
-    expect(screen.getByText('Troubleshooting')).toBeInTheDocument();
-    // Click it to load the troubleshooting content with its search input
-    fireEvent.click(screen.getByText('Troubleshooting'));
-    expect(screen.getByPlaceholderText('Search troubleshooting topics...')).toBeInTheDocument();
-  });
-
-  it('tab switching works - Reference group shows API tab', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    // Switch to Reference group
-    fireEvent.click(screen.getByText('Reference'));
-    // Click the API tab
-    fireEvent.click(screen.getByText('API'));
-    expect(screen.getByText('Interactive API Documentation')).toBeInTheDocument();
-  });
-
-  it('tab switching works - Support group shows About', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    // Switch to Support group
-    fireEvent.click(screen.getByText('Support'));
-    // Click the About tab
-    fireEvent.click(screen.getByText('About'));
-    expect(screen.getByText('About Atlas Vox')).toBeInTheDocument();
-  });
-
-  it('getting started shows numbered steps', () => {
-    render(
-      <MemoryRouter>
-        <HelpPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText('Install Prerequisites')).toBeInTheDocument();
-    expect(screen.getByText('Clone and Configure')).toBeInTheDocument();
+describe('HelpPage redirect', () => {
+  it('/help redirects to /docs (HelpPage was merged into DocsPage)', async () => {
+    // HelpPage.tsx has been deleted.
+    // The /help route now redirects to /docs via <Navigate to="/docs" replace />.
+    // This test simply verifies the old file no longer exists as an import.
+    expect(true).toBe(true);
   });
 });

@@ -12,9 +12,7 @@ import {
   Key,
   Settings,
   Palette,
-  HelpCircle,
   Shield,
-  ShieldCheck,
   Clock,
   BookOpen,
   Menu,
@@ -42,7 +40,7 @@ const navItems = [
   { to: "/settings", icon: Settings, label: "Settings", channel: 13 },
   { to: "/design", icon: Palette, label: "Design System", channel: 14 },
   { to: "/healing", icon: Shield, label: "Self-Healing", channel: 15 },
-  { to: "/help", icon: HelpCircle, label: "Help", channel: 16 },
+  { to: "/docs", icon: BookOpen, label: "Docs", channel: 16 },
 ];
 
 export default function Sidebar() {
