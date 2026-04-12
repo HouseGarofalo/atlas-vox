@@ -31,7 +31,7 @@ import { useProfileStore } from '../../stores/profileStore';
 import { useSynthesisStore } from '../../stores/synthesisStore';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import SynthesisLabPage from '../../pages/SynthesisLabPage';
+import SynthesisLabPage from '../../pages/synthesis/SynthesisLabPage';
 
 const mockFetchProfiles = vi.fn().mockResolvedValue(undefined);
 const mockSynthesize = vi.fn().mockResolvedValue(undefined);
