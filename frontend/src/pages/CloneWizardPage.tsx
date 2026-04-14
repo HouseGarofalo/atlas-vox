@@ -486,11 +486,17 @@ export default function CloneWizardPage() {
                 <input
                   id="profile-name"
                   type="text"
+                  required
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
                   placeholder="e.g., My Custom Voice"
                   className="h-10 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text)] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
+                {!profileName.trim() && (
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    A voice name is required to proceed.
+                  </p>
+                )}
               </div>
 
               <Select

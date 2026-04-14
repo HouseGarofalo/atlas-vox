@@ -150,7 +150,7 @@ async def update_entry(entry_id: str, data: PronunciationUpdate, db: DbSession, 
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_entry(entry_id: str, db: DbSession, user: CurrentUser) -> None:
+async def delete_entry(entry_id: str, db: DbSession, user: CurrentUser):
     """Delete a pronunciation dictionary entry."""
     result = await db.execute(select(PronunciationEntry).where(PronunciationEntry.id == entry_id))
     entry = result.scalar_one_or_none()

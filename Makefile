@@ -1,4 +1,4 @@
-.PHONY: dev start stop test lint format migrate docker-up docker-gpu-up docker-down docker-reset seed clean install
+.PHONY: dev start stop test lint format migrate docker-up docker-gpu-up docker-down docker-reset seed clean install generate-certs
 
 # Start with port conflict detection (backend=8100, frontend=3100)
 dev:
@@ -25,6 +25,10 @@ docker-reset:
 	@echo "Run 'make backup' first if you want to preserve data."
 	@bash -c 'read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1'
 	docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml down -v
+
+# SSL — generate self-signed certificates for HTTPS
+generate-certs:
+	@bash scripts/generate-certs.sh
 
 backup:
 	@bash scripts/backup-db.sh

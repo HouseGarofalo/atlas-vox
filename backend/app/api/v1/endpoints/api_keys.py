@@ -87,7 +87,7 @@ async def list_api_keys(
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_api_key(
     key_id: str, db: DbSession, user: CurrentUser
-) -> None:
+):
     """Revoke (deactivate) an API key."""
     logger.info("revoke_api_key_called", key_id=key_id)
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id))

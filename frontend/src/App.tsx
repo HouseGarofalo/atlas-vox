@@ -32,8 +32,20 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 function PageLoader() {
   return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" />
+    <div className="space-y-6 p-6 animate-pulse">
+      <div className="space-y-3">
+        <div className="h-8 w-64 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+        <div className="h-4 w-96 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="rounded-[var(--radius)] border border-[var(--color-border)] p-6 space-y-4">
+            <div className="h-4 w-3/4 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+            <div className="h-3 w-full bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+            <div className="h-3 w-5/6 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -44,7 +56,7 @@ function App() {
 
     // Auto-authenticate when AUTH_DISABLED=true on backend,
     // or try to restore session via httpOnly cookie
-    const { isAuthenticated, setAuthDisabled, fetchMe } = useAuthStore.getState();
+    const { isAuthenticated, setAuthDisabled, fetchMe, setInitialized } = useAuthStore.getState();
     if (!isAuthenticated) {
       fetch("/api/v1/auth/status", { credentials: "include" })
         .then(res => res.json())
@@ -62,7 +74,12 @@ function App() {
         .catch(() => {
           // Backend not reachable — user must login
           logger.info("auth_check_failed");
+        })
+        .finally(() => {
+          setInitialized();
         });
+    } else {
+      setInitialized();
     }
   }, []);
 

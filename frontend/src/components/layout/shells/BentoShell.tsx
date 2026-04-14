@@ -51,7 +51,7 @@ export default function BentoShell() {
   return (
     <div className="min-h-screen flex bg-[var(--color-bg)] relative">
       {/* Soft aurora glow background */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
         <div
           className="absolute -top-40 -left-40 w-96 h-96 rounded-full blur-3xl opacity-30"
           style={{ background: "hsl(var(--studio-primary))" }}
@@ -74,7 +74,7 @@ export default function BentoShell() {
         </div>
 
         {/* Nav icons */}
-        <nav className="flex flex-col items-center gap-2">
+        <nav aria-label="Primary navigation" className="flex flex-col items-center gap-2">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}

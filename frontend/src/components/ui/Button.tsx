@@ -17,33 +17,59 @@ const sizes = {
   lg: "h-12 px-8 text-base font-semibold",
 } as const;
 
+const iconOnlySizes = {
+  sm: "h-9 w-9",
+  md: "h-11 w-11",
+  lg: "h-12 w-12",
+} as const;
+
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: keyof typeof variants;
   size?: keyof typeof sizes;
   audioReactive?: boolean;
+  loading?: boolean;
+  iconOnly?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", disabled, audioReactive = false, children, ...props }, ref) => (
-    <button
-      ref={ref}
-      disabled={disabled}
-      className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-display font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
-        variants[variant],
-        sizes[size],
-        disabled && "opacity-50 cursor-not-allowed transform-none hover:scale-100",
-        audioReactive && "relative overflow-hidden",
-        className
-      )}
-      {...props}
-    >
-      {audioReactive && (
-        <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-primary-400/20 via-secondary-400/20 to-electric-400/20 animate-spectrum opacity-0 hover:opacity-100 transition-opacity duration-300" />
-      )}
-      {children}
-    </button>
-  )
+  ({ className, variant = "primary", size = "md", disabled, audioReactive = false, loading = false, iconOnly = false, children, ...props }, ref) => {
+    const isDisabled = disabled || loading;
+
+    return (
+      <button
+        ref={ref}
+        disabled={isDisabled}
+        aria-busy={loading ? "true" : undefined}
+        aria-disabled={isDisabled ? "true" : undefined}
+        className={clsx(
+          "inline-flex items-center justify-center rounded-lg font-display font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
+          variants[variant],
+          iconOnly ? iconOnlySizes[size] : clsx(sizes[size], "gap-2"),
+          isDisabled && "opacity-50 cursor-not-allowed transform-none hover:scale-100",
+          audioReactive && "relative overflow-hidden",
+          className
+        )}
+        {...props}
+      >
+        {audioReactive && (
+          <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-primary-400/20 via-secondary-400/20 to-electric-400/20 animate-spectrum opacity-0 hover:opacity-100 transition-opacity duration-300" />
+        )}
+        {loading && (
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4 animate-spin"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        )}
+        {children}
+      </button>
+    );
+  }
 );
 
 Button.displayName = "Button";

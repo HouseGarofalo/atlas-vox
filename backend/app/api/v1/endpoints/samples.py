@@ -1,6 +1,7 @@
 """Audio sample endpoints — upload, list, delete, analysis, preprocessing."""
 
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -28,11 +29,31 @@ from app.services.audio_quality import assess_training_readiness, validate_audio
 
 logger = structlog.get_logger(__name__)
 
-ALLOWED_FORMATS = {"wav", "mp3", "flac", "ogg", "m4a"}
+ALLOWED_FORMATS = {"wav", "mp3", "flac", "ogg", "m4a", "webm"}
+# Formats that need conversion to WAV before storage/processing
+_CONVERT_TO_WAV = {"webm"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB per file
 MAX_FILES_PER_UPLOAD = 20
 
 router = APIRouter(prefix="/profiles/{profile_id}/samples", tags=["samples"])
+
+
+async def _convert_to_wav(src: Path) -> Path:
+    """Convert an audio file to WAV using ffmpeg. Returns the new path."""
+    dst = src.with_suffix(".wav")
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-i", str(src),
+        "-ar", "22050", "-ac", "1", "-sample_fmt", "s16",
+        str(dst),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg conversion failed: {stderr.decode(errors='replace')[:500]}")
+    # Remove original
+    src.unlink(missing_ok=True)
+    return dst
 
 
 async def _get_profile_or_404(db: DbSession, profile_id: str) -> VoiceProfile:
@@ -102,13 +123,28 @@ async def upload_samples(
             )
         file_path.write_bytes(content)
 
+        # Convert browser-recorded formats (webm) to WAV for provider compatibility
+        if ext in _CONVERT_TO_WAV:
+            try:
+                file_path = await _convert_to_wav(file_path)
+                ext = "wav"
+                stored_name = file_path.name
+                logger.info("webm_converted_to_wav", original=upload.filename, stored=stored_name)
+            except Exception as conv_err:
+                file_path.unlink(missing_ok=True)
+                logger.error("audio_conversion_failed", filename=upload.filename, error=str(conv_err))
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Failed to convert '{upload.filename}' to WAV: {conv_err}",
+                )
+
         sample = AudioSample(
             profile_id=profile_id,
             filename=stored_name,
             original_filename=upload.filename,
             file_path=str(file_path),
             format=ext,
-            file_size_bytes=len(content),
+            file_size_bytes=file_path.stat().st_size,
         )
         db.add(sample)
         await db.flush()
@@ -165,7 +201,7 @@ async def list_samples(
 @router.delete("/{sample_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sample(
     profile_id: str, sample_id: str, db: DbSession, user: CurrentUser
-) -> None:
+):
     """Delete a sample and its file."""
     sample = await _get_sample_or_404(db, profile_id, sample_id)
 

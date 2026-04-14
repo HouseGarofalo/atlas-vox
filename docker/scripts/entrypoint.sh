@@ -7,6 +7,9 @@ set -e
 # Fix ownership of mounted volumes (created as root by Docker)
 chown -R app:app /app/storage /app/data 2>/dev/null || true
 chown -R app:app /home/app 2>/dev/null || true
+# Celery beat schedule directory (used by celery-beat service)
+mkdir -p /var/run/celery 2>/dev/null || true
+chown -R app:app /var/run/celery 2>/dev/null || true
 
 export HOME=/home/app
 

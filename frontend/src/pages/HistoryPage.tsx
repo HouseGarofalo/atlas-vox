@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Clock, Download, Play, Pause, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
+import { Skeleton } from "../components/ui/Skeleton";
+import { EmptyState } from "../components/ui/EmptyState";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 import { api } from "../services/api";
 import { createLogger } from "../utils/logger";
@@ -17,6 +20,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(false);
   const [providerFilter, setProviderFilter] = useState("");
   const { isPlaying, currentUrl, toggle } = useAudioPlayer();
+  const navigate = useNavigate();
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -64,16 +68,20 @@ export default function HistoryPage() {
       </div>
 
       {loading && history.length === 0 && (
-        <Card className="py-12 text-center">
-          <div className="h-6 w-6 mx-auto animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-        </Card>
+        <div className="space-y-2">
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} variant="rectangular" height={64} />
+          ))}
+        </div>
       )}
 
       {!loading && history.length === 0 && (
-        <Card className="py-12 text-center">
-          <Clock className="mx-auto h-10 w-10 text-[var(--color-text-secondary)] mb-3" />
-          <p className="text-[var(--color-text-secondary)]">No synthesis history yet. Try synthesizing some text first.</p>
-        </Card>
+        <EmptyState
+          icon={<Clock className="h-12 w-12" />}
+          title="No synthesis history"
+          description="Your voice synthesis results will appear here."
+          action={{ label: "Go to Synthesis Lab", onClick: () => navigate("/synthesis") }}
+        />
       )}
 
       <div className="space-y-2">

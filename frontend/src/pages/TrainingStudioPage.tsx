@@ -233,8 +233,8 @@ export default function TrainingStudioPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)] px-2">
                     <span>Total: {samples.reduce((sum, s) => sum + (s.duration_seconds || 0), 0).toFixed(1)}s across {samples.length} file(s)</span>
-                    <Button variant="secondary" size="sm" onClick={handleEnhanceAll} disabled={enhancingAll}>
-                      <Wand2 className="h-3.5 w-3.5" /> {enhancingAll ? "Enhancing..." : "Enhance All"}
+                    <Button variant="secondary" size="sm" onClick={handleEnhanceAll} loading={enhancingAll}>
+                      <Wand2 className="h-3.5 w-3.5" /> Enhance All
                     </Button>
                   </div>
                   {samples.map((s) => (
@@ -314,17 +314,17 @@ export default function TrainingStudioPage() {
                 </div>
               )}
               {samples.some((s) => !s.preprocessed) && (
-                <Button variant="secondary" onClick={handlePreprocess} disabled={preprocessing}>
-                  {preprocessing ? "Preprocessing..." : "Preprocess Samples"}
+                <Button variant="secondary" onClick={handlePreprocess} loading={preprocessing}>
+                  Preprocess Samples
                 </Button>
               )}
             </div>
           </CollapsiblePanel>
 
           {isAzure && (
-            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-              <div className="text-sm text-amber-800 dark:text-amber-200">
+            <div className="flex items-start gap-3 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] p-4">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-[var(--color-warning)] mt-0.5" />
+              <div className="text-sm text-[var(--color-warning)]">
                 <p className="font-semibold mb-1">Azure Custom Voice — Consent Required</p>
                 <p>Your <strong>first uploaded sample</strong> must be a consent recording. Record yourself reading:</p>
                 <p className="mt-1 italic text-xs">"I [your full name] am aware that recordings of my voice will be used by [company name] to create and use a synthetic version of my voice."</p>

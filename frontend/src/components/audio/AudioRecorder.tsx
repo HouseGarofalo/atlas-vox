@@ -51,9 +51,16 @@ export function AudioRecorder({ onRecorded }: AudioRecorderProps) {
       setPreview(null);
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-    } catch {
-      logger.error("microphone_permission_denied");
-      toast.error("Microphone access denied. Please allow microphone permissions and try again.");
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error("microphone_permission_denied", { error: error.message, name: error.name });
+      if (error.name === "NotAllowedError") {
+        toast.error("Microphone access denied. Please allow microphone permissions in your browser settings and try again.");
+      } else if (error.name === "NotFoundError") {
+        toast.error("No microphone found. Please connect a microphone and try again.");
+      } else {
+        toast.error(`Microphone error: ${error.message}`);
+      }
     }
   }, [preview?.url]);
 

@@ -28,6 +28,7 @@ export function WaveformVisualizer({
 
   return (
     <div
+      aria-hidden="true"
       className={`flex items-center justify-center gap-1 ${className}`}
       style={{ height: `${height}px` }}
     >

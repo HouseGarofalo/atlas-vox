@@ -5,7 +5,6 @@ import json
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, status
-
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.exceptions import NotFoundError, ValidationError
 from app.schemas.profile import (
@@ -109,7 +108,7 @@ async def update_existing_profile(
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_existing_profile(
     profile_id: str, db: DbSession, user: CurrentUser
-) -> None:
+):
     """Delete a voice profile."""
     logger.info("delete_existing_profile_called", profile_id=profile_id)
     deleted = await delete_profile(db, profile_id)

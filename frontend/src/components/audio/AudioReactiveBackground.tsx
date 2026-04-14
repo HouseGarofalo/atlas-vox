@@ -31,7 +31,7 @@ export function AudioReactiveBackground({
   };
 
   return (
-    <div className={`fixed inset-0 pointer-events-none overflow-hidden ${className}`}>
+    <div aria-hidden="true" className={`fixed inset-0 pointer-events-none overflow-hidden ${className}`}>
       {/* Gradient overlay */}
       <div className={`absolute inset-0 bg-gradient-radial from-primary/20 via-transparent to-electric/10 animate-pulse-slow ${intensityClasses[intensity]}`} />
 

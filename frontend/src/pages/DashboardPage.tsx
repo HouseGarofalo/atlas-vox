@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Mic, Activity, AudioLines, AlertCircle, Heart, Zap, Clock, TrendingUp } from "lucide-react";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
+import { Skeleton } from "../components/ui/Skeleton";
 import AudioReactiveBackground from "../components/audio/AudioReactiveBackground";
 import VUMeter from "../components/audio/VUMeter";
 import WaveformVisualizer from "../components/audio/WaveformVisualizer";
@@ -16,11 +17,44 @@ import { createLogger } from "../utils/logger";
 
 const logger = createLogger("DashboardPage");
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8 animate-pulse">
+      {/* Header skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-10 w-72 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+          <div className="h-5 w-96 bg-[var(--color-border)] rounded-[var(--radius-sm)]" />
+        </div>
+        <div className="h-20 w-48 bg-[var(--color-border)] rounded-[var(--radius)]" />
+      </div>
+      {/* Stats grid skeleton */}
+      <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton key={i} variant="card" />
+        ))}
+      </div>
+      {/* Provider matrix skeleton */}
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] p-6">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-4">
+          {Array.from({ length: 9 }, (_, i) => (
+            <div key={i} className="flex flex-col items-center gap-3 p-4">
+              <Skeleton variant="circular" width={40} height={40} />
+              <Skeleton variant="text" lines={1} width="80%" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { profiles, fetchProfiles } = useProfileStore();
   const { jobs, fetchJobs } = useTrainingStore();
   const { providers, fetchProviders, checkAllHealth } = useProviderStore();
   const { history, fetchHistory } = useSynthesisStore();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     logger.info("page_mounted");
@@ -31,7 +65,8 @@ export default function DashboardPage() {
       fetchHistory(10),
     ])
       .then(() => logger.info("data_fetch_complete"))
-      .catch((err) => logger.error("data_fetch_error", { error: String(err) }));
+      .catch((err) => logger.error("data_fetch_error", { error: String(err) }))
+      .finally(() => setLoading(false));
   }, []);
 
   const activeJobs = jobs.filter((j) => ["queued", "training", "preprocessing"].includes(j.status));
@@ -44,6 +79,10 @@ export default function DashboardPage() {
       <AudioReactiveBackground intensity="subtle" />
 
       <div className="relative z-10 space-y-8">
+        {loading ? (
+          <DashboardSkeleton />
+        ) : (
+        <>
         {/* Studio Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -218,6 +257,9 @@ export default function DashboardPage() {
                       {/* Status LED */}
                       <div className="absolute -top-1 -right-1 flex gap-1">
                         <div className={`w-3 h-3 rounded-full ${isHealthy && isEnabled ? 'bg-led-green animate-led-pulse' : !isEnabled ? 'bg-studio-slate' : 'bg-led-red animate-led-pulse'}`} />
+                        <span className="sr-only">
+                          {isHealthy && isEnabled ? "Healthy" : !isEnabled ? "Disabled" : "Unhealthy"}
+                        </span>
                       </div>
                     </div>
 
@@ -319,7 +361,7 @@ export default function DashboardPage() {
           >
             <Card variant="console" className="overflow-hidden">
               <div className="space-y-3">
-                {history.slice(0, 5).map((item: { id: string; text: string; provider_name: string; latency_ms: number; created_at: string }, index) => (
+                {history.slice(0, 5).map((item: { id: string; text: string; provider_name: string; latency_ms?: number; created_at: string }, index) => (
                   <div
                     key={item.id}
                     className="flex items-center gap-4 p-3 rounded-lg bg-studio-charcoal/30 hover:bg-studio-charcoal/50 transition-all duration-300"
@@ -360,6 +402,8 @@ export default function DashboardPage() {
               </div>
             </Card>
           </CollapsiblePanel>
+        )}
+        </>
         )}
       </div>
     </div>

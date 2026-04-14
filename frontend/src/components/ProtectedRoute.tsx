@@ -21,8 +21,17 @@ interface ProtectedRouteProps {
  *   <Route element={<ProtectedRoute requiredScope="admin" />}> — auth + scope
  */
 export default function ProtectedRoute({ requiredScope }: ProtectedRouteProps) {
-  const { isAuthenticated, hasScope } = useAuthStore();
+  const { isAuthenticated, isInitializing, hasScope } = useAuthStore();
   const location = useLocation();
+
+  // Wait for the initial auth/status check before deciding to redirect
+  if (isInitializing) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" />
+      </div>
+    );
+  }
 
   // If not authenticated, redirect to login
   if (!isAuthenticated) {

@@ -95,7 +95,7 @@ async def update_webhook(
 @router.delete("/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_webhook(
     webhook_id: str, db: DbSession, user: CurrentUser
-) -> None:
+):
     """Delete a webhook subscription."""
     logger.info("delete_webhook_called", webhook_id=webhook_id)
     result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))

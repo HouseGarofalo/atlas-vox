@@ -1,21 +1,39 @@
 import { clsx } from "clsx";
 
-const colorMap: Record<string, string> = {
-  pending: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
-  training: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  ready: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  error: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  archived: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
-  queued: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
-  completed: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  cancelled: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
-  healthy: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  unhealthy: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  revoked: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
-  cloud: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-  local: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
-  gpu: "bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300",
+type StatusCategory = "success" | "error" | "warning" | "info" | "neutral" | "accent";
+
+const statusCategoryMap: Record<string, StatusCategory> = {
+  // Success states
+  ready: "success",
+  completed: "success",
+  healthy: "success",
+  // Error states
+  error: "error",
+  failed: "error",
+  unhealthy: "error",
+  // Warning states
+  pending: "warning",
+  archived: "warning",
+  cancelled: "warning",
+  queued: "warning",
+  // Info states
+  training: "info",
+  preprocessing: "info",
+  // Neutral states
+  revoked: "neutral",
+  // Accent states
+  cloud: "accent",
+  local: "accent",
+  gpu: "accent",
+};
+
+const categoryClasses: Record<StatusCategory, string> = {
+  success: "bg-[var(--color-success-bg)] text-[var(--color-success)] border border-[var(--color-success-border)]",
+  error: "bg-[var(--color-error-bg)] text-[var(--color-error)] border border-[var(--color-error-border)]",
+  warning: "bg-[var(--color-warning-bg)] text-[var(--color-warning)] border border-[var(--color-warning-border)]",
+  info: "bg-[var(--color-info-bg)] text-[var(--color-info)] border border-[var(--color-info-border)]",
+  neutral: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-transparent",
+  accent: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 border border-transparent",
 };
 
 interface BadgeProps {
@@ -24,11 +42,13 @@ interface BadgeProps {
 }
 
 export function Badge({ status, className }: BadgeProps) {
+  const category = statusCategoryMap[status] ?? "neutral";
+
   return (
     <span
       className={clsx(
         "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-        colorMap[status] || "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+        categoryClasses[category],
         className
       )}
     >

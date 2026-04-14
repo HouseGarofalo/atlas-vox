@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode, type MouseEvent, type TouchEvent } from "react";
+import { useState, useRef, useCallback, useEffect, useId, type ReactNode, type MouseEvent, type TouchEvent } from "react";
 import { ChevronDown, ChevronRight, Maximize2, Minimize2, GripHorizontal } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -38,6 +38,7 @@ export function CollapsiblePanel({
   maxHeight = 800,
   id,
 }: CollapsiblePanelProps) {
+  const panelId = useId();
   const [open, setOpen] = useState(() => {
     if (id) {
       const saved = sessionStorage.getItem(`panel-${id}`);
@@ -164,6 +165,7 @@ export function CollapsiblePanel({
         onClick={toggleOpen}
         role="button"
         aria-expanded={open}
+        aria-controls={panelId}
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -196,6 +198,7 @@ export function CollapsiblePanel({
       {/* Content */}
       {open && (
         <div
+          id={panelId}
           ref={contentRef}
           className={clsx(
             !noPadding && "p-3 sm:p-4",

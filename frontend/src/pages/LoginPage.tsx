@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
+import { Button } from "../components/ui/Button";
+import { Input } from "../components/ui/Input";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger("LoginPage");
@@ -45,94 +47,84 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
-      <div className="w-full max-w-md rounded-xl p-8 shadow-lg" style={{ backgroundColor: 'var(--color-bg)' }}>
-        <h1 className="mb-6 text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Atlas Vox</h1>
+    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
+      <div className="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-8 shadow-lg">
+        <h1 className="mb-6 text-2xl font-display font-bold text-[var(--color-text)]">Atlas Vox</h1>
 
         {/* Mode toggle */}
         <div className="mb-4 flex gap-2">
-          <button
+          <Button
+            variant={mode === "credentials" ? "primary" : "ghost"}
+            size="sm"
+            className="flex-1"
             onClick={() => { setMode("credentials"); setError(""); }}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              mode === "credentials"
-                ? "bg-primary-600 text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
-            }`}
           >
             Email &amp; Password
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={mode === "apikey" ? "primary" : "ghost"}
+            size="sm"
+            className="flex-1"
             onClick={() => { setMode("apikey"); setError(""); }}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              mode === "apikey"
-                ? "bg-primary-600 text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
-            }`}
           >
             API Key
-          </button>
+          </Button>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
+          <div className="mb-4 rounded-lg bg-[var(--color-error-bg)] border border-[var(--color-error-border)] p-3 text-sm text-[var(--color-error)]">
             {error}
           </div>
         )}
 
         {mode === "credentials" ? (
-          <>
-            <input
+          <div className="space-y-3">
+            <Input
+              label="Email"
               type="email"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(""); }}
-              placeholder="Email"
-              className="mb-3 w-full rounded-lg px-4 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--color-border)' }}
-              aria-label="Email"
+              placeholder="you@example.com"
               autoComplete="email"
               disabled={isLoading}
             />
-            <input
+            <Input
+              label="Password"
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(""); }}
-              placeholder="Password"
-              className="mb-4 w-full rounded-lg px-4 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--color-border)' }}
-              onKeyDown={(e) => e.key === "Enter" && handleCredentialLogin()}
-              aria-label="Password"
+              placeholder="Enter your password"
               autoComplete="current-password"
               disabled={isLoading}
+              onKeyDown={(e) => e.key === "Enter" && handleCredentialLogin()}
             />
-            <button
+            <Button
+              className="w-full"
               onClick={handleCredentialLogin}
-              disabled={isLoading}
-              className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/50 disabled:opacity-50"
+              loading={isLoading}
             >
-              {isLoading ? "Signing in..." : "Sign In"}
-            </button>
-          </>
+              Sign In
+            </Button>
+          </div>
         ) : (
-          <>
-            <input
+          <div className="space-y-3">
+            <Input
+              label="API Key"
               type="password"
               value={apiKeyInput}
               onChange={(e) => { setApiKeyInput(e.target.value); setError(""); }}
-              placeholder="API key"
-              className="mb-4 w-full rounded-lg px-4 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--color-border)' }}
+              placeholder="av_xxxxxxxxxxxx"
+              disabled={isLoading}
               onKeyDown={(e) => e.key === "Enter" && handleApiKeyLogin()}
-              aria-label="API key"
-              disabled={isLoading}
             />
-            <button
+            <Button
+              className="w-full"
               onClick={handleApiKeyLogin}
-              disabled={isLoading}
-              className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/50 disabled:opacity-50"
+              loading={isLoading}
             >
-              {isLoading ? "Validating..." : "Sign In with API Key"}
-            </button>
-          </>
+              Sign In with API Key
+            </Button>
+          </div>
         )}
       </div>
     </div>

@@ -71,6 +71,7 @@ export default function AtlasShell() {
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)] relative">
       {/* GRID OVERLAY */}
       <div
+        aria-hidden="true"
         className="pointer-events-none fixed inset-0 opacity-20"
         style={{
           backgroundImage:
@@ -143,7 +144,7 @@ export default function AtlasShell() {
             </div>
           </div>
 
-          <nav className="flex-1 overflow-y-auto">
+          <nav aria-label="Primary navigation" className="flex-1 overflow-y-auto">
             {navItems.map(({ to, icon: Icon, label, code }, i) => (
               <NavLink
                 key={to}

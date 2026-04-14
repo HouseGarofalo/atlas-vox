@@ -67,7 +67,7 @@ export default function MinimalShell() {
       </div>
 
       {/* Horizontal Nav */}
-      <nav className="border-b border-[var(--color-border)] px-8">
+      <nav aria-label="Primary navigation" className="border-b border-[var(--color-border)] px-8">
         <div className="mx-auto max-w-7xl flex items-center gap-1 overflow-x-auto">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink

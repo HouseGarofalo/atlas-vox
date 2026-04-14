@@ -84,13 +84,18 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
+      args:
+        - NGINX_CONF=${NGINX_CONF:-nginx.conf}
     ports:
       - "${FRONTEND_PORT:-3100}:80"
+      - "${HTTPS_PORT:-3443}:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - backend
     healthcheck:
-      # Alpine-based nginx doesn't have curl — use wget instead
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:80/"]
+      # Try HTTPS first (SSL mode), fall back to HTTP (plain mode)
+      test: ["CMD-SHELL", "wget --spider --quiet --no-check-certificate https://localhost:443/ 2>/dev/null || wget --spider --quiet http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3

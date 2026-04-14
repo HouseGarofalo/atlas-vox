@@ -52,7 +52,7 @@ export default function JarvisShell() {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)] relative overflow-hidden">
       {/* ================= VIEWPORT CORNER BRACKETS ================= */}
-      <div className="pointer-events-none fixed inset-4 z-[5]">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-4 z-[5]">
         <CornerBracket position="top-left" />
         <CornerBracket position="top-right" />
         <CornerBracket position="bottom-left" />
@@ -111,7 +111,7 @@ export default function JarvisShell() {
       </main>
 
       {/* ================= FLOATING HOLOGRAM NAV DOCK ================= */}
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20">
+      <nav aria-label="Primary navigation" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20">
         <div className="relative">
           {/* Hologram base glow */}
           <div className="absolute -inset-2 rounded-full bg-primary-500/10 blur-xl" />
@@ -151,6 +151,7 @@ export default function JarvisShell() {
 
       {/* ================= SCAN LINE ANIMATION ================= */}
       <div
+        aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[3] opacity-20"
         style={{
           background: `repeating-linear-gradient(

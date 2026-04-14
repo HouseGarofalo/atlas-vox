@@ -4,6 +4,8 @@ interface VUMeterProps {
   height?: number;
   className?: string;
   animated?: boolean;
+  decorative?: boolean;
+  label?: string;
 }
 
 export function VUMeter({
@@ -11,6 +13,8 @@ export function VUMeter({
   barCount = 10,
   height = 20,
   className = "",
+  decorative = false,
+  label = "Volume level",
 }: VUMeterProps) {
   const bars = Array.from({ length: barCount }, (_, i) => {
     const barLevel = (i + 1) / barCount * 100;
@@ -23,10 +27,22 @@ export function VUMeter({
     return { isActive, color, level: barLevel };
   });
 
+  const ariaProps = decorative
+    ? { "aria-hidden": true as const }
+    : {
+        role: "meter" as const,
+        "aria-label": label,
+        "aria-valuenow": Math.round(level),
+        "aria-valuemin": 0,
+        "aria-valuemax": 100,
+        "aria-valuetext": `${Math.round(level)} percent`,
+      };
+
   return (
     <div
       className={`vu-meter ${className}`}
       style={{ height: `${height}px` }}
+      {...ariaProps}
     >
       {bars.map((bar, i) => (
         <div

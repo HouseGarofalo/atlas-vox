@@ -114,7 +114,7 @@ export default function CommandShell() {
             <div className="text-sm font-bold text-primary-500">ATLAS-VOX.01</div>
           </div>
 
-          <nav className="flex-1 overflow-y-auto py-1">
+          <nav aria-label="Primary navigation" className="flex-1 overflow-y-auto py-1">
             {navItems.map(({ to, icon: Icon, label, code }) => (
               <NavLink
                 key={to}

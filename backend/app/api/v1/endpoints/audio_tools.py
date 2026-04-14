@@ -330,7 +330,7 @@ async def generate_sound_effect(
 # Audio Design Studio endpoints
 # ---------------------------------------------------------------------------
 
-ALLOWED_AUDIO_EXTENSIONS = {"wav", "mp3", "ogg", "flac", "m4a", "aac", "wma"}
+ALLOWED_AUDIO_EXTENSIONS = {"wav", "mp3", "ogg", "flac", "m4a", "aac", "wma", "webm"}
 
 
 def _workdir() -> Path:
@@ -474,7 +474,7 @@ async def list_files(
 
 
 @router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_file(file_id: str, user: CurrentUser) -> None:
+async def delete_file(file_id: str, user: CurrentUser):
     """Delete a working file."""
     path = _file_path(file_id)
     path.unlink(missing_ok=True)

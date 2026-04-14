@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ApiKeyCreate(BaseModel):
@@ -24,15 +24,23 @@ class ApiKeyCreateResponse(BaseModel):
 
 
 class ApiKeyResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
     name: str
     key_prefix: str
-    scopes: str
-    active: bool
+    scopes: list[str]
+    is_active: bool = Field(validation_alias="active")
     last_used_at: datetime | None
     created_at: datetime
+
+    @field_validator("scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v: object) -> list[str]:
+        """Accept both comma-separated string (from DB) and list."""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v)  # type: ignore[arg-type]
 
 
 class ApiKeyListResponse(BaseModel):

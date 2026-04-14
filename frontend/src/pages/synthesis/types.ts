@@ -98,7 +98,7 @@ export interface SpeechToSpeechPanelProps {
   onSetStsFile: (file: File | null) => void;
   stsLoading: boolean;
   stsResult: { audio_url: string; duration_seconds: number | null } | null;
-  stsInputRef: RefObject<HTMLInputElement | null>;
+  stsInputRef: RefObject<HTMLInputElement>;
   stsBlobUrl: string | null;
 }
 

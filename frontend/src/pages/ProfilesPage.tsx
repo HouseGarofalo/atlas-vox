@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getErrorMessage } from "../utils/errors";
-import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause, Loader2 } from "lucide-react";
+import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -9,6 +9,9 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Modal } from "../components/ui/Modal";
+import { Skeleton } from "../components/ui/Skeleton";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { AudioPlayer } from "../components/audio/AudioPlayer";
 import { useProfileStore } from "../stores/profileStore";
 import { useProviderStore } from "../stores/providerStore";
@@ -140,18 +143,25 @@ export default function ProfilesPage() {
       </div>
 
       {loading && !profiles.length ? (
-        <p className="text-[var(--color-text-secondary)]">Loading...</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton key={i} variant="card" height={200} />
+          ))}
+        </div>
       ) : error && !profiles.length ? (
         <Card className="py-8 text-center space-y-3">
-          <p className="text-sm text-red-600 dark:text-red-400">Failed to load profiles: {error}</p>
+          <p className="text-sm text-[var(--color-error)]">Failed to load profiles: {error}</p>
           <Button variant="secondary" onClick={() => fetchProfiles()}>
-            <Loader2 className="h-4 w-4 mr-2" /> Retry
+            Retry
           </Button>
         </Card>
       ) : profiles.length === 0 ? (
-        <Card className="py-12 text-center">
-          <p className="text-[var(--color-text-secondary)]">No profiles yet. Create your first voice profile.</p>
-        </Card>
+        <EmptyState
+          icon={<Mic className="h-12 w-12" />}
+          title="No voice profiles yet"
+          description="Create your first voice profile to start training and synthesizing."
+          action={{ label: "Create Profile", onClick: () => { setShowCreate(true); setCreateMode("choose"); } }}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {profiles.map((profile) => (
@@ -167,29 +177,16 @@ export default function ProfilesPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <Modal
+      {/* Delete Confirmation */}
+      <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        title="Delete Profile"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-[var(--color-text-secondary)]">
-            Are you sure you want to delete this profile? This action cannot be undone.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => { if (deleteTarget) handleDelete(deleteTarget); }}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={() => { if (deleteTarget) handleDelete(deleteTarget); }}
+        title="Delete Voice Profile"
+        description="Are you sure you want to delete this profile? This action cannot be undone."
+        confirmLabel="Delete Profile"
+        variant="danger"
+      />
 
       {/* Version Compare Modal */}
       <VersionCompareModal
@@ -287,16 +284,8 @@ export default function ProfilesPage() {
               onChange={(e) => setDesignText(e.target.value)}
               placeholder="Hello, this is a preview of the designed voice."
             />
-            <Button onClick={handleGeneratePreviews} disabled={designLoading || !designDescription.trim()}>
-              {designLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> Generate Previews
-                </>
-              )}
+            <Button onClick={handleGeneratePreviews} loading={designLoading} disabled={!designDescription.trim()}>
+              <Sparkles className="h-4 w-4" /> Generate Previews
             </Button>
 
             {designPreviews.length > 0 && (
@@ -568,9 +557,10 @@ function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile
 
           <Button
             onClick={handleCompare}
-            disabled={comparing || !selected[0] || !selected[1] || selected[0] === selected[1] || !testText.trim()}
+            loading={comparing}
+            disabled={!selected[0] || !selected[1] || selected[0] === selected[1] || !testText.trim()}
           >
-            {comparing ? "Comparing..." : "Synthesize Test"}
+            Synthesize Test
           </Button>
 
           {results.length > 0 && (

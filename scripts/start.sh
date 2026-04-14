@@ -185,11 +185,49 @@ case "$MODE" in
       fi
     done
 
-    # Write ports to docker/.env
-    cat > docker/.env <<EOF
+    # Update ports in docker/.env (preserve other variables like secrets)
+    if [ -f docker/.env ]; then
+      sed -i "s/^BACKEND_PORT=.*/BACKEND_PORT=${BACKEND_PORT}/" docker/.env
+      sed -i "s/^FRONTEND_PORT=.*/FRONTEND_PORT=${FRONTEND_PORT}/" docker/.env
+    else
+      # First run — create from scratch with required defaults
+      cat > docker/.env <<EOF
+# Atlas Vox — Docker Compose environment
 BACKEND_PORT=${BACKEND_PORT}
 FRONTEND_PORT=${FRONTEND_PORT}
+NGINX_CONF=nginx-ssl.conf
+HTTPS_PORT=3443
+POSTGRES_PASSWORD=atlas-vox-pg
+REDIS_PASSWORD=atlas-vox-redis
+ENCRYPTION_KEY=dev-only-change-in-production-32chars
+AUTH_DISABLED=true
+APP_ENV=development
+JWT_SECRET_KEY=atlas-vox-dev-jwt-secret-key-32ch
 EOF
+    fi
+
+    # Read HTTPS settings from docker/.env
+    NGINX_CONF=$(grep '^NGINX_CONF=' docker/.env 2>/dev/null | cut -d= -f2 || echo "nginx.conf")
+    HTTPS_PORT=$(grep '^HTTPS_PORT=' docker/.env 2>/dev/null | cut -d= -f2 || echo "3443")
+    HTTPS_ENABLED=false
+    if [ "$NGINX_CONF" = "nginx-ssl.conf" ]; then
+      HTTPS_ENABLED=true
+    fi
+
+    # Auto-generate certificates if HTTPS is enabled and certs are missing
+    if [ "$HTTPS_ENABLED" = true ]; then
+      if [ ! -f docker/certs/selfsigned.crt ] || [ ! -f docker/certs/selfsigned.key ]; then
+        log "HTTPS enabled but no certificates found — generating self-signed certs..."
+        bash scripts/generate-certs.sh
+      else
+        log "HTTPS: using existing certificates in docker/certs/"
+      fi
+      # Check HTTPS port conflict
+      if port_occupied "$HTTPS_PORT"; then
+        err "HTTPS port :${HTTPS_PORT} is occupied! Change HTTPS_PORT in docker/.env"
+        exit 1
+      fi
+    fi
 
     log "Building and starting..."
     docker compose -f docker/docker-compose.yml up --build -d
@@ -207,11 +245,22 @@ EOF
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     echo -e "${CYAN}  Atlas Vox — Docker Stack${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
-    echo -e "  Web UI:  ${GREEN}http://localhost:${FRONTEND_PORT}${NC}"
+    if [ "$HTTPS_ENABLED" = true ]; then
+      echo -e "  Web UI:  ${GREEN}https://localhost:${HTTPS_PORT}${NC}  (HTTPS)"
+      echo -e "  Web UI:  ${YELLOW}http://localhost:${FRONTEND_PORT}${NC}  (redirects to HTTPS)"
+    else
+      echo -e "  Web UI:  ${GREEN}http://localhost:${FRONTEND_PORT}${NC}"
+    fi
     echo -e "  API:     ${GREEN}http://localhost:${BACKEND_PORT}${NC}"
     echo ""
     docker ps --filter "name=atlas-vox" --format "  {{.Names}}: {{.Status}}"
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    if [ "$HTTPS_ENABLED" = true ]; then
+      echo ""
+      warn "Self-signed cert: accept the browser warning on first visit."
+      echo -e "  To access from other devices, use your LAN IP:"
+      echo -e "  ${GREEN}https://<your-ip>:${HTTPS_PORT}${NC}"
+    fi
     ;;
 
   stop)

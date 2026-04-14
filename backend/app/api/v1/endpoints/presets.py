@@ -127,7 +127,7 @@ async def update_preset(
 @router.delete("/{preset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_preset(
     preset_id: str, db: DbSession, user: CurrentUser
-) -> None:
+):
     """Delete a custom preset (system presets cannot be deleted)."""
     logger.info("delete_preset_called", preset_id=preset_id)
     result = await db.execute(

@@ -6,6 +6,8 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { CollapsiblePanel } from "../components/ui/CollapsiblePanel";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../services/api";
 import type { ApiKeyResponse } from "../types";
 import { createLogger } from "../utils/logger";
@@ -20,6 +22,7 @@ export default function ApiKeysPage() {
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Set<string>>(new Set(["read", "synthesize"]));
   const [newKey, setNewKey] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<string | null>(null);
 
   const load = async () => { const { api_keys } = await api.listApiKeys(); setKeys(api_keys); };
   useEffect(() => { load(); }, []);
@@ -41,7 +44,6 @@ export default function ApiKeysPage() {
   };
 
   const handleRevoke = async (id: string) => {
-    if (!confirm("Revoke this API key?")) return;
     logger.info("key_revoke", { key_id: id });
     try {
       await api.revokeApiKey(id);
@@ -52,6 +54,8 @@ export default function ApiKeysPage() {
       const message = e instanceof Error ? e.message : "Failed to revoke key";
       logger.error("key_revoke_error", { key_id: id, error: message });
       toast.error(message);
+    } finally {
+      setRevokeTarget(null);
     }
   };
 
@@ -69,7 +73,12 @@ export default function ApiKeysPage() {
         badge={keys.length === 0 ? undefined : <span className="text-xs text-[var(--color-text-secondary)]">{keys.filter((k) => k.is_active !== false).length} active</span>}
       >
         {keys.length === 0 ? (
-          <p className="py-8 text-center text-[var(--color-text-secondary)]">No API keys yet.</p>
+          <EmptyState
+            icon={<Key className="h-12 w-12" />}
+            title="No API keys"
+            description="Create an API key to integrate Atlas Vox with your applications."
+            action={{ label: "Create API Key", onClick: () => { setShowCreate(true); setNewKey(null); setName(""); } }}
+          />
         ) : (
           <div className="overflow-x-auto -mx-4 px-4">
             <table className="w-full text-sm min-w-[500px]">
@@ -91,7 +100,7 @@ export default function ApiKeysPage() {
                     <td className="py-2 text-xs">{Array.isArray(k.scopes) ? k.scopes.join(", ") : k.scopes}</td>
                     <td className="py-2"><Badge status={k.is_active !== false ? "healthy" : "revoked"} /></td>
                     <td className="py-2 text-xs text-[var(--color-text-secondary)] hidden sm:table-cell">{new Date(k.created_at).toLocaleDateString()}</td>
-                    <td className="py-2"><Button size="sm" variant="ghost" onClick={() => handleRevoke(k.id)}><Trash2 className="h-3 w-3" /></Button></td>
+                    <td className="py-2"><Button size="sm" variant="ghost" onClick={() => setRevokeTarget(k.id)}><Trash2 className="h-3 w-3" /></Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -127,6 +136,15 @@ export default function ApiKeysPage() {
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        onClose={() => setRevokeTarget(null)}
+        onConfirm={() => { if (revokeTarget) handleRevoke(revokeTarget); }}
+        title="Revoke API Key"
+        description="Are you sure you want to revoke this API key? Any applications using this key will lose access immediately."
+        confirmLabel="Revoke Key"
+        variant="danger"
+      />
     </div>
   );
 }

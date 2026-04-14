@@ -1,24 +1,15 @@
 import { Moon, Sun, Paintbrush, Volume2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import VUMeter from "../audio/VUMeter";
 import ThemeQuickSwitcher from "../theme/ThemeQuickSwitcher";
+import Clock from "./Clock";
 
 export default function Header() {
   const { theme, toggleTheme } = useSettingsStore();
-  const [clockTime, setClockTime] = useState(() => new Date().toLocaleTimeString());
 
   // Static decorative VU level — only animate when real audio is playing
   const vuLevel = 45;
-
-  // Update clock every second
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setClockTime(new Date().toLocaleTimeString());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   return (
     <header className="flex h-16 lg:h-18 items-center justify-between border-b border-[var(--color-border)] px-6 bg-[var(--color-bg)]/80 backdrop-blur-md">
@@ -43,10 +34,8 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Digital clock */}
-        <div className="hidden lg:block font-mono text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)] px-3 py-1 rounded-lg border border-[var(--color-border)]">
-          {clockTime}
-        </div>
+        {/* Digital clock — isolated component to avoid re-rendering the whole tree */}
+        <Clock />
       </div>
 
       {/* Control Panel */}

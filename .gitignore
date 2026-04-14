@@ -87,6 +87,9 @@ dump.rdb
 
 # Docker
 docker-compose.override.yml
+docker/certs/*.crt
+docker/certs/*.key
+docker/certs/*.pem
 
 # Claude Code backups
 .claude-backup/

@@ -17,6 +17,8 @@ interface AuthState {
   error: string | null;
   isLoading: boolean;
   authDisabled: boolean;
+  /** True until the initial auth/status check completes. */
+  isInitializing: boolean;
 
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -25,6 +27,7 @@ interface AuthState {
   setApiKey: (key: string) => Promise<void>;
   setAuthDisabled: () => void;
   clearAuth: () => void;
+  setInitialized: () => void;
   hasScope: (scope: string) => boolean;
 }
 
@@ -35,6 +38,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   error: null,
   isLoading: false,
   authDisabled: false,
+  isInitializing: true,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
@@ -196,7 +200,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       error: null,
       isLoading: false,
       authDisabled: false,
+      isInitializing: false,
     });
+  },
+
+  setInitialized: () => {
+    set({ isInitializing: false });
   },
 
   hasScope: (scope: string) => {

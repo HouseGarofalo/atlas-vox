@@ -12,7 +12,7 @@ import BentoShell from "./shells/BentoShell";
  * React component tree with its own nav, header, and chrome.
  */
 export default function AppLayout() {
-  const theme = useDesignStore((state) => state.themes[state.activeThemeId]);
+  const theme = useDesignStore((state) => state.getCurrentTheme());
 
   // Skip-to-content link is rendered by all shells indirectly via the main tag.
   // Render a top-level skip link here so it's always accessible regardless of shell.

@@ -86,10 +86,44 @@
   --color-knob-base: hsl(var(--studio-charcoal));
   --color-fader-track: hsl(var(--studio-slate));
 
+  /* Semantic Status Colors - Light Mode */
+  --color-success: hsl(142 71% 45%);
+  --color-success-bg: hsl(142 76% 96%);
+  --color-success-border: hsl(142 69% 78%);
+  --color-warning: hsl(38 92% 50%);
+  --color-warning-bg: hsl(48 96% 95%);
+  --color-warning-border: hsl(46 87% 75%);
+  --color-error: hsl(0 72% 51%);
+  --color-error-bg: hsl(0 86% 97%);
+  --color-error-border: hsl(0 70% 82%);
+  --color-info: hsl(217 91% 60%);
+  --color-info-bg: hsl(214 95% 96%);
+  --color-info-border: hsl(213 94% 82%);
+
   /* Audio Studio Typography */
   --font-display: 'Inter Display', 'SF Pro Display', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-body: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+
+  /*
+   * Typography Scale Reference (Tailwind defaults):
+   *   Page headers (h1):   text-4xl font-display font-bold text-gradient
+   *   Section headers:     text-lg font-display font-semibold text-[--color-text]
+   *   Card titles:         text-base font-display font-semibold text-[--color-text]
+   *   Body text:           text-sm text-[--color-text-secondary]
+   *   Labels:              text-sm font-medium text-[--color-text]
+   *   Caption/meta:        text-xs text-[--color-text-tertiary]
+   *   Monospace data:      text-xs font-mono text-[--color-text-secondary]
+   *
+   * Spacing Standards:
+   *   Page padding:        p-6 lg:p-8 (set by shells)
+   *   Section gaps:        space-y-8
+   *   Card grid gaps:      gap-6
+   *   Card internal:       p-4 sm:p-6
+   *   Form field gaps:     space-y-4
+   *   Button groups:       gap-3
+   *   Label-to-field:      space-y-1
+   */
 
   /* Enhanced Design Tokens */
   --radius: 16px;
@@ -124,6 +158,20 @@
   --color-sidebar: hsl(var(--studio-charcoal));
   --color-hover: hsl(var(--studio-primary) / 0.08);
   --color-console-bg: hsl(var(--studio-charcoal));
+
+  /* Semantic Status Colors - Dark Mode */
+  --color-success: hsl(142 69% 58%);
+  --color-success-bg: hsl(142 50% 12%);
+  --color-success-border: hsl(142 45% 28%);
+  --color-warning: hsl(45 93% 58%);
+  --color-warning-bg: hsl(46 50% 12%);
+  --color-warning-border: hsl(46 45% 28%);
+  --color-error: hsl(0 91% 71%);
+  --color-error-bg: hsl(0 50% 12%);
+  --color-error-border: hsl(0 45% 28%);
+  --color-info: hsl(217 91% 70%);
+  --color-info-bg: hsl(217 50% 12%);
+  --color-info-border: hsl(217 45% 28%);
 }
 
 /* ===== Base Styles ===== */
@@ -387,9 +435,14 @@ body {
 
 /* ===== Animation Preferences ===== */
 @media (prefers-reduced-motion: reduce) {
+  /* Kill decorative/looping animations entirely */
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* Keep functional transitions but shorten them */
+  *, *::before, *::after {
+    transition-duration: 150ms !important;
   }
 }
 

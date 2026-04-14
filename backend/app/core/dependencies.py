@@ -34,9 +34,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_factory() as session:
         try:
             yield session
-            # Only commit if the session has pending work (new/dirty/deleted objects)
-            if session.new or session.dirty or session.deleted:
-                await session.commit()
+            # Always commit — flush() clears session.new/dirty/deleted but
+            # leaves the transaction uncommitted.  Committing an empty
+            # transaction is a harmless no-op.
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
