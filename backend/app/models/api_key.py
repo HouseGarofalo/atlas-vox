@@ -17,7 +17,7 @@ class ApiKey(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(500), nullable=False)
-    key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)  # First 8 chars for display
+    key_prefix: Mapped[str] = mapped_column(String(20), nullable=False)  # First 12 chars of full key for display (e.g. "avx_xxxxxxxx")
     scopes: Mapped[str] = mapped_column(Text, default="read,synthesize")  # Comma-separated: read,write,synthesize,train,admin
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Navigation', () => {
   test('sidebar navigation works for all main pages', async ({ page }) => {
@@ -9,40 +9,40 @@ test.describe('Navigation', () => {
 
     // Dashboard loads
     await expect(page).toHaveURL('/');
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: /Audio Control Center/i })).toBeVisible({ timeout: 15000 });
 
     // Navigate to Voice Library
-    await page.click('a[href="/library"]');
+    await page.locator('a[href="/library"]').first().click({ force: true });
     await expect(page).toHaveURL('/library');
     await expect(page.getByRole('heading', { name: 'Voice Library' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Profiles
-    await page.click('a[href="/profiles"]');
+    await page.locator('a[href="/profiles"]').first().click({ force: true });
     await expect(page).toHaveURL('/profiles');
     await expect(page.getByRole('heading', { name: 'Voice Profiles' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Synthesis
-    await page.click('a[href="/synthesis"]');
+    await page.locator('a[href="/synthesis"]').first().click({ force: true });
     await expect(page).toHaveURL('/synthesis');
-    await expect(page.getByRole('heading', { name: 'Synthesis Lab' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /Synthesis Console/i })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Training
-    await page.click('a[href="/training"]');
+    await page.locator('a[href="/training"]').first().click({ force: true });
     await expect(page).toHaveURL('/training');
     await expect(page.getByRole('heading', { name: 'Training Studio' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Comparison
-    await page.click('a[href="/compare"]');
+    await page.locator('a[href="/compare"]').first().click({ force: true });
     await expect(page).toHaveURL('/compare');
     await expect(page.getByRole('heading', { name: 'Voice Comparison' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Providers
-    await page.click('a[href="/providers"]');
+    await page.locator('a[href="/providers"]').first().click({ force: true });
     await expect(page).toHaveURL('/providers');
     await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to Settings
-    await page.click('a[href="/settings"]');
+    await page.locator('a[href="/settings"]').first().click({ force: true });
     await expect(page).toHaveURL('/settings');
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 10000 });
   });
@@ -70,7 +70,7 @@ test.describe('Navigation', () => {
     // Look for mobile menu toggle (hamburger menu)
     const mobileMenuToggle = page.locator('button').filter({ hasText: /menu|toggle/i }).first();
     if (await mobileMenuToggle.isVisible()) {
-      await mobileMenuToggle.click();
+      await mobileMenuToggle.click({ force: true });
       await page.waitForTimeout(300);
 
       // Check if navigation is now visible

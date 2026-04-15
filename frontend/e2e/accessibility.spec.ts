@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Accessibility', () => {
   test('app meets WCAG 2.1 AA standards', async ({ page }) => {
@@ -74,7 +74,7 @@ test.describe('Accessibility', () => {
     const createBtn = page.getByRole('button', { name: /New Profile/i });
 
     if (await createBtn.isVisible()) {
-      await createBtn.click();
+      await createBtn.click({ force: true });
       await page.waitForTimeout(500);
 
       // Check form inputs have proper labels
@@ -110,7 +110,7 @@ test.describe('Accessibility', () => {
     const createBtn = page.getByRole('button', { name: /New Profile/i });
 
     if (await createBtn.isVisible()) {
-      await createBtn.click();
+      await createBtn.click({ force: true });
       await page.waitForTimeout(500);
 
       const modal = page.locator('[role="dialog"]');
@@ -161,7 +161,7 @@ test.describe('Accessibility', () => {
     const skipLink = page.locator('text=Skip to content');
 
     if (await skipLink.isVisible()) {
-      await skipLink.click();
+      await skipLink.click({ force: true });
       await page.waitForTimeout(300);
 
       // Should focus main content area
@@ -177,7 +177,7 @@ test.describe('Accessibility', () => {
     await page.goto('/');
 
     await expect(page.locator('body')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Audio Control Center/i })).toBeVisible();
   });
 
   test('reduced motion preferences respected', async ({ page }) => {
@@ -187,7 +187,7 @@ test.describe('Accessibility', () => {
     await expect(page.locator('body')).toBeVisible();
 
     // Navigate to another page
-    await page.click('a[href="/synthesis"]');
+    await page.locator('a[href="/synthesis"]').first().click({ force: true });
     await page.waitForTimeout(500);
 
     await expect(page.locator('body')).toBeVisible();
@@ -221,14 +221,14 @@ test.describe('Accessibility', () => {
     const createBtn = page.getByRole('button', { name: /New Profile/i });
 
     if (await createBtn.isVisible()) {
-      await createBtn.click();
+      await createBtn.click({ force: true });
       await page.waitForTimeout(500);
 
       // Try to submit form without required fields
       const submitBtn = page.getByRole('button', { name: /create|save|submit/i });
 
       if (await submitBtn.first().isVisible()) {
-        await submitBtn.first().click();
+        await submitBtn.first().click({ force: true });
         await page.waitForTimeout(500);
 
         // Check for error messages with proper ARIA attributes

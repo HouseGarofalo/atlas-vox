@@ -335,11 +335,15 @@ class ApiClient {
     });
   }
 
-  speechToSpeech(audio: File, voiceId: string, _provider: string) {
+  speechToSpeech(audio: File, voiceId: string, provider: string) {
     const form = new FormData();
     form.append("audio", audio);
+    const qs = new URLSearchParams({
+      voice_id: voiceId,
+      provider_name: provider,
+    });
     return this.request<{ output_filename: string; audio_url: string }>(
-      `/audio-tools/speech-to-speech?voice_id=${encodeURIComponent(voiceId)}`,
+      `/audio-tools/speech-to-speech?${qs.toString()}`,
       { method: "POST", body: form },
     );
   }

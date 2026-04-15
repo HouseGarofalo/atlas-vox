@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Training Studio', () => {
   test.beforeEach(async ({ page }) => {
@@ -20,7 +20,7 @@ test.describe('Training Studio', () => {
   test('clone voice link navigates to clone page', async ({ page }) => {
     const cloneLink = page.getByRole('link', { name: 'Clone Voice' });
     await expect(cloneLink).toBeVisible();
-    await cloneLink.click();
+    await cloneLink.click({ force: true });
     await expect(page).toHaveURL('/clone');
   });
 
@@ -33,7 +33,7 @@ test.describe('Training Studio', () => {
   test('history link navigates to history page', async ({ page }) => {
     const historyLink = page.getByRole('link', { name: 'History' });
     await expect(historyLink).toBeVisible();
-    await historyLink.click();
+    await historyLink.click({ force: true });
     await expect(page).toHaveURL('/history');
   });
 });

@@ -16,6 +16,13 @@ logger = structlog.get_logger(__name__)
 
 ph = PasswordHasher()
 
+# A precomputed Argon2id hash used as a constant-time decoy when an API-key
+# lookup finds zero candidates. Running a dummy verify on this hash makes a
+# "no such prefix" path take approximately the same wall-clock time as a
+# "wrong key for existing prefix" path, removing the timing side-channel
+# that would otherwise reveal which prefixes are in use.
+_DUMMY_API_KEY_HASH = ph.hash("dummy-constant-time-decoy")
+
 
 # ---------------------------------------------------------------------------
 # API key helpers
@@ -37,6 +44,15 @@ def verify_api_key(api_key: str, hashed: str) -> bool:
     except Exception:
         logger.debug("api_key_verification", success=False)
         return False
+
+
+def dummy_verify_api_key() -> None:
+    """Run a throwaway Argon2 verify to equalise timing for non-matching prefixes."""
+    try:
+        ph.verify(_DUMMY_API_KEY_HASH, "dummy-constant-time-decoy-miss")
+    except Exception:
+        # Dummy always raises; we only care that the CPU work is performed.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -194,14 +210,26 @@ async def blacklist_token(jti: str, exp: int | float) -> None:
 
 
 async def is_token_blacklisted(jti: str) -> bool:
-    """Check whether a token JTI has been blacklisted."""
+    """Check whether a token JTI has been blacklisted.
+
+    When the backing store (Redis) is unreachable we fail **closed** by
+    default — treating every token as blacklisted — so a revoked token
+    cannot slip through during an outage. Set
+    ``redis_blacklist_fail_closed=False`` in dev/test environments where
+    an auth outage during a Redis blip is not acceptable.
+    """
     try:
         r = await _get_redis()
         result = await r.exists(f"token_blacklist:{jti}")
         await r.aclose()
         return bool(result)
     except Exception as exc:
-        # If Redis is down we fail-open (log it but allow the request).
-        # Production deployments should monitor Redis health.
-        logger.error("blacklist_check_failed", jti=jti, error=str(exc))
-        return False
+        logger.error(
+            "blacklist_check_failed",
+            jti=jti,
+            error=str(exc),
+            fail_closed=settings.redis_blacklist_fail_closed,
+        )
+        # Fail closed (default) treats the token as blacklisted → caller
+        # returns 401. Fail open allows the request through.
+        return bool(settings.redis_blacklist_fail_closed)

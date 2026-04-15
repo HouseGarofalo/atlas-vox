@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Providers', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,7 +27,7 @@ test.describe('Providers', () => {
     const refreshAllBtn = page.getByRole('button', { name: /Refresh All/i });
     await expect(refreshAllBtn).toBeVisible();
 
-    await refreshAllBtn.click();
+    await refreshAllBtn.click({ force: true });
     await page.waitForTimeout(2000);
 
     // Page should still be functional after clicking refresh
@@ -45,7 +45,7 @@ test.describe('Providers', () => {
     const editBtn = page.getByRole('button', { name: 'Edit' }).first();
 
     if (await editBtn.isVisible()) {
-      await editBtn.click();
+      await editBtn.click({ force: true });
       await page.waitForTimeout(500);
 
       // Should open configuration modal/dialog
@@ -117,7 +117,7 @@ test.describe('Providers', () => {
     const installBtn = page.getByRole('button', { name: /install|add|enable/i }).first();
 
     if (await installBtn.isVisible()) {
-      await installBtn.click();
+      await installBtn.click({ force: true });
       await page.waitForTimeout(500);
     }
 

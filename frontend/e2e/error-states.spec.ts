@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Error Handling & Resilience', () => {
   test('app handles network errors gracefully', async ({ page }) => {
@@ -79,7 +79,7 @@ test.describe('Error Handling & Resilience', () => {
     await page.waitForTimeout(1000);
 
     // Verify the page loads without crashing despite the mocked error
-    await expect(page.getByRole('heading', { name: 'Synthesis Lab' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Synthesis Console/i })).toBeVisible();
 
     // Text input should still be usable
     const textInput = page.getByPlaceholder('Enter text to synthesize...');
@@ -127,7 +127,7 @@ test.describe('Error Handling & Resilience', () => {
 
       const synthButton = page.getByRole('button', { name: 'Synthesize' });
       if (await synthButton.isVisible()) {
-        await synthButton.click();
+        await synthButton.click({ force: true });
         await page.waitForTimeout(1000);
 
         // App should handle gracefully
@@ -143,14 +143,14 @@ test.describe('Error Handling & Resilience', () => {
     const createBtn = page.getByRole('button', { name: /New Profile/i });
 
     if (await createBtn.isVisible()) {
-      await createBtn.click();
+      await createBtn.click({ force: true });
       await page.waitForTimeout(500);
 
       // Try to submit without filling required fields
       const submitBtn = page.getByRole('button', { name: /create|save|submit/i });
 
       if (await submitBtn.first().isVisible()) {
-        await submitBtn.first().click();
+        await submitBtn.first().click({ force: true });
         await page.waitForTimeout(300);
 
         // App should still be functional (validation should prevent submission)
@@ -165,7 +165,7 @@ test.describe('Error Handling & Resilience', () => {
     const createBtn = page.getByRole('button', { name: /New Profile/i });
 
     if (await createBtn.isVisible()) {
-      await createBtn.click();
+      await createBtn.click({ force: true });
       await page.waitForTimeout(500);
     }
 

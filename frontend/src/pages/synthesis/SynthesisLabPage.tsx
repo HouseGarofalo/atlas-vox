@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import AudioReactiveBackground from "../../components/audio/AudioReactiveBackground";
 import { useProfileStore } from "../../stores/profileStore";
@@ -19,6 +19,17 @@ import AudioControlPanel from "./AudioControlPanel";
 import type { BatchLineResult, SynthesisMode } from "./types";
 
 const logger = createLogger("SynthesisLabPage");
+
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeXmlAttribute(value: string): string {
+  return escapeXmlText(value).replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
 
 export default function SynthesisLabPage() {
   const { profiles, fetchProfiles } = useProfileStore();
@@ -64,16 +75,17 @@ export default function SynthesisLabPage() {
   const [consoleOn, setConsoleOn] = useState(true);
   const vuLevels = { input: 42, output: 55, master: 65 };
 
-  // STS blob URL — revoked on change to prevent memory leaks
-  const stsBlobUrl = useMemo(() => {
-    if (!stsFile) return null;
-    return URL.createObjectURL(stsFile);
-  }, [stsFile]);
+  // STS blob URL — revoked on file change and on unmount to prevent memory leaks
+  const [stsBlobUrl, setStsBlobUrl] = useState<string | null>(null);
   useEffect(() => {
-    return () => {
-      if (stsBlobUrl) URL.revokeObjectURL(stsBlobUrl);
-    };
-  }, [stsBlobUrl]);
+    if (!stsFile) {
+      setStsBlobUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(stsFile);
+    setStsBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [stsFile]);
 
   // Initial data fetch
   useEffect(() => {
@@ -135,7 +147,9 @@ export default function SynthesisLabPage() {
     let finalText = text;
     let useSSML = false;
     if (isAzure && emotion) {
-      finalText = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name=""><mstts:express-as style="${emotion}">${text}</mstts:express-as></voice></speak>`;
+      const safeEmotion = escapeXmlAttribute(emotion);
+      const safeText = escapeXmlText(text);
+      finalText = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name=""><mstts:express-as style="${safeEmotion}">${safeText}</mstts:express-as></voice></speak>`;
       useSSML = true;
     }
 
@@ -191,9 +205,9 @@ export default function SynthesisLabPage() {
       logger.info("sts_complete", { audio_url: result.audio_url });
       toast.success("Speech-to-Speech conversion complete");
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Speech-to-Speech failed";
+      const message = getErrorMessage(e) || "Speech-to-Speech failed";
       logger.error("sts_error", { error: message });
-      toast.error(message);
+      toast.error(message, { duration: 8000 });
     } finally {
       setStsLoading(false);
     }

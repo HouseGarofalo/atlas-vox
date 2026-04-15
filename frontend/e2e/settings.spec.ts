@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Settings', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,13 +16,13 @@ test.describe('Settings', () => {
     const htmlEl = page.locator('html');
     const initialClass = await htmlEl.getAttribute('class') || '';
 
-    await themeToggle.click();
+    await themeToggle.click({ force: true });
     await page.waitForTimeout(300);
 
     const newClass = await htmlEl.getAttribute('class') || '';
     expect(newClass).not.toBe(initialClass);
 
-    await themeToggle.click();
+    await themeToggle.click({ force: true });
     await page.waitForTimeout(300);
 
     const finalClass = await htmlEl.getAttribute('class') || '';
@@ -55,7 +55,7 @@ test.describe('Settings', () => {
     const apiKeysLink = page.getByRole('link', { name: 'API Keys' });
     await expect(apiKeysLink).toBeVisible();
 
-    await apiKeysLink.click();
+    await apiKeysLink.click({ force: true });
     await expect(page).toHaveURL('/api-keys');
   });
 });

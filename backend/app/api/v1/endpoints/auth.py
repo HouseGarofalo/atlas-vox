@@ -16,6 +16,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    dummy_verify_api_key,
     verify_api_key,
 )
 
@@ -155,6 +156,13 @@ async def login(body: LoginRequest, request: Request) -> JSONResponse:
                     )
                     _set_refresh_cookie(resp, refresh)
                     return resp
+
+        # Equalise timing: when no candidates matched the prefix, spend the
+        # same Argon2 work as a "wrong key for existing prefix" path would,
+        # so an attacker cannot distinguish "no such prefix" from
+        # "prefix exists but wrong secret" via response latency.
+        if not candidates:
+            dummy_verify_api_key()
 
         logger.warning("login_failed", method="api_key", reason="invalid_key")
         raise HTTPException(

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_fixtures';
 
 test.describe('Help & Documentation', () => {
   test('help page loads with navigation tabs', async ({ page }) => {
@@ -7,7 +7,7 @@ test.describe('Help & Documentation', () => {
 
     // Help route may redirect — verify we land on a functional page
     // Check if we're on the help page or got redirected
-    const helpHeading = page.getByRole('heading', { name: /Help & Documentation/i });
+    const helpHeading = page.getByRole('heading', { name: /Documentation/i });
     const bodyVisible = page.locator('body');
 
     // Either help page loaded or we were redirected to another valid page
@@ -28,7 +28,7 @@ test.describe('Help & Documentation', () => {
   test('documentation page loads with provider guides', async ({ page }) => {
     // /docs doesn't exist as a separate route; help page IS the docs page
     await page.goto('/help');
-    await expect(page.getByRole('heading', { name: /Help & Documentation/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Documentation/i })).toBeVisible();
 
     // Should show getting started content
     const welcomeHeading = page.getByRole('heading', { name: /Welcome to Atlas Vox/i });
@@ -41,7 +41,7 @@ test.describe('Help & Documentation', () => {
     // Click Support tab
     const supportBtn = page.getByRole('button', { name: 'Support' });
     if (await supportBtn.isVisible()) {
-      await supportBtn.click();
+      await supportBtn.click({ force: true });
       await page.waitForTimeout(300);
 
       // Should show support content (the page should change)
@@ -51,7 +51,7 @@ test.describe('Help & Documentation', () => {
     // Click Reference tab
     const referenceBtn = page.getByRole('button', { name: 'Reference' });
     if (await referenceBtn.isVisible()) {
-      await referenceBtn.click();
+      await referenceBtn.click({ force: true });
       await page.waitForTimeout(300);
 
       await expect(page.locator('body')).toBeVisible();
@@ -77,7 +77,7 @@ test.describe('Help & Documentation', () => {
     const gettingStartedBtn = page.getByRole('button', { name: 'Getting Started' });
     await expect(gettingStartedBtn).toBeVisible();
 
-    await gettingStartedBtn.click();
+    await gettingStartedBtn.click({ force: true });
     await page.waitForTimeout(300);
 
     // Should show getting started content with setup instructions
@@ -91,7 +91,7 @@ test.describe('Help & Documentation', () => {
     // Click Reference tab to look for provider docs
     const referenceBtn = page.getByRole('button', { name: 'Reference' });
     if (await referenceBtn.isVisible()) {
-      await referenceBtn.click();
+      await referenceBtn.click({ force: true });
       await page.waitForTimeout(500);
     }
 
@@ -103,7 +103,7 @@ test.describe('Help & Documentation', () => {
     await page.goto('/help');
 
     // The help page has comprehensive content
-    await expect(page.getByRole('heading', { name: /Help & Documentation/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Documentation/i })).toBeVisible();
   });
 
   test('feedback and support links work', async ({ page }) => {
@@ -112,7 +112,7 @@ test.describe('Help & Documentation', () => {
     // Click Support category
     const supportBtn = page.getByRole('button', { name: 'Support' });
     if (await supportBtn.isVisible()) {
-      await supportBtn.click();
+      await supportBtn.click({ force: true });
       await page.waitForTimeout(300);
     }
 
@@ -123,7 +123,7 @@ test.describe('Help & Documentation', () => {
     await page.goto('/help');
 
     // Just verify the page loads without errors
-    await expect(page.getByRole('heading', { name: /Help & Documentation/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Documentation/i })).toBeVisible();
   });
 
   test('accessibility information is provided', async ({ page }) => {

@@ -76,6 +76,9 @@ async def start_training(
         supports_fine_tuning=capabilities.supports_fine_tuning,
     )
 
+    # Snapshot profile status so we can revert if Celery dispatch fails.
+    previous_profile_status = profile.status
+
     # Create job
     job = TrainingJob(
         profile_id=profile_id,
@@ -89,12 +92,36 @@ async def start_training(
     # Update profile status
     profile.status = "training"
 
-    # Flush to generate the job ID, then dispatch Celery and commit atomically
+    # Flush to generate the job ID, then dispatch Celery and commit atomically.
+    # If Celery is unreachable or rejects the task we must not leave the DB
+    # in a "training" state with an orphaned job that no worker will ever run.
     await db.flush()
 
     from app.tasks.training import train_model
 
-    celery_task = train_model.delay(job.id)
+    try:
+        celery_task = train_model.delay(job.id)
+    except Exception as exc:  # kombu/celery raise a range of transport errors
+        logger.error(
+            "training_dispatch_failed",
+            job_id=job.id,
+            profile_id=profile_id,
+            provider=effective_provider,
+            error=str(exc),
+        )
+        # Revert: mark job failed, restore profile status, persist.
+        job.status = "failed"
+        job.error_message = f"Failed to enqueue training task: {exc}"
+        job.completed_at = datetime.now(UTC)
+        profile.status = previous_profile_status
+        await db.flush()
+        from app.core.exceptions import ProviderError
+
+        raise ProviderError(
+            effective_provider,
+            "training queue is unavailable — please try again shortly",
+        ) from exc
+
     job.celery_task_id = celery_task.id
 
     # Flush ensures celery_task_id is set before auto-commit

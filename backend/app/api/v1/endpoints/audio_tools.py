@@ -200,18 +200,37 @@ async def isolate_audio(
     )
 
 
+STS_SUPPORTED_PROVIDERS = {"elevenlabs"}
+
+
 @router.post("/speech-to-speech", response_model=SpeechToSpeechResponse)
 async def speech_to_speech(
     audio: UploadFile,
     user: CurrentUser,
-    voice_id: str = Query(..., description="Target ElevenLabs voice ID"),
+    voice_id: str = Query(..., description="Target voice ID on the selected provider"),
+    provider_name: str | None = Query(
+        None,
+        description="Provider to use for speech-to-speech. Defaults to elevenlabs.",
+    ),
 ) -> SpeechToSpeechResponse:
-    """Convert the voice in an uploaded audio file to a different ElevenLabs voice.
+    """Convert the voice in an uploaded audio file to a different voice.
 
-    Accepts any common audio format (wav, mp3, flac, ogg, m4a).
-    Returns a URL to the converted MP3.
+    Only providers that implement ``speech_to_speech`` are supported
+    (currently: ElevenLabs). Accepts any common audio format
+    (wav, mp3, flac, ogg, m4a, webm). Returns a URL to the converted audio.
     """
     from app.core.config import settings as app_settings
+
+    # ---- Validate provider before touching disk / spending memory ----
+    effective_provider = (provider_name or "elevenlabs").lower()
+    if effective_provider not in STS_SUPPORTED_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Speech-to-speech is not available for provider '{effective_provider}'. "
+                f"Supported providers: {', '.join(sorted(STS_SUPPORTED_PROVIDERS))}."
+            ),
+        )
 
     if not audio.filename:
         raise HTTPException(
@@ -222,8 +241,6 @@ async def speech_to_speech(
     # Write upload to a temp path in the output directory
     tmp_dir = Path(app_settings.storage_path) / "output"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    import uuid
 
     ext = audio.filename.rsplit(".", 1)[-1].lower() if "." in audio.filename else "bin"
     tmp_path = tmp_dir / f"sts_input_{uuid.uuid4().hex[:12]}.{ext}"
@@ -238,14 +255,21 @@ async def speech_to_speech(
     tmp_path.write_bytes(content)
 
     provider = _require_elevenlabs_provider()
-    logger.info("speech_to_speech_requested", voice_id=voice_id, input_size=len(content))
+    logger.info(
+        "speech_to_speech_requested",
+        voice_id=voice_id,
+        provider=effective_provider,
+        input_size=len(content),
+    )
 
     try:
         output_path = await provider.speech_to_speech(tmp_path, voice_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("speech_to_speech_failed", voice_id=voice_id, error=str(exc))
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Speech-to-speech conversion failed: {exc}",
         ) from exc
     finally:

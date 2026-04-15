@@ -46,6 +46,10 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/1"
+    # When the blacklist store is unreachable, treat tokens as blacklisted
+    # (fail closed) so revoked tokens can never slip through during an outage.
+    # Set to False only in dev/test environments where Redis outages are tolerable.
+    redis_blacklist_fail_closed: bool = True
 
     # Storage
     storage_path: Path = Path("./storage")

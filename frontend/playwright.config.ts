@@ -19,8 +19,15 @@ export default defineConfig({
   timeout: 30000,
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL — Docker frontend on 3100, or dev server on 5173 */
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3100',
+    /* Base URL — Docker frontend on 3443 (HTTPS) by default; override with E2E_BASE_URL */
+    baseURL: process.env.E2E_BASE_URL || 'https://localhost:3443',
+
+    /* Self-signed dev cert — accept it in tests */
+    ignoreHTTPSErrors: true,
+
+    /* Disable animations so Playwright's click stability checks don't wait forever
+       for canvas/framer-motion animations that never settle. */
+    reducedMotion: 'reduce',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -48,4 +55,5 @@ export default defineConfig({
 
   /* Don't auto-start dev server — we test against Docker or a running server */
   webServer: undefined,
+
 });
