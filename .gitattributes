@@ -1,0 +1,21 @@
+# Normalize all text files to LF on checkout and in the repo, regardless of
+# the contributor's OS. Without this, working on Windows / WSL with
+# core.autocrlf=true rewrites every line of every file and floods diffs.
+* text=auto eol=lf
+
+# Binary files — never touch their bytes.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.flac binary
+*.woff binary
+*.woff2 binary

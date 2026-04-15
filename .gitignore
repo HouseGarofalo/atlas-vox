@@ -87,9 +87,11 @@ dump.rdb
 
 # Docker
 docker-compose.override.yml
-docker/certs/*.crt
-docker/certs/*.key
-docker/certs/*.pem
+docker/certs/
+
+# Runtime data (encryption salt, SQLite DBs, local state)
+/data/
+/backend/data/
 
 # Claude Code backups
 .claude-backup/
