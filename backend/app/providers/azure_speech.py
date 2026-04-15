@@ -147,7 +147,25 @@ class AzureTokenManager:
             now = time.time()
             if self._token is None or now >= (self._expires_on - self._refresh_margin):
                 credential = self._get_credential()
-                result = credential.get_token(_COGNITIVE_SERVICES_SCOPE)
+                try:
+                    result = credential.get_token(_COGNITIVE_SERVICES_SCOPE)
+                except Exception as exc:
+                    error_msg = str(exc)
+                    # Provide actionable error messages for auth failures
+                    if "unauthorized" in error_msg.lower() or "401" in error_msg:
+                        raise RuntimeError(
+                            "Azure authentication failed (401 Unauthorized). "
+                            "Your credentials may have expired. Please re-login "
+                            "via the Azure Login section in the provider settings."
+                        ) from exc
+                    if "forbidden" in error_msg.lower() or "403" in error_msg:
+                        raise RuntimeError(
+                            "Azure authorization failed (403 Forbidden). "
+                            "Your account may lack the 'Cognitive Services User' "
+                            "or 'Cognitive Services Speech Contributor' RBAC role "
+                            "on the Azure Speech resource."
+                        ) from exc
+                    raise
                 self._token = result.token
                 self._expires_on = result.expires_on
                 logger.debug(
@@ -220,6 +238,22 @@ class AzureCNVClient:
     def _json_headers(self) -> dict[str, str]:
         return {**self._auth_headers(), "Content-Type": "application/json"}
 
+    @staticmethod
+    def _raise_for_auth(resp) -> None:
+        """Raise with actionable message for 401/403 from Azure APIs."""
+        if resp.status_code == 401:
+            raise RuntimeError(
+                "Azure API returned 401 Unauthorized. Your authentication "
+                "token may have expired. Please re-login via the Azure Login "
+                "section in the provider settings."
+            )
+        if resp.status_code == 403:
+            raise PermissionError(
+                "Azure API returned 403 Forbidden. Your account may lack "
+                "the required RBAC role ('Cognitive Services User' or "
+                "'Cognitive Services Speech Contributor') on the Speech resource."
+            )
+
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path}?api-version={CNV_API_VERSION}"
 
@@ -233,6 +267,7 @@ class AzureCNVClient:
                 headers=self._json_headers(),
                 json={"kind": kind, "description": description},
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -244,6 +279,7 @@ class AzureCNVClient:
             )
             if resp.status_code == 404:
                 return None
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -272,6 +308,7 @@ class AzureCNVClient:
                     },
                     files={"audiodata": (audio_file.name, f, "audio/wav")},
                 )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -282,6 +319,7 @@ class AzureCNVClient:
                 self._url(f"consents/{consent_id}"),
                 headers=self._auth_headers(),
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -341,6 +379,7 @@ class AzureCNVClient:
                     "Your resource may not have Personal Voice enabled. "
                     "Apply for access at https://aka.ms/customneural"
                 )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -350,6 +389,7 @@ class AzureCNVClient:
                 self._url(f"personalvoices/{personal_voice_id}"),
                 headers=self._auth_headers(),
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -380,6 +420,7 @@ class AzureCNVClient:
                 headers=self._json_headers(),
                 json={"projectId": project_id, "description": description},
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -409,6 +450,7 @@ class AzureCNVClient:
                 data={"kind": kind},
                 files={"audiodata": ("training_data.zip", zip_buf, "application/zip")},
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -429,6 +471,7 @@ class AzureCNVClient:
                     "recipe": {"kind": recipe_kind},
                 },
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -438,6 +481,7 @@ class AzureCNVClient:
                 self._url(f"models/{model_id}"),
                 headers=self._auth_headers(),
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -464,6 +508,7 @@ class AzureCNVClient:
                 headers=self._json_headers(),
                 json={"projectId": project_id, "modelId": model_id},
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -473,6 +518,7 @@ class AzureCNVClient:
                 self._url(f"endpoints/{endpoint_id}"),
                 headers=self._auth_headers(),
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -507,6 +553,7 @@ class AzureCNVClient:
                     "properties": {"outputFormat": output_format},
                 },
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -517,6 +564,7 @@ class AzureCNVClient:
                 f"/api/batchsyntheses/{batch_id}?api-version={CNV_API_VERSION}",
                 headers=self._auth_headers(),
             )
+            self._raise_for_auth(resp)
             resp.raise_for_status()
             return resp.json()
 
@@ -1307,8 +1355,27 @@ class AzureSpeechProvider(TTSProvider):
                 tm = self._get_token_manager()
                 tm.get_token()  # Will raise if credential chain fails
                 latency = int((time.perf_counter() - start) * 1000)
+
+                # Check token expiry from Redis/auth manager
+                token_warning = None
+                try:
+                    from app.providers.azure_auth import get_azure_auth_manager
+                    auth_mgr = get_azure_auth_manager()
+                    status = auth_mgr.get_status()
+                    if status.authenticated and status.expires_in_seconds is not None:
+                        if status.expires_in_seconds < 300:
+                            token_warning = (
+                                f"Token expires in {status.expires_in_seconds // 60}m "
+                                f"{status.expires_in_seconds % 60}s — consider re-authenticating"
+                            )
+                except Exception:
+                    pass
+
                 logger.info("azure_health_check", healthy=True, latency_ms=latency, auth="entra_token")
-                return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency)
+                return ProviderHealth(
+                    name="azure_speech", healthy=True, latency_ms=latency,
+                    error=token_warning,
+                )
             else:
                 # Validate API key by creating config
                 self._get_config()

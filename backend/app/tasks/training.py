@@ -140,6 +140,28 @@ async def _dispatch_to_provider(provider, capabilities, provider_samples, job, t
         "percent": 25, "status": "Training started...", "job_id": job_id,
     })
 
+    # Pre-check: warn if Azure token is near expiry (training can take hours)
+    if job.provider_name == "azure_speech":
+        try:
+            from app.providers.azure_auth import get_azure_auth_manager
+            auth_mgr = get_azure_auth_manager()
+            status = auth_mgr.get_status()
+            if status.authenticated and status.expires_in_seconds is not None:
+                if status.expires_in_seconds < 600:
+                    logger.warning(
+                        "azure_token_near_expiry_at_training_start",
+                        job_id=job_id,
+                        expires_in_seconds=status.expires_in_seconds,
+                    )
+            elif not status.authenticated:
+                logger.warning(
+                    "azure_not_authenticated_at_training_start",
+                    job_id=job_id,
+                    hint="Training may fail if no service principal is configured",
+                )
+        except Exception as exc:
+            logger.debug("azure_auth_check_skipped", error=str(exc))
+
     config_data = json.loads(job.config_json) if job.config_json else {}
 
     if capabilities.supports_cloning and not config_data.get("fine_tune_model_id"):

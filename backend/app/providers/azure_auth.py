@@ -82,6 +82,8 @@ class AzureAuthManager:
         self._lock = threading.Lock()
         self._device_code_info: DeviceCodeInfo | None = None
         self._device_code_thread: threading.Thread | None = None
+        # Event used to signal the background polling thread to stop early
+        self._cancel_event = threading.Event()
         # In-memory token cache (fast path, same process)
         self._cached_token: str | None = None
         self._cached_expires_on: float = 0
@@ -169,7 +171,11 @@ class AzureAuthManager:
         until one is accepted by the tenant.
         """
         with self._lock:
-            # Cancel any existing flow
+            # Cancel any existing flow — signal the old polling thread to stop
+            if self._device_code_thread and self._device_code_thread.is_alive():
+                self._cancel_event.set()
+                logger.info("azure_device_code_cancelling_previous_flow")
+            self._cancel_event = threading.Event()
             self._device_code_info = None
 
         try:
@@ -263,9 +269,20 @@ class AzureAuthManager:
         )
 
         # Step 2 — background thread polls for user sign-in completion
+        cancel_event = self._cancel_event  # capture for closure
+
         def _poll_for_token():
             try:
+                # MSAL's acquire_token_by_device_flow blocks — poll cancel event
+                # alongside by checking periodically if cancelled.  Unfortunately
+                # MSAL doesn't expose a cancel API, so we rely on the expiry
+                # timeout if the event is set.
                 result = app.acquire_token_by_device_flow(flow)
+
+                # If cancelled while waiting, discard result
+                if cancel_event.is_set():
+                    logger.info("azure_device_code_cancelled_during_poll")
+                    return
 
                 if "error" in result:
                     error_msg = result.get("error_description", result.get("error", "Unknown"))
@@ -377,10 +394,14 @@ class AzureAuthManager:
         return status
 
     def logout(self) -> None:
-        """Clear all cached Azure credentials."""
+        """Clear all cached Azure credentials and stop any in-flight polling."""
         with self._lock:
             self._cached_token = None
             self._cached_expires_on = 0
+            # Signal polling thread to stop
+            self._cancel_event.set()
+            if self._device_code_info:
+                self._device_code_info.completed = True
             self._device_code_info = None
         self._clear_redis_tokens()
         logger.info("azure_auth_logged_out")
@@ -412,6 +433,11 @@ class AzureAuthManager:
                 self._cached_token = token
                 self._cached_expires_on = expires_on
             return token
+        elif token and expires_on <= now + 60:
+            # Token expired — clear from Redis so we don't keep returning stale data
+            logger.info("azure_auth_redis_token_expired", method=method,
+                        expired_ago=int(now - expires_on))
+            self._clear_redis_tokens()
 
         # 3. Service principal (if configured)
         if config:

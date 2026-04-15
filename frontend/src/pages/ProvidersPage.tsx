@@ -585,6 +585,27 @@ function AzureLoginSection() {
     }
   }, [authStatus?.device_code_pending, fetchStatus]);
 
+  // Poll periodically when authenticated to track token expiry
+  useEffect(() => {
+    if (authStatus?.authenticated && !authStatus?.device_code_pending) {
+      // Poll every 60s to keep expiry countdown accurate
+      const expiryPoll = setInterval(() => {
+        fetchStatus();
+      }, 60000);
+      return () => clearInterval(expiryPoll);
+    }
+  }, [authStatus?.authenticated, authStatus?.device_code_pending, fetchStatus]);
+
+  // Determine if token is near expiry (< 5 minutes)
+  const isNearExpiry = authStatus?.authenticated
+    && authStatus.expires_in_seconds != null
+    && authStatus.expires_in_seconds < 300
+    && authStatus.expires_in_seconds > 0;
+
+  const isExpired = authStatus?.authenticated
+    && authStatus.expires_in_seconds != null
+    && authStatus.expires_in_seconds <= 0;
+
   const handleInitiateLogin = useCallback(async () => {
     setInitiating(true);
     setError(null);
@@ -626,17 +647,25 @@ function AzureLoginSection() {
   };
 
   // Auth status badge
-  const statusBadge = authStatus?.authenticated
-    ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-    : authStatus?.device_code_pending
+  const statusBadge = isExpired
+    ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+    : isNearExpiry
       ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-      : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
+      : authStatus?.authenticated
+        ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+        : authStatus?.device_code_pending
+          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
 
-  const statusLabel = authStatus?.authenticated
-    ? "Authenticated"
-    : authStatus?.device_code_pending
-      ? "Pending..."
-      : "Not Authenticated";
+  const statusLabel = isExpired
+    ? "Expired"
+    : isNearExpiry
+      ? "Expiring Soon"
+      : authStatus?.authenticated
+        ? "Authenticated"
+        : authStatus?.device_code_pending
+          ? "Pending..."
+          : "Not Authenticated";
 
   return (
     <div className="space-y-3">
@@ -650,30 +679,69 @@ function AzureLoginSection() {
 
       {/* Authenticated state */}
       {authStatus?.authenticated && (
-        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 px-4 py-3 space-y-2">
+        <div className={`rounded-lg border px-4 py-3 space-y-2 ${
+          isExpired
+            ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20"
+            : isNearExpiry
+              ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20"
+              : "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20"
+        }`}>
+          {/* Expiry warning banner */}
+          {(isNearExpiry || isExpired) && (
+            <div className={`flex items-center gap-2 text-xs font-medium rounded px-2 py-1.5 mb-1 ${
+              isExpired
+                ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+            }`}>
+              <Clock className="h-3.5 w-3.5" />
+              {isExpired
+                ? "Token has expired. Please re-login to continue using Azure Speech."
+                : `Token expires in ${formatExpiry(authStatus.expires_in_seconds ?? null)}. Re-login to refresh.`}
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               {authStatus.user_display_name && (
-                <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                <p className={`text-sm font-medium ${
+                  isExpired ? "text-red-800 dark:text-red-200"
+                    : isNearExpiry ? "text-amber-800 dark:text-amber-200"
+                      : "text-green-800 dark:text-green-200"
+                }`}>
                   {authStatus.user_display_name}
                 </p>
               )}
               {authStatus.user_email && (
-                <p className="text-xs text-green-600 dark:text-green-400">
+                <p className={`text-xs ${
+                  isExpired ? "text-red-600 dark:text-red-400"
+                    : isNearExpiry ? "text-amber-600 dark:text-amber-400"
+                      : "text-green-600 dark:text-green-400"
+                }`}>
                   {authStatus.user_email}
                 </p>
               )}
-              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+              <div className={`flex items-center gap-1.5 text-xs ${
+                isExpired ? "text-red-600 dark:text-red-400"
+                  : isNearExpiry ? "text-amber-600 dark:text-amber-400"
+                    : "text-green-600 dark:text-green-400"
+              }`}>
                 <Clock className="h-3 w-3" />
                 <span>
                   via {authStatus.auth_method ?? "unknown"} · expires in {formatExpiry(authStatus.expires_in_seconds ?? null)}
                 </span>
               </div>
             </div>
-            <Button size="sm" variant="ghost" onClick={handleLogout} disabled={loggingOut}>
-              {loggingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
-              Logout
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {(isNearExpiry || isExpired) && (
+                <Button size="sm" variant="secondary" onClick={handleInitiateLogin} disabled={initiating}>
+                  {initiating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogIn className="h-3.5 w-3.5" />}
+                  Re-login
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={handleLogout} disabled={loggingOut}>
+                {loggingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       )}
