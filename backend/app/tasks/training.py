@@ -89,13 +89,20 @@ async def _load_job_and_samples(db, job_id: str, task):
         if prov_row and prov_row.config_json:
             config = json.loads(prov_row.config_json)
             # Decrypt encrypted values (same logic as provider_registry startup)
-            for key, val in config.items():
+            failed_fields = []
+            for key, val in list(config.items()):
                 if isinstance(val, str) and val.startswith(ENC_PREFIX):
                     try:
                         config[key] = decrypt_value(val)
                     except Exception:
                         logger.error("worker_config_decrypt_failed",
                                      provider=job.provider_name, field=key)
+                        # Remove field — don't pass encrypted ciphertext to provider
+                        del config[key]
+                        failed_fields.append(key)
+            if failed_fields:
+                logger.warning("worker_config_fields_skipped",
+                               provider=job.provider_name, fields=failed_fields)
             provider_registry.apply_config(job.provider_name, config)
 
         provider = provider_registry.get_provider(job.provider_name)

@@ -549,9 +549,12 @@ function AzureLoginSection() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const fetchingRef = useRef(false); // guard against concurrent fetches
 
   // Fetch status on mount and set up polling when device code is pending
   const fetchStatus = useCallback(async () => {
+    if (fetchingRef.current) return null; // skip if already in-flight
+    fetchingRef.current = true;
     try {
       const status = await api.getAzureLoginStatus();
       setAuthStatus(status);
@@ -560,6 +563,8 @@ function AzureLoginSection() {
     } catch (err) {
       logger.warn("azure_status_fetch_failed", { error: String(err) });
       return null;
+    } finally {
+      fetchingRef.current = false;
     }
   }, []);
 

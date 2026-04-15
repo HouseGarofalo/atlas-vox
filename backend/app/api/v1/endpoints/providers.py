@@ -9,9 +9,11 @@ import structlog
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from starlette.requests import Request
 
 from app.core.dependencies import CurrentUser, DbSession, require_scope
 from app.core.encryption import ENC_PREFIX, decrypt_value, encrypt_value
+from app.core.rate_limit import auth_limiter
 from app.models.provider import Provider
 from app.schemas.provider import (
     PROVIDER_CONFIG_SCHEMAS,
@@ -321,7 +323,10 @@ class AzureAuthStatusResponse(BaseModel):
 
 
 @router.post("/{name}/azure-login/initiate", response_model=AzureDeviceCodeResponse)
-async def initiate_azure_login(name: str, db: DbSession, user: CurrentUser) -> AzureDeviceCodeResponse:
+@auth_limiter.limit("5/minute")
+async def initiate_azure_login(
+    name: str, request: Request, db: DbSession, user: CurrentUser,
+) -> AzureDeviceCodeResponse:
     """Start a device code authentication flow for Azure Entra ID.
 
     Returns a user code and verification URL.  The user opens the URL in any
@@ -464,7 +469,8 @@ async def get_azure_login_status(name: str, user: CurrentUser) -> AzureAuthStatu
 
 
 @router.post("/{name}/azure-login/logout")
-async def azure_logout(name: str, user: CurrentUser) -> dict:
+@auth_limiter.limit("10/minute")
+async def azure_logout(name: str, request: Request, user: CurrentUser) -> dict:
     """Clear all cached Azure credentials (Redis + in-memory)."""
     if name != "azure_speech":
         raise HTTPException(

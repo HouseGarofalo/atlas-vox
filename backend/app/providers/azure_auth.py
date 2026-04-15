@@ -376,6 +376,11 @@ class AzureAuthManager:
             if dci and not dci.completed and time.time() < dci.expires_at:
                 status.device_code_pending = True
                 status.device_code_info = dci
+            elif dci and (dci.completed or time.time() >= dci.expires_at):
+                # Clean up stale device code info
+                if dci.error:
+                    status.error = dci.error
+                self._device_code_info = None
 
         # Check Redis for cached token
         token, expires_on, method, user_info = self._load_token_from_redis()
@@ -454,6 +459,16 @@ class AzureAuthManager:
         client_secret = config.get("client_secret", "")
 
         if not (tenant_id and client_id and client_secret):
+            # Warn if partially configured (user set some but not all SP fields)
+            filled = [f for f in ("tenant_id", "client_id", "client_secret")
+                      if config.get(f)]
+            if filled:
+                logger.warning(
+                    "azure_service_principal_incomplete",
+                    filled_fields=filled,
+                    hint="All three fields (tenant_id, client_id, client_secret) "
+                         "are required for service principal authentication",
+                )
             return None
 
         try:
