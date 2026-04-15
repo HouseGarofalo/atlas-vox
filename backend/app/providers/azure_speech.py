@@ -1,4 +1,20 @@
-"""Azure AI Speech provider — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training."""
+"""Azure AI Speech provider — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training.
+
+Supports both API key and Microsoft Entra ID (formerly Azure AD) token-based
+authentication.  When ``auth_mode`` is ``"auto"`` (the default), the provider
+uses Entra ID tokens if no subscription key is configured, and API keys
+otherwise.  Set ``auth_mode`` to ``"entra_token"`` to force token-based auth
+even when a key is present.
+
+For Entra ID auth:
+- Install ``azure-identity``: ``pip install azure-identity``
+- Set ``resource_id`` to the full ARM Resource ID of your Cognitive Services
+  account (found in Azure Portal → Properties → Resource ID).
+- The caller must have ``Cognitive Services User`` or
+  ``Cognitive Services Speech Contributor`` RBAC role on the resource.
+- ``DefaultAzureCredential`` is used, which chains through env-var service
+  principal, managed identity, Azure CLI, and more.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +22,7 @@ import asyncio
 import copy
 import io
 import json
+import threading
 import time
 import uuid
 import zipfile
@@ -57,16 +74,147 @@ _LOCALE_MAP = {
     "pl": "pl-PL", "sv": "sv-SE", "tr": "tr-TR", "hi": "hi-IN",
 }
 
+# Scope for all Azure Cognitive Services Entra ID tokens
+_COGNITIVE_SERVICES_SCOPE = "https://cognitiveservices.azure.com/.default"
+
+
+# ---------------------------------------------------------------------------
+# Azure Entra ID Token Manager
+# ---------------------------------------------------------------------------
+
+class AzureTokenManager:
+    """Thread-safe token manager for Azure Entra ID authentication.
+
+    Acquires tokens via ``azure.identity.DefaultAzureCredential`` and caches
+    them until 5 minutes before expiry.  Provides both raw bearer tokens
+    (for REST API calls) and composite tokens in the ``aad#<resource_id>#<jwt>``
+    format required by the Speech SDK's ``SpeechSynthesizer``.
+    """
+
+    def __init__(self, resource_id: str = "", config: dict | None = None) -> None:
+        self.resource_id = resource_id
+        self._config = config or {}
+        self._token: str | None = None
+        self._expires_on: float = 0
+        self._lock = threading.Lock()
+        self._credential = None
+        # Refresh 5 minutes before expiry
+        self._refresh_margin = 300
+
+    def _get_credential(self):
+        """Lazy-load the credential to avoid importing azure.identity at module level."""
+        if self._credential is None:
+            try:
+                from azure.identity import DefaultAzureCredential
+            except ImportError:
+                raise ImportError(
+                    "azure-identity is required for Entra ID authentication. "
+                    "Install with: pip install azure-identity"
+                )
+
+            # Build credential from config if SP fields present
+            tenant_id = self._config.get("tenant_id", "")
+            client_id = self._config.get("client_id", "")
+            client_secret = self._config.get("client_secret", "")
+
+            if tenant_id and client_id and client_secret:
+                from azure.identity import ClientSecretCredential
+                self._credential = ClientSecretCredential(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
+                logger.info("azure_token_manager_using_service_principal")
+            else:
+                self._credential = DefaultAzureCredential()
+                logger.info("azure_token_manager_using_default_credential")
+        return self._credential
+
+    def get_token(self) -> str:
+        """Get a valid access token string, refreshing if expired or near-expiry.
+
+        Priority: Redis-cached token (from device code / SP login) → direct credential.
+        """
+        # First, try the shared auth manager (Redis cache + device code tokens)
+        try:
+            from app.providers.azure_auth import get_azure_auth_manager
+            cached = get_azure_auth_manager().get_cached_token(self._config)
+            if cached:
+                return cached
+        except Exception as exc:
+            logger.debug("azure_auth_manager_unavailable", error=str(exc))
+        with self._lock:
+            now = time.time()
+            if self._token is None or now >= (self._expires_on - self._refresh_margin):
+                credential = self._get_credential()
+                result = credential.get_token(_COGNITIVE_SERVICES_SCOPE)
+                self._token = result.token
+                self._expires_on = result.expires_on
+                logger.debug(
+                    "azure_entra_token_acquired",
+                    expires_in=int(self._expires_on - now),
+                )
+            return self._token
+
+    def get_composite_token(self) -> str:
+        """Get composite token for SpeechSynthesizer ``auth_token`` parameter.
+
+        Format: ``aad#<resource_id>#<jwt_token>``
+        """
+        if not self.resource_id:
+            raise ValueError(
+                "resource_id is required for Entra ID Speech SDK auth. "
+                "Set AZURE_SPEECH_RESOURCE_ID to the full ARM Resource ID "
+                "(e.g., /subscriptions/.../Microsoft.CognitiveServices/accounts/...)"
+            )
+        raw = self.get_token()
+        return f"aad#{self.resource_id}#{raw}"
+
+    def get_bearer_header(self) -> dict[str, str]:
+        """Get ``Authorization: Bearer`` header dict for REST API calls."""
+        return {"Authorization": f"Bearer {self.get_token()}"}
+
+    def close(self) -> None:
+        """Release credential resources."""
+        if self._credential is not None and hasattr(self._credential, "close"):
+            try:
+                self._credential.close()
+            except Exception:
+                pass
+            self._credential = None
+
+
+# ---------------------------------------------------------------------------
+# Custom Neural Voice REST client
+# ---------------------------------------------------------------------------
 
 class AzureCNVClient:
-    """REST API client for Azure Custom Voice (Personal + Professional)."""
+    """REST API client for Azure Custom Voice (Personal + Professional).
 
-    def __init__(self, subscription_key: str, region: str) -> None:
+    Supports both API key (``Ocp-Apim-Subscription-Key`` header) and
+    Entra ID token (``Authorization: Bearer`` header) authentication.
+    """
+
+    def __init__(
+        self,
+        region: str,
+        subscription_key: str | None = None,
+        token_manager: AzureTokenManager | None = None,
+    ) -> None:
         self.subscription_key = subscription_key
+        self.token_manager = token_manager
         self.region = region
         self.base_url = f"https://{region}.api.cognitive.microsoft.com/customvoice"
 
+        if not subscription_key and not token_manager:
+            raise ValueError(
+                "AzureCNVClient requires either a subscription_key or token_manager"
+            )
+
     def _auth_headers(self) -> dict[str, str]:
+        """Return authentication headers — bearer token or API key."""
+        if self.token_manager:
+            return self.token_manager.get_bearer_header()
         return {"Ocp-Apim-Subscription-Key": self.subscription_key}
 
     def _json_headers(self) -> dict[str, str]:
@@ -127,6 +275,42 @@ class AzureCNVClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_consent(self, consent_id: str) -> dict:
+        """Get consent status."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                self._url(f"consents/{consent_id}"),
+                headers=self._auth_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def wait_for_consent(self, consent_id: str,
+                                poll_interval: int = 3,
+                                timeout: int = 120) -> dict:
+        """Poll consent until Succeeded/Failed. Consent creation is async."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            consent = await self.get_consent(consent_id)
+            status = consent.get("status", "")
+            logger.info("azure_consent_poll", id=consent_id, status=status)
+            if status == "Succeeded":
+                return consent
+            if status == "Failed":
+                props = consent.get("properties", {})
+                error_msg = props.get("error", {}).get("message", str(consent))
+                if "AudioAndScriptNotMatch" in error_msg or "AudioAndScriptNotMatch" in str(consent):
+                    raise ValueError(
+                        "Azure consent validation failed: the audio does not match the "
+                        "required consent statement. The first audio sample must be a "
+                        "recording of the speaker reading the consent statement verbatim. "
+                        "See: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/"
+                        "personal-voice-consent"
+                    )
+                raise RuntimeError(f"Consent creation failed: {error_msg}")
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError(f"Consent creation timed out after {timeout}s")
+
     # ---- Personal Voice ----
 
     async def create_personal_voice(self, personal_voice_id: str,
@@ -151,6 +335,12 @@ class AzureCNVClient:
                 for fh in handles:
                     fh.close()
 
+            if resp.status_code == 403:
+                raise PermissionError(
+                    "Azure Personal Voice access denied (403 Forbidden). "
+                    "Your resource may not have Personal Voice enabled. "
+                    "Apply for access at https://aka.ms/customneural"
+                )
             resp.raise_for_status()
             return resp.json()
 
@@ -345,41 +535,140 @@ class AzureCNVClient:
         raise TimeoutError(f"Batch synthesis timed out after {timeout}s")
 
 
+# ---------------------------------------------------------------------------
+# Main Provider
+# ---------------------------------------------------------------------------
+
 class AzureSpeechProvider(TTSProvider):
-    """Azure AI Speech — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training."""
+    """Azure AI Speech — cloud TTS with SSML, Personal Voice cloning, and Professional Voice training.
+
+    Supports dual authentication:
+    - **API key**: traditional ``Ocp-Apim-Subscription-Key`` header
+    - **Entra ID token**: ``Authorization: Bearer`` header + composite
+      ``aad#<resource_id>#<token>`` for the Speech SDK
+
+    Auth mode is controlled by the ``auth_mode`` config value:
+    - ``"api_key"``: always use subscription key
+    - ``"entra_token"``: always use Entra ID (requires ``resource_id``)
+    - ``"auto"`` (default): use Entra ID if no key configured, else use key
+    """
 
     def __init__(self) -> None:
         self._speech_config = None
+        self._token_manager: AzureTokenManager | None = None
 
     def configure(self, config: dict) -> None:
         super().configure(config)
         self._speech_config = None
+        # Reset token manager on reconfigure
+        if self._token_manager:
+            self._token_manager.close()
+            self._token_manager = None
 
-    def _get_key_and_region(self) -> tuple[str, str]:
-        key = self.get_config_value("subscription_key", settings.azure_speech_key)
-        region = self.get_config_value("region", settings.azure_speech_region)
+    # ---- Auth helpers ----
+
+    def _get_auth_mode(self) -> str:
+        """Return effective auth mode: 'api_key', 'entra_token', or 'auto'."""
+        return self.get_config_value("auth_mode", settings.azure_speech_auth_mode) or "auto"
+
+    def _get_key_and_region(self) -> tuple[str | None, str]:
+        """Return (subscription_key_or_None, region)."""
+        key = self.get_config_value("subscription_key", settings.azure_speech_key) or None
+        region = self.get_config_value("region", settings.azure_speech_region) or "eastus"
         return key, region
 
+    def _get_resource_id(self) -> str:
+        return self.get_config_value("resource_id", settings.azure_speech_resource_id) or ""
+
+    def _get_endpoint(self) -> str:
+        return self.get_config_value("endpoint", settings.azure_speech_endpoint) or ""
+
+    def _use_token_auth(self) -> bool:
+        """Determine whether to use Entra ID token auth."""
+        mode = self._get_auth_mode()
+        if mode == "api_key":
+            return False
+        if mode == "entra_token":
+            return True
+        # auto — use token if no key available
+        key, _ = self._get_key_and_region()
+        return not key
+
+    def _get_token_manager(self) -> AzureTokenManager:
+        """Get or create the shared token manager.
+
+        Passes the full runtime config (including service-principal fields)
+        so the token manager can try SP auth and the shared
+        ``AzureAuthManager`` Redis cache.
+        """
+        if self._token_manager is None:
+            resource_id = self._get_resource_id()
+            # Build config dict with SP fields for the token manager
+            sp_config = {
+                "tenant_id": self.get_config_value("tenant_id", ""),
+                "client_id": self.get_config_value("client_id", ""),
+                "client_secret": self.get_config_value("client_secret", ""),
+            }
+            self._token_manager = AzureTokenManager(
+                resource_id=resource_id, config=sp_config,
+            )
+        return self._token_manager
+
+    # ---- Speech SDK config ----
+
     def _get_config(self):
+        """Create or return cached SpeechConfig with appropriate auth."""
         if self._speech_config is None:
-            subscription_key, region = self._get_key_and_region()
-            if not subscription_key:
-                raise ValueError("AZURE_SPEECH_KEY not configured")
             try:
                 import azure.cognitiveservices.speech as speechsdk
-
-                self._speech_config = speechsdk.SpeechConfig(
-                    subscription=subscription_key,
-                    region=region,
-                )
-                # Default to 24kHz WAV — callers override per-request via _apply_output_format
-                self._speech_config.set_speech_synthesis_output_format(
-                    speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm
-                )
-                logger.info("azure_speech_config_created", region=region)
             except ImportError:
                 raise ImportError("pip install azure-cognitiveservices-speech")
+
+            key, region = self._get_key_and_region()
+
+            if self._use_token_auth():
+                # Entra ID: use composite token for SpeechSynthesizer
+                tm = self._get_token_manager()
+                composite_token = tm.get_composite_token()
+                self._speech_config = speechsdk.SpeechConfig(
+                    auth_token=composite_token,
+                    region=region,
+                )
+                logger.info("azure_speech_config_created", region=region, auth="entra_token")
+            else:
+                # API key auth
+                if not key:
+                    raise ValueError(
+                        "Azure Speech not configured: set subscription_key or "
+                        "switch auth_mode to 'entra_token' with a resource_id"
+                    )
+                self._speech_config = speechsdk.SpeechConfig(
+                    subscription=key,
+                    region=region,
+                )
+                logger.info("azure_speech_config_created", region=region, auth="api_key")
+
+            # Default to 24kHz WAV — callers override per-request via _apply_output_format
+            self._speech_config.set_speech_synthesis_output_format(
+                speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm
+            )
         return self._speech_config
+
+    def _get_fresh_config(self):
+        """Get a deep copy of config, refreshing Entra token if needed.
+
+        For Entra ID auth, the token embedded in the SpeechConfig may expire.
+        This method refreshes it on each synthesis call.
+        """
+        import azure.cognitiveservices.speech as speechsdk
+
+        config = copy.deepcopy(self._get_config())
+
+        if self._use_token_auth() and self._token_manager:
+            # Refresh the composite token on the copy
+            config.authorization_token = self._token_manager.get_composite_token()
+
+        return config
 
     @staticmethod
     def _apply_output_format(config, output_format: str = "wav"):
@@ -402,10 +691,73 @@ class AzureSpeechProvider(TTSProvider):
         return "DragonHD" in voice_id
 
     def _cnv_client(self) -> AzureCNVClient:
+        """Create a CNV REST client with the appropriate auth."""
         key, region = self._get_key_and_region()
-        if not key:
-            raise ValueError("AZURE_SPEECH_KEY not configured for Custom Voice")
-        return AzureCNVClient(key, region)
+
+        if self._use_token_auth():
+            tm = self._get_token_manager()
+            return AzureCNVClient(region=region, token_manager=tm)
+        else:
+            if not key:
+                raise ValueError(
+                    "Azure Speech not configured for Custom Voice: "
+                    "set subscription_key or switch to entra_token auth"
+                )
+            return AzureCNVClient(region=region, subscription_key=key)
+
+    def _get_recognition_config(self):
+        """Create a SpeechConfig optimized for speech recognition (STT).
+
+        For Entra ID, uses ``token_credential`` parameter which handles
+        automatic token refresh internally.  Falls back to composite token
+        if ``token_credential`` is unavailable.
+        """
+        import azure.cognitiveservices.speech as speechsdk
+
+        key, region = self._get_key_and_region()
+
+        if self._use_token_auth():
+            endpoint = self._get_endpoint()
+            resource_id = self._get_resource_id()
+
+            # Try native token_credential (preferred for recognition)
+            try:
+                from azure.identity import DefaultAzureCredential
+                credential = DefaultAzureCredential()
+
+                if endpoint:
+                    config = speechsdk.SpeechConfig(
+                        token_credential=credential,
+                        endpoint=endpoint,
+                    )
+                else:
+                    # Fallback to composite token + region
+                    tm = self._get_token_manager()
+                    composite = tm.get_composite_token()
+                    config = speechsdk.SpeechConfig(
+                        auth_token=composite,
+                        region=region,
+                    )
+            except ImportError:
+                # azure.identity not installed — use composite token
+                tm = self._get_token_manager()
+                composite = tm.get_composite_token()
+                config = speechsdk.SpeechConfig(
+                    auth_token=composite,
+                    region=region,
+                )
+
+            logger.info("azure_recognition_config_created", region=region, auth="entra_token")
+            return config
+        else:
+            if not key:
+                raise ValueError(
+                    "Azure Speech not configured for STT: "
+                    "set subscription_key or switch to entra_token auth"
+                )
+            config = speechsdk.SpeechConfig(subscription=key, region=region)
+            logger.info("azure_recognition_config_created", region=region, auth="api_key")
+            return config
 
     @staticmethod
     def _to_locale(lang: str) -> str:
@@ -439,7 +791,7 @@ class AzureSpeechProvider(TTSProvider):
     ) -> AudioResult:
         import azure.cognitiveservices.speech as speechsdk
 
-        config = copy.deepcopy(self._get_config())
+        config = self._get_fresh_config()
         self._apply_output_format(config, settings_.output_format)
         sample_rate, ext = self._format_info(settings_.output_format)
 
@@ -493,7 +845,7 @@ class AzureSpeechProvider(TTSProvider):
         """Stream synthesis using Azure SDK PullAudioOutputStream."""
         import azure.cognitiveservices.speech as speechsdk
 
-        config = copy.deepcopy(self._get_config())
+        config = self._get_fresh_config()
         self._apply_output_format(config, settings_.output_format)
 
         if voice_id.startswith("cnv:"):
@@ -558,7 +910,7 @@ class AzureSpeechProvider(TTSProvider):
         """Synthesize with word timing data for subtitle/karaoke features."""
         import azure.cognitiveservices.speech as speechsdk
 
-        config = copy.deepcopy(self._get_config())
+        config = self._get_fresh_config()
         self._apply_output_format(config, settings_.output_format)
         sample_rate, ext = self._format_info(settings_.output_format)
 
@@ -612,11 +964,7 @@ class AzureSpeechProvider(TTSProvider):
         """Transcribe an audio file using Azure Speech-to-Text."""
         import azure.cognitiveservices.speech as speechsdk
 
-        key, region = self._get_key_and_region()
-        if not key:
-            raise ValueError("AZURE_SPEECH_KEY not configured for transcription")
-
-        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config = self._get_recognition_config()
         speech_config.speech_recognition_language = locale
         audio_config = speechsdk.audio.AudioConfig(filename=str(audio_path))
         recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
@@ -632,11 +980,6 @@ class AzureSpeechProvider(TTSProvider):
                 segments.append(evt.result.text)
 
         def _on_canceled(evt):
-            done_event._loop = asyncio.get_event_loop()
-            # Will be set from the session_stopped handler
-
-        def _on_stopped(evt):
-            # Signal completion
             pass
 
         recognizer.recognized.connect(_on_recognized)
@@ -663,11 +1006,7 @@ class AzureSpeechProvider(TTSProvider):
         """Assess pronunciation quality of an audio sample."""
         import azure.cognitiveservices.speech as speechsdk
 
-        key, region = self._get_key_and_region()
-        if not key:
-            raise ValueError("AZURE_SPEECH_KEY not configured for pronunciation assessment")
-
-        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config = self._get_recognition_config()
         speech_config.speech_recognition_language = locale
         audio_config = speechsdk.audio.AudioConfig(filename=str(audio_path))
 
@@ -743,9 +1082,10 @@ class AzureSpeechProvider(TTSProvider):
         await cnv.get_or_create_project(project_id, kind="PersonalVoice",
                                          description=f"Atlas Vox — {config.name}")
 
-        # 2. Consent (first sample)
+        # 2. Consent (first sample) — wait for async validation
         await cnv.create_consent(consent_id, project_id, talent, company,
                                   samples[0].file_path, locale=locale)
+        await cnv.wait_for_consent(consent_id)
 
         # 3. Create personal voice (remaining samples)
         prompt_files = [s.file_path for s in samples[1:]]
@@ -810,9 +1150,10 @@ class AzureSpeechProvider(TTSProvider):
         await cnv.get_or_create_project(project_id, kind="ProfessionalVoice",
                                          description="Atlas Vox Professional Voice")
 
-        # 2. Consent
+        # 2. Consent — wait for async validation
         await cnv.create_consent(consent_id, project_id, "Voice Talent", company,
                                   samples[0].file_path, locale=locale)
+        await cnv.wait_for_consent(consent_id)
 
         # 3. Training set + data (include transcripts when available)
         await cnv.create_training_set(ts_id, project_id)
@@ -853,17 +1194,20 @@ class AzureSpeechProvider(TTSProvider):
     async def list_voices(self) -> list[VoiceInfo]:
         """List Azure English neural voices.
 
-        Tries the SDK first (requires subscription key). Falls back to an
-        extensive hardcoded catalog of English neural voices so the voice
-        library is useful even without an Azure subscription.
+        Tries the SDK first (requires subscription key or Entra token).
+        Falls back to an extensive hardcoded catalog of English neural
+        voices so the voice library is useful even without credentials.
         """
         # Try live SDK call first
         try:
-            subscription_key = self.get_config_value('subscription_key', settings.azure_speech_key)
-            if subscription_key:
+            config = self._get_config()
+            if config:
                 import azure.cognitiveservices.speech as speechsdk
 
-                config = self._get_config()
+                # Refresh token if using Entra ID
+                if self._use_token_auth() and self._token_manager:
+                    config.authorization_token = self._token_manager.get_composite_token()
+
                 synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=None)
                 result = await run_sync(synthesizer.get_voices_async().get)
 
@@ -942,17 +1286,36 @@ class AzureSpeechProvider(TTSProvider):
     async def health_check(self) -> ProviderHealth:
         start = time.perf_counter()
         try:
-            subscription_key = self.get_config_value('subscription_key', settings.azure_speech_key)
-            if not subscription_key:
-                import azure.cognitiveservices.speech as _sdk  # noqa: F401
+            auth_mode = self._get_auth_mode()
+            key, _ = self._get_key_and_region()
+            use_token = self._use_token_auth()
+
+            if not key and not use_token:
+                # No auth configured at all
+                try:
+                    import azure.cognitiveservices.speech as _sdk  # noqa: F401
+                except ImportError:
+                    pass
                 latency = int((time.perf_counter() - start) * 1000)
-                logger.info("azure_health_check", healthy=True, latency_ms=latency, note="no_subscription_key")
-                return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency,
-                                      error="SDK ready — configure subscription key in Providers settings")
-            self._get_config()
-            latency = int((time.perf_counter() - start) * 1000)
-            logger.info("azure_health_check", healthy=True, latency_ms=latency)
-            return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency)
+                return ProviderHealth(
+                    name="azure_speech", healthy=True, latency_ms=latency,
+                    error="SDK ready — configure credentials in Providers settings",
+                )
+
+            if use_token:
+                # Validate Entra ID token acquisition
+                tm = self._get_token_manager()
+                tm.get_token()  # Will raise if credential chain fails
+                latency = int((time.perf_counter() - start) * 1000)
+                logger.info("azure_health_check", healthy=True, latency_ms=latency, auth="entra_token")
+                return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency)
+            else:
+                # Validate API key by creating config
+                self._get_config()
+                latency = int((time.perf_counter() - start) * 1000)
+                logger.info("azure_health_check", healthy=True, latency_ms=latency, auth="api_key")
+                return ProviderHealth(name="azure_speech", healthy=True, latency_ms=latency)
+
         except Exception as e:
             latency = int((time.perf_counter() - start) * 1000)
             logger.info("azure_health_check", healthy=False, latency_ms=latency, error=str(e))

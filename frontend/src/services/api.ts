@@ -5,6 +5,8 @@ import type {
   AudioQualityBrief,
   AudioSample,
   ApiKeyResponse,
+  AzureAuthStatus,
+  AzureDeviceCodeResponse,
   BackupResponse,
   HealingIncident,
   HealingStatus,
@@ -262,6 +264,17 @@ class ApiClient {
   }
   testProvider(name: string, data?: { text?: string; voice_id?: string }) {
     return this.request<ProviderTestResponse>(`/providers/${name}/test`, { method: "POST", body: JSON.stringify(data ?? {}) });
+  }
+
+  // Azure Login (Device Code Flow)
+  initiateAzureLogin(providerName = "azure_speech") {
+    return this.request<AzureDeviceCodeResponse>(`/providers/${providerName}/azure-login/initiate`, { method: "POST" });
+  }
+  getAzureLoginStatus(providerName = "azure_speech") {
+    return this.request<AzureAuthStatus>(`/providers/${providerName}/azure-login/status`);
+  }
+  azureLogout(providerName = "azure_speech") {
+    return this.request<{ success: boolean; message: string }>(`/providers/${providerName}/azure-login/logout`, { method: "POST" });
   }
 
   // Presets

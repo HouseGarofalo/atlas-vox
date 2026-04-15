@@ -5,7 +5,7 @@ WORKDIR /build
 COPY backend/pyproject.toml backend/README.md ./
 
 # Install base app + audio processing deps + PostgreSQL driver (BEFORE copying app code for layer caching)
-RUN pip install --no-cache-dir --prefix=/install ".[audio,postgres]"
+RUN pip install --no-cache-dir --prefix=/install ".[audio,postgres,azure]"
 
 # Install lightweight CPU providers + cloud SDKs
 RUN pip install --no-cache-dir --prefix=/install \

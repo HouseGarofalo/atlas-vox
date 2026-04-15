@@ -354,3 +354,24 @@ export interface BackupResponse {
   settings_count: number;
   created_at: string;
 }
+
+// --- Azure Login types ---
+
+export interface AzureDeviceCodeResponse {
+  user_code: string;
+  verification_uri: string;
+  message: string;
+  expires_in_seconds: number;
+}
+
+export interface AzureAuthStatus {
+  authenticated: boolean;
+  auth_method: string | null;
+  user_display_name: string | null;
+  user_email: string | null;
+  expires_at: number | null;
+  expires_in_seconds: number | null;
+  device_code_pending: boolean;
+  device_code_info: AzureDeviceCodeResponse | null;
+  error: string | null;
+}

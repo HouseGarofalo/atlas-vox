@@ -74,6 +74,12 @@ class ElevenLabsConfig(BaseModel):
 class AzureSpeechConfig(BaseModel):
     subscription_key: str = ""
     region: str = "eastus"
+    auth_mode: str = "auto"  # "api_key", "entra_token", "auto"
+    resource_id: str = ""  # Full ARM resource ID for Entra ID composite token
+    endpoint: str = ""  # Custom domain endpoint URL
+    tenant_id: str = ""  # Azure AD tenant ID (for service principal)
+    client_id: str = ""  # Azure AD app/client ID (for service principal)
+    client_secret: str = ""  # Azure AD client secret (for service principal)
 
 
 class CoquiXttsConfig(BaseModel):
@@ -164,6 +170,8 @@ _ELEVENLABS_MODEL_OPTIONS = [
     "eleven_flash_v2_5",
 ]
 
+_AZURE_AUTH_MODE_OPTIONS = ["auto", "api_key", "entra_token"]
+
 PROVIDER_FIELD_DEFINITIONS: dict[str, list[ProviderFieldSchema]] = {
     "elevenlabs": [
         ProviderFieldSchema(
@@ -195,12 +203,37 @@ PROVIDER_FIELD_DEFINITIONS: dict[str, list[ProviderFieldSchema]] = {
     ],
     "azure_speech": [
         ProviderFieldSchema(
-            name="subscription_key", field_type="password", label="Subscription Key",
-            required=True, is_secret=True,
+            name="auth_mode", field_type="select", label="Auth Mode",
+            options=_AZURE_AUTH_MODE_OPTIONS, default="auto",
+        ),
+        ProviderFieldSchema(
+            name="subscription_key", field_type="password", label="Subscription Key (optional with Entra ID)",
+            required=False, is_secret=True,
         ),
         ProviderFieldSchema(
             name="region", field_type="select", label="Region",
             options=_AZURE_REGION_OPTIONS, default="eastus",
+        ),
+        ProviderFieldSchema(
+            name="resource_id", field_type="text",
+            label="Resource ID (ARM path, required for Entra ID)",
+        ),
+        ProviderFieldSchema(
+            name="endpoint", field_type="text",
+            label="Custom Endpoint URL (for Entra ID / AI Foundry)",
+        ),
+        ProviderFieldSchema(
+            name="tenant_id", field_type="text",
+            label="Tenant ID (for Service Principal auth)",
+        ),
+        ProviderFieldSchema(
+            name="client_id", field_type="text",
+            label="Client / App ID (for custom app registration or Service Principal)",
+        ),
+        ProviderFieldSchema(
+            name="client_secret", field_type="password",
+            label="Client Secret (for Service Principal auth)",
+            is_secret=True,
         ),
     ],
     "coqui_xtts": [

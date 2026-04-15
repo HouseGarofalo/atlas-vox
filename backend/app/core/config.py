@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # Provider: Azure
     azure_speech_key: str = ""
     azure_speech_region: str = "eastus"
+    azure_speech_auth_mode: str = "auto"  # "api_key", "entra_token", "auto"
+    azure_speech_resource_id: str = ""  # Full ARM resource ID for Entra ID auth
+    azure_speech_endpoint: str = ""  # Custom domain endpoint URL
     azure_cnv_company_name: str = "Atlas Vox"
 
     # Provider: Coqui XTTS

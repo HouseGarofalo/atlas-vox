@@ -17,15 +17,15 @@ async def _preprocess_profile_samples(profile_id: str, task) -> dict:
     """Async implementation of sample preprocessing."""
     from sqlalchemy import select
 
-    from app.core.database import async_session_factory
     from app.models.audio_sample import AudioSample
     from app.services.audio_processor import PreprocessConfig, preprocess_audio
+    from app.tasks.utils import worker_session
 
     config = PreprocessConfig()
     processed = 0
     errors = []
 
-    async with async_session_factory() as db:
+    async with worker_session() as db:
         result = await db.execute(
             select(AudioSample).where(
                 AudioSample.profile_id == profile_id,

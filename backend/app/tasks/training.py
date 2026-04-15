@@ -78,6 +78,7 @@ async def _load_job_and_samples(db, job_id: str, task):
     })
 
     # Load provider config from DB (worker doesn't run lifespan)
+    from app.core.encryption import ENC_PREFIX, decrypt_value
     from app.models.provider import Provider as ProviderModel
     prov_result = await db.execute(
         select(ProviderModel).where(ProviderModel.name == job.provider_name)
@@ -86,7 +87,16 @@ async def _load_job_and_samples(db, job_id: str, task):
 
     with _registry_lock:
         if prov_row and prov_row.config_json:
-            provider_registry.apply_config(job.provider_name, json.loads(prov_row.config_json))
+            config = json.loads(prov_row.config_json)
+            # Decrypt encrypted values (same logic as provider_registry startup)
+            for key, val in config.items():
+                if isinstance(val, str) and val.startswith(ENC_PREFIX):
+                    try:
+                        config[key] = decrypt_value(val)
+                    except Exception:
+                        logger.error("worker_config_decrypt_failed",
+                                     provider=job.provider_name, field=key)
+            provider_registry.apply_config(job.provider_name, config)
 
         provider = provider_registry.get_provider(job.provider_name)
     capabilities = await provider.get_capabilities()
@@ -262,10 +272,18 @@ async def _create_version(db, job, voice_model, task, job_id: str) -> tuple:
 
 
 async def _execute_training(job_id: str, task) -> dict:
-    """Async training execution — dispatches to the correct provider."""
-    from app.core.database import async_session_factory
+    """Async training execution — dispatches to the correct provider.
 
-    async with async_session_factory() as db:
+    Uses ``worker_session()`` to create a fresh SQLAlchemy async engine
+    scoped to the current event loop.  The module-level engine from
+    ``database.py`` is bound to the loop that existed at import time,
+    which differs from the loop created by ``asyncio.run()`` in the
+    Celery task — reusing it causes:
+        RuntimeError: Task got Future attached to a different loop
+    """
+    from app.tasks.utils import worker_session
+
+    async with worker_session() as db:
         job, provider, capabilities, provider_samples = await _load_job_and_samples(db, job_id, task)
         if job is None:
             return {"error": "Job not found"}

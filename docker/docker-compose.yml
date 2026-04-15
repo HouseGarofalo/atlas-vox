@@ -53,6 +53,7 @@ services:
       - 8.8.4.4
     volumes:
       - storage_data:/app/storage
+      - app_data:/app/data
       - ../temp:/app/models-host:ro
     depends_on:
       postgres:
@@ -95,7 +96,8 @@ services:
       - backend
     healthcheck:
       # Try HTTPS first (SSL mode), fall back to HTTP (plain mode)
-      test: ["CMD-SHELL", "wget --spider --quiet --no-check-certificate https://localhost:443/ 2>/dev/null || wget --spider --quiet http://localhost:80/"]
+      # Uses curl -k to accept self-signed certs; BusyBox wget lacks --no-check-certificate
+      test: ["CMD-SHELL", "curl -fsk https://localhost:443/ >/dev/null 2>&1 || curl -fs http://localhost:80/ >/dev/null 2>&1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -152,6 +154,7 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set}
     volumes:
       - storage_data:/app/storage
+      - app_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -216,3 +219,4 @@ volumes:
   redis_data:
   pg_data:
   celerybeat_schedule:
+  app_data:

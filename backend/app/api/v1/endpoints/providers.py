@@ -298,6 +298,201 @@ async def update_provider_config(
     )
 
 
+# --- Azure Login (Device Code Flow) Endpoints ---
+
+
+class AzureDeviceCodeResponse(BaseModel):
+    user_code: str
+    verification_uri: str
+    message: str
+    expires_in_seconds: int
+
+
+class AzureAuthStatusResponse(BaseModel):
+    authenticated: bool = False
+    auth_method: str | None = None
+    user_display_name: str | None = None
+    user_email: str | None = None
+    expires_at: float | None = None
+    expires_in_seconds: int | None = None
+    device_code_pending: bool = False
+    device_code_info: AzureDeviceCodeResponse | None = None
+    error: str | None = None
+
+
+@router.post("/{name}/azure-login/initiate", response_model=AzureDeviceCodeResponse)
+async def initiate_azure_login(name: str, db: DbSession, user: CurrentUser) -> AzureDeviceCodeResponse:
+    """Start a device code authentication flow for Azure Entra ID.
+
+    Returns a user code and verification URL.  The user opens the URL in any
+    browser, enters the code, and signs in.  Poll ``/azure-login/status`` to
+    detect when the flow completes.
+    """
+    if name != "azure_speech":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Azure login is only available for the azure_speech provider",
+        )
+
+    try:
+        from app.core.encryption import ENC_PREFIX as _ENC, decrypt_value as _decrypt
+        from app.providers.azure_auth import get_azure_auth_manager
+
+        manager = get_azure_auth_manager()
+
+        # Read tenant_id and client_id from DB config (runtime dict may be empty after restart)
+        tenant_id = ""
+        client_id = ""
+        result = await db.execute(select(Provider).where(Provider.name == name))
+        db_provider = result.scalar_one_or_none()
+        if db_provider and db_provider.config_json:
+            try:
+                db_cfg = json.loads(db_provider.config_json)
+                for field_name in ("tenant_id", "client_id"):
+                    raw = db_cfg.get(field_name, "")
+                    if isinstance(raw, str) and raw.startswith(_ENC):
+                        try:
+                            raw = _decrypt(raw)
+                        except Exception:
+                            pass
+                    if field_name == "tenant_id":
+                        tenant_id = raw
+                    else:
+                        client_id = raw
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Fallback: also check runtime registry
+        if not tenant_id or not client_id:
+            from app.services.provider_registry import provider_registry
+            runtime_config = provider_registry.get_provider_config(name)
+            if not tenant_id:
+                tenant_id = runtime_config.get("tenant_id", "")
+            if not client_id:
+                client_id = runtime_config.get("client_id", "")
+
+        info = manager.initiate_device_code(
+            tenant_id=tenant_id,
+            device_code_client_id=client_id,
+        )
+
+        if not info.user_code:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to obtain device code from Azure — no user code returned",
+            )
+
+        expires_in = max(int(info.expires_at - time.time()), 0)
+
+        logger.info("azure_login_initiated", user_code=info.user_code)
+        return AzureDeviceCodeResponse(
+            user_code=info.user_code,
+            verification_uri=info.verification_uri,
+            message=info.message,
+            expires_in_seconds=expires_in,
+        )
+
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        )
+    except ValueError as exc:
+        # Missing tenant_id or other config validation
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("azure_login_initiate_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initiate Azure login: {exc}",
+        )
+
+
+@router.get("/{name}/azure-login/status", response_model=AzureAuthStatusResponse)
+async def get_azure_login_status(name: str, user: CurrentUser) -> AzureAuthStatusResponse:
+    """Poll the current Azure authentication status.
+
+    Returns whether the user is authenticated, the auth method, user info,
+    and whether a device code flow is pending.
+    """
+    if name != "azure_speech":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Azure login is only available for the azure_speech provider",
+        )
+
+    try:
+        from app.providers.azure_auth import get_azure_auth_manager
+
+        manager = get_azure_auth_manager()
+        auth_status = manager.get_status()
+
+        dc_info = None
+        if auth_status.device_code_info:
+            dci = auth_status.device_code_info
+            dc_info = AzureDeviceCodeResponse(
+                user_code=dci.user_code,
+                verification_uri=dci.verification_uri,
+                message=dci.message,
+                expires_in_seconds=max(int(dci.expires_at - time.time()), 0),
+            )
+
+        return AzureAuthStatusResponse(
+            authenticated=auth_status.authenticated,
+            auth_method=auth_status.auth_method,
+            user_display_name=auth_status.user_display_name,
+            user_email=auth_status.user_email,
+            expires_at=auth_status.expires_at,
+            expires_in_seconds=auth_status.expires_in_seconds,
+            device_code_pending=auth_status.device_code_pending,
+            device_code_info=dc_info,
+            error=auth_status.error,
+        )
+
+    except ImportError:
+        return AzureAuthStatusResponse(
+            error="azure-identity package is not installed",
+        )
+    except Exception as exc:
+        logger.error("azure_login_status_failed", error=str(exc))
+        return AzureAuthStatusResponse(error=str(exc))
+
+
+@router.post("/{name}/azure-login/logout")
+async def azure_logout(name: str, user: CurrentUser) -> dict:
+    """Clear all cached Azure credentials (Redis + in-memory)."""
+    if name != "azure_speech":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Azure login is only available for the azure_speech provider",
+        )
+
+    try:
+        from app.providers.azure_auth import get_azure_auth_manager
+
+        manager = get_azure_auth_manager()
+        manager.logout()
+        logger.info("azure_logout_completed")
+        return {"success": True, "message": "Azure credentials cleared"}
+
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="azure-identity package is not installed",
+        )
+    except Exception as exc:
+        logger.error("azure_logout_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to logout: {exc}",
+        )
+
+
 @router.post("/{name}/test", response_model=ProviderTestResponse)
 async def test_provider(name: str, body: ProviderTestRequest, user: CurrentUser) -> ProviderTestResponse:
     """Test a provider by running a quick synthesis."""
