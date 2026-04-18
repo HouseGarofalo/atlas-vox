@@ -60,11 +60,64 @@ export class ApiError extends Error {
   get isServerError() { return this.status >= 500; }
 }
 
+/**
+ * Extra options recognised by ``request()`` that don't belong on the raw
+ * ``RequestInit``. All optional — existing call sites continue to work.
+ */
+interface RequestOptions extends RequestInit {
+  /**
+   * Cancellation key. When set, any in-flight request registered under the
+   * same key is aborted before the new one starts. Handy for:
+   *   - search/autocomplete boxes where only the latest query matters
+   *   - fetchProfiles() fired from several places without piling up
+   * If omitted, requests default to keying on ``${method} ${path}``.
+   */
+  cancelKey?: string;
+  /**
+   * Explicit opt-out of cancellation (mostly used in tests).
+   */
+  noCancel?: boolean;
+  /**
+   * Caller-supplied AbortSignal. Composed with the internal signal so
+   * cancelling EITHER aborts the request.
+   */
+  signal?: AbortSignal;
+}
+
 class ApiClient {
   private baseUrl: string;
+  // Per-key registry of in-flight AbortControllers. A new request with the
+  // same key aborts the prior one before starting, preventing duplicate
+  // work and eliminating "zombie responses" that land after the user has
+  // moved on to a different input.
+  private inflight = new Map<string, AbortController>();
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Cancel every currently in-flight request. Call on logout or when
+   * tearing down the app so lingering fetches don't leak auth-less state
+   * into the next session.
+   */
+  abortAll(): void {
+    for (const ctrl of this.inflight.values()) {
+      try { ctrl.abort(); } catch { /* ignore */ }
+    }
+    this.inflight.clear();
+  }
+
+  /**
+   * Cancel a specific in-flight request by its key (or method+path tuple
+   * if the caller used the default key scheme).
+   */
+  cancel(key: string): void {
+    const ctrl = this.inflight.get(key);
+    if (ctrl) {
+      try { ctrl.abort(); } catch { /* ignore */ }
+      this.inflight.delete(key);
+    }
   }
 
   private async fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
@@ -81,6 +134,8 @@ class ApiClient {
         return response;
       } catch (err) {
         lastError = err as Error;
+        // If the caller aborted, don't retry — bubble it up immediately.
+        if ((err as Error).name === "AbortError") throw err;
         if (attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 1000;
           logger.warn("API retry (network)", { attempt: attempt + 1, error: (err as Error).message, delay: Math.round(delay) });
@@ -91,15 +146,16 @@ class ApiClient {
     throw lastError ?? new Error("Request failed after retries");
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const method = (options.method as string) ?? "GET";
+    const { cancelKey, noCancel, signal: callerSignal, ...fetchInit } = options;
     const headers: HeadersInit = {
       "Content-Type": "application/json",
-      ...options.headers,
+      ...fetchInit.headers,
     };
     // Remove Content-Type for FormData (browser sets multipart boundary)
-    if (options.body instanceof FormData) {
+    if (fetchInit.body instanceof FormData) {
       delete (headers as Record<string, string>)["Content-Type"];
     }
 
@@ -110,10 +166,40 @@ class ApiClient {
       (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
     }
 
+    // Resolve the cancellation key. "noCancel" skips the registry so tests
+    // and certain long-running uploads (batch synth) don't clobber each other.
+    const effectiveKey = noCancel ? null : cancelKey ?? `${method} ${path}`;
+    const controller = new AbortController();
+    if (effectiveKey) {
+      // Abort any previous in-flight call under the same key.
+      const prior = this.inflight.get(effectiveKey);
+      if (prior) {
+        try { prior.abort(); } catch { /* ignore */ }
+      }
+      this.inflight.set(effectiveKey, controller);
+    }
+
+    // Compose signals: abort if EITHER the internal controller or the
+    // caller-supplied signal fires.
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+
     logger.info("API request", { method, url });
 
-    // credentials: 'include' ensures httpOnly cookies (JWT) are sent with every request
-    const response = await this.fetchWithRetry(url, { ...options, headers, credentials: "include" });
+    let response: Response;
+    try {
+      // credentials: 'include' ensures httpOnly cookies (JWT) are sent with every request
+      response = await this.fetchWithRetry(
+        url,
+        { ...fetchInit, headers, credentials: "include", signal: controller.signal },
+      );
+    } finally {
+      if (effectiveKey && this.inflight.get(effectiveKey) === controller) {
+        this.inflight.delete(effectiveKey);
+      }
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -516,3 +602,7 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+
+// Default export for call sites that prefer it (hooks, tests). Points at
+// the same singleton instance.
+export default api;
