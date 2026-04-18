@@ -332,6 +332,118 @@ async def list_versions(db: AsyncSession, profile_id: str) -> list[ModelVersion]
     return versions
 
 
+async def compute_training_readiness(
+    db: AsyncSession, profile_id: str,
+) -> dict:
+    """Pre-flight readiness surface for the training UI (DT-33).
+
+    Answers "can I hit Train right now?" without actually launching a job.
+    Returns a dict with:
+
+    * ``sample_count`` / ``total_duration``
+    * ``quality_passed_count`` / ``quality_failed_samples`` (with reasons)
+    * ``phoneme_coverage_pct`` (via DT-31 analyzer)
+    * ``min_required_by_provider``
+    * ``ready`` bool + ``blockers`` list
+    """
+    result = await db.execute(select(VoiceProfile).where(VoiceProfile.id == profile_id))
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Profile")
+
+    # Provider capabilities — safe fallback if the provider isn't registered
+    # (e.g. training when no GPU service is reachable).
+    min_required = 0
+    provider_name = profile.provider_name
+    try:
+        provider = provider_registry.get_provider(provider_name)
+        caps = await provider.get_capabilities()
+        min_required = caps.min_samples_for_cloning
+    except Exception:  # noqa: BLE001 — best-effort, never crash the endpoint
+        pass
+
+    samples = (
+        await db.execute(
+            select(AudioSample).where(AudioSample.profile_id == profile_id)
+        )
+    ).scalars().all()
+
+    total_duration = 0.0
+    quality_passed = 0
+    quality_failed: list[dict[str, str | None]] = []
+    for s in samples:
+        total_duration += s.duration_seconds or 0.0
+        if not s.analysis_json:
+            # Treat un-analysed samples as pass-through so the UI doesn't
+            # block every fresh upload.
+            quality_passed += 1
+            continue
+        try:
+            analysis = (
+                json.loads(s.analysis_json)
+                if isinstance(s.analysis_json, str)
+                else s.analysis_json
+            )
+        except (ValueError, TypeError):
+            quality_passed += 1
+            continue
+        if isinstance(analysis, dict) and analysis.get("passed") is False:
+            quality_failed.append({
+                "sample_id": s.id,
+                "filename": s.original_filename or s.filename,
+                "reason": (
+                    analysis.get("reason")
+                    or (analysis.get("failures") or [None])[0]
+                    or "failed quality check"
+                ),
+            })
+        else:
+            quality_passed += 1
+
+    # Phoneme coverage — imported lazily so the service has no hard dep on
+    # phonemizer unless someone actually calls this.
+    from app.services.phoneme_coverage import analyze_profile_coverage
+
+    coverage_report = await analyze_profile_coverage(
+        db, profile_id, language=profile.language or "en",
+    )
+
+    blockers: list[str] = []
+    sample_count = len(samples)
+    if sample_count == 0:
+        blockers.append("no samples")
+    if min_required > 0 and sample_count < min_required:
+        blockers.append(
+            f"provider requires at least {min_required} samples, have {sample_count}",
+        )
+    if sample_count > 0 and total_duration < 5.0:
+        blockers.append(
+            f"only {total_duration:.1f}s of audio; need at least 5s",
+        )
+    if quality_failed and len(quality_failed) == sample_count:
+        blockers.append("all samples failed the audio-quality check")
+    elif quality_failed:
+        blockers.append(
+            f"{len(quality_failed)} of {sample_count} samples failed quality",
+        )
+
+    return {
+        "profile_id": profile_id,
+        "provider_name": provider_name,
+        "sample_count": sample_count,
+        "total_duration": round(total_duration, 2),
+        "quality_passed_count": quality_passed,
+        "quality_failed_samples": quality_failed,
+        "phoneme_coverage_pct": coverage_report.coverage_pct,
+        "phoneme_coverage_method": coverage_report.method,
+        "phoneme_gaps": coverage_report.gaps,
+        "min_required_by_provider": min_required,
+        "ready": not blockers,
+        "blockers": blockers,
+    }
+
+
 async def activate_version(
     db: AsyncSession, profile_id: str, version_id: str
 ) -> VoiceProfile:

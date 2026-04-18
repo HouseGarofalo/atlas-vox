@@ -219,3 +219,40 @@ async def get_profile_feedback_summary(
         down=counts["down"],
         total=counts["total"],
     )
+
+
+# --- Phoneme coverage (DT-31) ---
+
+
+@router.get("/{profile_id}/phoneme-coverage")
+async def get_phoneme_coverage(
+    profile_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    language: str = Query(default="en"),
+) -> dict:
+    """Return phoneme coverage for a training profile's transcripts."""
+    profile = await get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    from app.services.phoneme_coverage import analyze_profile_coverage
+
+    report = await analyze_profile_coverage(db, profile_id, language=language)
+    return report.to_dict()
+
+
+# --- Training readiness (DT-33) ---
+
+
+@router.get("/{profile_id}/training-readiness")
+async def get_training_readiness(
+    profile_id: str, db: DbSession, user: CurrentUser,
+) -> dict:
+    """Return a pre-flight readiness report for starting training on a profile."""
+    profile = await get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    from app.services.training_service import compute_training_readiness
+
+    report = await compute_training_readiness(db, profile_id)
+    return report

@@ -90,25 +90,25 @@ function App() {
         <Route path="/login" element={<Suspense fallback={<PageLoader />}><LoginPage /></Suspense>} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
-            <Route index element={<Page component={DashboardPage} />} />
-            <Route path="profiles" element={<Page component={ProfilesPage} />} />
-            <Route path="library" element={<Page component={VoiceLibraryPage} />} />
-            <Route path="training" element={<Page component={TrainingStudioPage} />} />
-            <Route path="synthesis" element={<Page component={SynthesisLabPage} />} />
-            <Route path="audio-design" element={<Page component={AudioDesignPage} />} />
-            <Route path="compare" element={<Page component={ComparisonPage} />} />
-            <Route path="providers" element={<Page component={ProvidersPage} />} />
-            <Route path="api-keys" element={<Page component={ApiKeysPage} />} />
-            <Route path="settings" element={<Page component={SettingsPage} />} />
+            <Route index element={<Page component={DashboardPage} context="dashboard" />} />
+            <Route path="profiles" element={<Page component={ProfilesPage} context="profiles page" />} />
+            <Route path="library" element={<Page component={VoiceLibraryPage} context="voice library" />} />
+            <Route path="training" element={<Page component={TrainingStudioPage} context="training studio" />} />
+            <Route path="synthesis" element={<Page component={SynthesisLabPage} context="synthesis lab" />} />
+            <Route path="audio-design" element={<Page component={AudioDesignPage} context="audio design" />} />
+            <Route path="compare" element={<Page component={ComparisonPage} context="comparison page" />} />
+            <Route path="providers" element={<Page component={ProvidersPage} context="providers page" />} />
+            <Route path="api-keys" element={<Page component={ApiKeysPage} context="API keys page" />} />
+            <Route path="settings" element={<Page component={SettingsPage} context="settings page" />} />
             <Route path="help" element={<Navigate to="/docs" replace />} />
-            <Route path="docs" element={<Page component={DocsPage} />} />
+            <Route path="docs" element={<Page component={DocsPage} context="docs" />} />
             <Route path="admin" element={<Navigate to="/providers" replace />} />
-            <Route path="design" element={<Page component={DesignSystemPage} />} />
-            <Route path="healing" element={<Page component={HealingPage} />} />
-            <Route path="history" element={<Page component={HistoryPage} />} />
-            <Route path="clone" element={<Page component={CloneWizardPage} />} />
-            <Route path="pronunciation" element={<Page component={PronunciationPage} />} />
-            <Route path="*" element={<Page component={NotFoundPage} />} />
+            <Route path="design" element={<Page component={DesignSystemPage} context="design system" />} />
+            <Route path="healing" element={<Page component={HealingPage} context="healing page" />} />
+            <Route path="history" element={<Page component={HistoryPage} context="history page" />} />
+            <Route path="clone" element={<Page component={CloneWizardPage} context="clone wizard" />} />
+            <Route path="pronunciation" element={<Page component={PronunciationPage} context="pronunciation editor" />} />
+            <Route path="*" element={<Page component={NotFoundPage} context="404 page" />} />
           </Route>
         </Route>
       </Routes>
@@ -116,10 +116,21 @@ function App() {
   );
 }
 
-/** Wraps a lazy page in both Suspense and a per-page ErrorBoundary. */
-function Page({ component: Component }: { component: React.LazyExoticComponent<() => JSX.Element> }) {
+/** Wraps a lazy page in both Suspense and a per-page ErrorBoundary.
+ *
+ * The ``context`` prop flows into the fallback copy ("Something went wrong in
+ * the profiles page") so users know which page failed when the sidebar
+ * stays rendered around a localized error.
+ */
+function Page({
+  component: Component,
+  context,
+}: {
+  component: React.LazyExoticComponent<() => JSX.Element>;
+  context?: string;
+}) {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary context={context}>
       <Suspense fallback={<PageLoader />}>
         <Component />
       </Suspense>
