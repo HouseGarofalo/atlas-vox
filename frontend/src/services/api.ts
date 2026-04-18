@@ -60,11 +60,64 @@ export class ApiError extends Error {
   get isServerError() { return this.status >= 500; }
 }
 
+/**
+ * Extra options recognised by ``request()`` that don't belong on the raw
+ * ``RequestInit``. All optional — existing call sites continue to work.
+ */
+interface RequestOptions extends RequestInit {
+  /**
+   * Cancellation key. When set, any in-flight request registered under the
+   * same key is aborted before the new one starts. Handy for:
+   *   - search/autocomplete boxes where only the latest query matters
+   *   - fetchProfiles() fired from several places without piling up
+   * If omitted, requests default to keying on ``${method} ${path}``.
+   */
+  cancelKey?: string;
+  /**
+   * Explicit opt-out of cancellation (mostly used in tests).
+   */
+  noCancel?: boolean;
+  /**
+   * Caller-supplied AbortSignal. Composed with the internal signal so
+   * cancelling EITHER aborts the request.
+   */
+  signal?: AbortSignal;
+}
+
 class ApiClient {
   private baseUrl: string;
+  // Per-key registry of in-flight AbortControllers. A new request with the
+  // same key aborts the prior one before starting, preventing duplicate
+  // work and eliminating "zombie responses" that land after the user has
+  // moved on to a different input.
+  private inflight = new Map<string, AbortController>();
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Cancel every currently in-flight request. Call on logout or when
+   * tearing down the app so lingering fetches don't leak auth-less state
+   * into the next session.
+   */
+  abortAll(): void {
+    for (const ctrl of this.inflight.values()) {
+      try { ctrl.abort(); } catch { /* ignore */ }
+    }
+    this.inflight.clear();
+  }
+
+  /**
+   * Cancel a specific in-flight request by its key (or method+path tuple
+   * if the caller used the default key scheme).
+   */
+  cancel(key: string): void {
+    const ctrl = this.inflight.get(key);
+    if (ctrl) {
+      try { ctrl.abort(); } catch { /* ignore */ }
+      this.inflight.delete(key);
+    }
   }
 
   private async fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
@@ -81,6 +134,8 @@ class ApiClient {
         return response;
       } catch (err) {
         lastError = err as Error;
+        // If the caller aborted, don't retry — bubble it up immediately.
+        if ((err as Error).name === "AbortError") throw err;
         if (attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 1000;
           logger.warn("API retry (network)", { attempt: attempt + 1, error: (err as Error).message, delay: Math.round(delay) });
@@ -91,15 +146,16 @@ class ApiClient {
     throw lastError ?? new Error("Request failed after retries");
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const method = (options.method as string) ?? "GET";
+    const { cancelKey, noCancel, signal: callerSignal, ...fetchInit } = options;
     const headers: HeadersInit = {
       "Content-Type": "application/json",
-      ...options.headers,
+      ...fetchInit.headers,
     };
     // Remove Content-Type for FormData (browser sets multipart boundary)
-    if (options.body instanceof FormData) {
+    if (fetchInit.body instanceof FormData) {
       delete (headers as Record<string, string>)["Content-Type"];
     }
 
@@ -110,10 +166,40 @@ class ApiClient {
       (headers as Record<string, string>)["Authorization"] = `Bearer ${apiKey}`;
     }
 
+    // Resolve the cancellation key. "noCancel" skips the registry so tests
+    // and certain long-running uploads (batch synth) don't clobber each other.
+    const effectiveKey = noCancel ? null : cancelKey ?? `${method} ${path}`;
+    const controller = new AbortController();
+    if (effectiveKey) {
+      // Abort any previous in-flight call under the same key.
+      const prior = this.inflight.get(effectiveKey);
+      if (prior) {
+        try { prior.abort(); } catch { /* ignore */ }
+      }
+      this.inflight.set(effectiveKey, controller);
+    }
+
+    // Compose signals: abort if EITHER the internal controller or the
+    // caller-supplied signal fires.
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+
     logger.info("API request", { method, url });
 
-    // credentials: 'include' ensures httpOnly cookies (JWT) are sent with every request
-    const response = await this.fetchWithRetry(url, { ...options, headers, credentials: "include" });
+    let response: Response;
+    try {
+      // credentials: 'include' ensures httpOnly cookies (JWT) are sent with every request
+      response = await this.fetchWithRetry(
+        url,
+        { ...fetchInit, headers, credentials: "include", signal: controller.signal },
+      );
+    } finally {
+      if (effectiveKey && this.inflight.get(effectiveKey) === controller) {
+        this.inflight.delete(effectiveKey);
+      }
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -327,6 +413,104 @@ class ApiClient {
     return this.request<{ ready: boolean; score: number; sample_count: number; total_duration: number; issues: { code: string; severity: string; message: string }[]; recommendations: string[] }>(`/profiles/${profileId}/samples/readiness`);
   }
 
+  /**
+   * VQ-36 — per-profile quality dashboard. One aggregated payload with
+   * WER time-series, per-version metrics, rating distribution, and
+   * sample health so the page renders instantly.
+   */
+  getQualityDashboard(profileId: string, werLimit: number = 50) {
+    return this.request<QualityDashboardResponse>(
+      `/profiles/${profileId}/quality-dashboard?wer_limit=${werLimit}`,
+    );
+  }
+
+  /**
+   * SL-29 — active-learning sample recommender. Returns up to `count`
+   * sentences selected by greedy set-cover over a curated bank to
+   * maximally fill this profile's remaining phoneme gaps.
+   */
+  /**
+   * VQ-37 — prosody / emotion preview. Heuristic per-word pitch/energy/
+   * duration + SSML. Cheap enough to call on keystroke (debounce
+   * upstream).
+   */
+  prosodyPreview(
+    text: string,
+    options: { emotion?: string | null; emphasis?: Record<number, string> } = {},
+  ) {
+    return this.request<{
+      text: string;
+      emotion: string | null;
+      words: {
+        index: number;
+        text: string;
+        pitch: number;
+        energy: number;
+        duration_ms: number;
+        syllables: number;
+        is_sentence_end: boolean;
+        emphasis: "normal" | "reduced" | "strong";
+        reasons: string[];
+      }[];
+      sentence_count: number;
+      total_duration_ms: number;
+      pitch_min: number;
+      pitch_max: number;
+      ssml: string;
+      supported_emotions: string[];
+    }>("/synthesis/prosody-preview", {
+      method: "POST",
+      body: JSON.stringify({
+        text,
+        emotion: options.emotion ?? null,
+        emphasis: options.emphasis ?? {},
+      }),
+      cancelKey: "prosodyPreview",
+    });
+  }
+
+  /**
+   * SL-30 — context-adaptive voice routing. Classifies the given text
+   * into a context (conversational/narrative/emotional/technical/
+   * dialogue/long_form) and returns profile recommendations ranked by
+   * provider affinity + preference bias.
+   */
+  recommendVoice(text: string, limit: number = 3) {
+    return this.request<{
+      text_excerpt: string;
+      top_context: "conversational" | "narrative" | "emotional" | "technical" | "dialogue" | "long_form";
+      context_scores: { context: string; score: number; signals: string[] }[];
+      recommendations: {
+        profile_id: string;
+        profile_name: string;
+        provider_name: string;
+        voice_id: string | null;
+        score: number;
+        reasons: string[];
+      }[];
+    }>("/synthesis/recommend-voice", {
+      method: "POST",
+      body: JSON.stringify({ text, limit }),
+      cancelKey: "recommendVoice",  // coalesce rapid typing
+    });
+  }
+
+  getRecommendedSamples(profileId: string, count: number = 10) {
+    return this.request<{
+      profile_id: string;
+      method: "phonemizer" | "bigram_approx";
+      gap_count_before: number;
+      gap_count_after: number;
+      already_recorded_skipped: number;
+      recommendations: {
+        text: string;
+        fills_gaps: string[];
+        gap_fill_count: number;
+        priority: number;
+      }[];
+    }>(`/profiles/${profileId}/recommended-samples?count=${count}`);
+  }
+
   // Audio Tools
   enhanceSample(profileId: string, sampleId: string) {
     return this.request<{ output_filename: string; audio_url: string }>("/audio-tools/isolate", {
@@ -516,3 +700,7 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+
+// Default export for call sites that prefer it (hooks, tests). Points at
+// the same singleton instance.
+export default api;

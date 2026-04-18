@@ -108,4 +108,57 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("Child content")).toBeInTheDocument();
     expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
   });
+
+  it("surfaces the route context in the fallback heading", () => {
+    render(
+      <ErrorBoundary context="profiles page">
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>
+    );
+    // The fallback reads "Something went wrong in the profiles page".
+    expect(screen.getByTestId("error-boundary-fallback")).toHaveTextContent(
+      /profiles page/i,
+    );
+  });
+
+  it("exposes a home link in the fallback so users can escape", () => {
+    render(
+      <ErrorBoundary context="dashboard">
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>
+    );
+    const home = screen.getByRole("link", { name: /back to dashboard/i });
+    expect(home).toHaveAttribute("href", "/");
+  });
+
+  it("calls onReset when Try again is clicked", async () => {
+    const user = userEvent.setup();
+    const onReset = vi.fn();
+    render(
+      <ErrorBoundary context="settings" onReset={onReset}>
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>
+    );
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies diagnostic details to clipboard", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <ErrorBoundary context="training">
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>
+    );
+    await user.click(screen.getByRole("button", { name: /copy details/i }));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const payload = writeText.mock.calls[0][0] as string;
+    expect(payload).toContain("training");
+    expect(payload).toContain("Test error message");
+  });
 });

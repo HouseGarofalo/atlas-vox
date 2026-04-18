@@ -1,18 +1,28 @@
-"""Synthesis endpoints — single, stream, batch, history."""
+"""Synthesis endpoints — single, stream, batch, history, feedback."""
 
 import time
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import NotFoundError
 from app.core.rate_limit import limiter
+from app.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.schemas.synthesis import (
     BatchSynthesisRequest,
     SynthesisRequest,
     SynthesisResponse,
+)
+from app.services.context_router import recommend_route
+from app.services.prosody_preview import build_prosody_preview, supported_emotions
+from app.services.feedback_service import (
+    create_feedback,
+    feedback_to_response_dict,
+    list_feedback_for_history,
 )
 from app.services.synthesis_service import (
     batch_synthesize,
@@ -171,7 +181,156 @@ async def synthesis_history(
             "output_format": h.output_format,
             "duration_seconds": h.duration_seconds,
             "latency_ms": h.latency_ms,
+            "quality_wer": h.quality_wer,
+            "quality_flagged": _is_quality_flagged(h.quality_wer),
             "created_at": h.created_at.isoformat(),
         }
         for h in history
     ]
+
+
+# ---------------------------------------------------------------------------
+# Feedback (SL-25)
+# ---------------------------------------------------------------------------
+
+# WER above this threshold flags a synthesis as potentially low-quality.
+# Mirrors the default in ``app.tasks.preferences`` — kept in one place so the
+# API response and the Celery side stay consistent.
+QUALITY_WER_FLAG_THRESHOLD = 0.3
+
+
+def _is_quality_flagged(quality_wer: float | None) -> bool:
+    """Return True when a synthesis row's WER exceeds the quality threshold."""
+    return quality_wer is not None and quality_wer > QUALITY_WER_FLAG_THRESHOLD
+
+
+# --- Context-adaptive voice routing (SL-30) ---
+
+
+class VoiceRecommendRequest(BaseModel):
+    """Body for POST /synthesis/recommend-voice."""
+
+    text: str = Field(..., min_length=1, max_length=20_000)
+    limit: int = Field(default=3, ge=1, le=10)
+
+
+# --- Prosody / emotion visual preview (VQ-37) ---
+
+
+class ProsodyPreviewRequest(BaseModel):
+    """Body for POST /synthesis/prosody-preview."""
+
+    text: str = Field(..., min_length=1, max_length=5000)
+    emotion: str | None = Field(default=None, max_length=40)
+    emphasis: dict[int, str] = Field(
+        default_factory=dict,
+        description=(
+            "Map of word index → 'reduced' | 'normal' | 'strong' to override "
+            "the heuristic-detected emphasis. Lets the frontend round-trip "
+            "user-edited timeline state."
+        ),
+    )
+
+
+@router.post("/synthesis/prosody-preview")
+@limiter.limit("60/minute")
+async def prosody_preview(
+    request: Request,
+    body: ProsodyPreviewRequest,
+    user: CurrentUser,
+) -> dict:
+    """Return a per-word prosody preview (pitch/energy/duration) + SSML.
+
+    Pure heuristic — no provider call, no audio generated. Lets the UI
+    show a live timeline as the user types or tweaks emphasis, and feeds
+    the generated SSML into synthesize() when they're happy.
+    """
+    valid_emotion = body.emotion if body.emotion in supported_emotions() else None
+    # Drop any non-standard emphasis values so the heuristic doesn't crash.
+    overrides = {
+        int(k): v
+        for k, v in body.emphasis.items()
+        if v in {"reduced", "normal", "strong"}
+    }
+    preview = build_prosody_preview(
+        body.text,
+        emotion=valid_emotion,
+        emphasis_overrides=overrides,
+    )
+    payload = preview.to_dict()
+    payload["supported_emotions"] = supported_emotions()
+    return payload
+
+
+@router.post("/synthesis/recommend-voice")
+@limiter.limit("30/minute")
+async def recommend_voice(
+    request: Request,
+    body: VoiceRecommendRequest,
+    db: DbSession,
+    user: CurrentUser,
+) -> dict:
+    """Suggest which voice profile fits this text best.
+
+    Classifies the input into one of six contexts (conversational,
+    narrative, emotional, technical, dialogue, long_form) and ranks the
+    caller's ready-state profiles by provider affinity + historical
+    preference bias (from SL-26).
+
+    Advisory only — the UI surfaces the suggestion, the user one-clicks
+    to accept.
+    """
+    rec = await recommend_route(db, body.text, limit=body.limit)
+    return rec.to_dict()
+
+
+@router.post(
+    "/synthesis/{history_id}/feedback",
+    response_model=FeedbackResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_synthesis_feedback(
+    history_id: str,
+    payload: FeedbackCreate,
+    db: DbSession,
+    user: CurrentUser,
+) -> FeedbackResponse:
+    """Record a thumbs up/down rating for a past synthesis.
+
+    Returns 404 if the history row does not exist, 422 on invalid payload.
+    """
+    logger.info(
+        "submit_synthesis_feedback_called",
+        history_id=history_id,
+        rating=payload.rating,
+    )
+    user_id = user.get("sub") if user else None
+    try:
+        row = await create_feedback(
+            db,
+            history_id=history_id,
+            rating=payload.rating,
+            tags=payload.tags,
+            note=payload.note,
+            user_id=user_id,
+        )
+    except NotFoundError as exc:
+        logger.info("submit_synthesis_feedback_not_found", history_id=history_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=exc.detail
+        )
+    return FeedbackResponse(**feedback_to_response_dict(row))
+
+
+@router.get(
+    "/synthesis/{history_id}/feedback",
+    response_model=list[FeedbackResponse],
+)
+async def list_synthesis_feedback(
+    history_id: str,
+    db: DbSession,
+    user: CurrentUser,
+) -> list[FeedbackResponse]:
+    """List all feedback entries for a specific synthesis history row."""
+    rows = await list_feedback_for_history(db, history_id)
+    return [FeedbackResponse(**feedback_to_response_dict(r)) for r in rows]

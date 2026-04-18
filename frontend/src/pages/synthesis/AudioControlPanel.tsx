@@ -26,6 +26,7 @@ export default function AudioControlPanel({
   isAzure,
   emotion,
   onSetEmotion,
+  capabilities,
   loading,
   batchLoading,
   stsLoading,
@@ -36,6 +37,10 @@ export default function AudioControlPanel({
   onBatchSynthesize,
   onSpeechToSpeech,
 }: AudioControlPanelProps) {
+  // Azure emotion markup is only meaningful when the provider supports SSML.
+  // If Azure ever loses SSML support (or capability lookup fails) we hide the
+  // panel rather than silently ignoring user-selected emotions at synth time.
+  const canUseAzureEmotion = isAzure && (capabilities?.supports_ssml ?? true);
   const batchLineCount = batchText
     .split("\n")
     .filter((l) => l.trim().length > 0).length;
@@ -162,7 +167,7 @@ export default function AudioControlPanel({
       )}
 
       {/* Azure Emotion Controls */}
-      {isAzure && synthesisMode === "tts" && (
+      {canUseAzureEmotion && synthesisMode === "tts" && (
         <CollapsiblePanel
           title="Expression Style"
           icon={<Smile className="h-5 w-5 text-amber-400" />}

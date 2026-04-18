@@ -25,6 +25,9 @@ export const useSettingsStore = create<SettingsState>()(
           const next = state.theme === "light" ? "dark" : "light";
           logger.info("toggleTheme", { from: state.theme, to: next });
           document.documentElement.classList.toggle("dark", next === "dark");
+          // Mirror the class into a data-theme attribute so CSS authors can
+          // use either [data-theme="dark"] or .dark — both stay in sync.
+          document.documentElement.setAttribute("data-theme", next);
           // Re-apply active theme so its neutral palette picks up the new mode
           useDesignStore.getState().applyToDOM();
           return { theme: next };

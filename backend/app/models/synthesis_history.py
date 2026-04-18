@@ -26,4 +26,10 @@ class SynthesisHistory(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # speed, pitch, volume, persona
+    # STT verification — SL-28. Whisper-computed WER against the original text.
+    # Populated asynchronously by ``app.tasks.preferences.verify_synthesis``.
+    quality_wer: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # VQ-39 — estimated USD cost based on provider per-1k-char rate. NULL for
+    # rows written before VQ-39; populated at synthesis time going forward.
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)

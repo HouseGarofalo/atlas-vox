@@ -41,6 +41,7 @@ export default function ActivityLog({ history }: ActivityLogProps) {
                 </div>
               </div>
               <WaveformVisualizer
+                source={h.audio_url}
                 height={12}
                 barCount={6}
                 animated={false}

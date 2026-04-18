@@ -7,6 +7,33 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body class="antialiased">
+    <!--
+      Theme-init shim — runs before React mounts so the initial paint uses
+      the user's persisted theme and we never flash the wrong background.
+      Reads the same `atlas-vox-settings` key that Zustand's persist
+      middleware writes to (see stores/settingsStore.ts).
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("atlas-vox-settings");
+          var theme = "light";
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var t = parsed && parsed.state && parsed.state.theme;
+            if (t === "dark" || t === "light") theme = t;
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            theme = "dark";
+          }
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+          }
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (_e) {
+          /* localStorage may be unavailable (SSR, sandboxed iframe) */
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 from sqlalchemy import func, select
@@ -51,11 +52,15 @@ async def start_training(
         from app.core.exceptions import ValidationError
         raise ValidationError(f"Provider '{effective_provider}' does not support training or cloning")
 
-    # Check sample count
-    sample_count_result = await db.execute(
-        select(func.count()).where(AudioSample.profile_id == profile_id)
-    )
-    sample_count = sample_count_result.scalar() or 0
+    # Load samples so we can pre-flight: count, total duration, and quality
+    # pass-rate checks must all happen before we enqueue a Celery job that
+    # would otherwise fail silently in the worker.
+    sample_rows = (
+        await db.execute(
+            select(AudioSample).where(AudioSample.profile_id == profile_id)
+        )
+    ).scalars().all()
+    sample_count = len(sample_rows)
     if sample_count == 0:
         from app.core.exceptions import ValidationError
         raise ValidationError("Profile has no audio samples — upload samples before training")
@@ -67,11 +72,76 @@ async def start_training(
             f"samples, but only {sample_count} available"
         )
 
+    # Duration floor — cloning on <5 s of audio produces garbage; enforce
+    # a realistic minimum before wasting a worker slot.
+    total_duration = sum((s.duration_seconds or 0.0) for s in sample_rows)
+    MIN_TOTAL_DURATION_S = 5.0
+    if total_duration < MIN_TOTAL_DURATION_S:
+        from app.core.exceptions import ValidationError
+        raise ValidationError(
+            f"Profile has only {total_duration:.1f}s of audio total; "
+            f"at least {MIN_TOTAL_DURATION_S:.0f}s required before training."
+        )
+
+    # Quality gate — if every sample has been analysed and failed quality
+    # we refuse to train on known-bad data.  Samples without an analysis_json
+    # are treated as unknown (allowed) so existing flows don't regress.
+    bad_samples: list[str] = []
+    any_analysed = False
+    for s in sample_rows:
+        if not s.analysis_json:
+            continue
+        any_analysed = True
+        try:
+            analysis = json.loads(s.analysis_json) if isinstance(s.analysis_json, str) else s.analysis_json
+        except (ValueError, TypeError):
+            continue
+        if isinstance(analysis, dict) and analysis.get("passed") is False:
+            bad_samples.append(s.original_filename or s.filename)
+    if any_analysed and len(bad_samples) == sample_count:
+        from app.core.exceptions import ValidationError
+        raise ValidationError(
+            "All samples failed the audio-quality check. "
+            "Re-record or fix the following before training: "
+            + ", ".join(bad_samples[:5])
+            + (f" (and {len(bad_samples) - 5} more)" if len(bad_samples) > 5 else "")
+        )
+
+    # Voice-clone consent gate (SC-44). For cloning workflows (i.e. the
+    # provider supports cloning), verify a matching CloneConsent row exists
+    # keyed on the sha256 of the first sample. Gated behind a setting so
+    # backward-compat is preserved.
+    from app.core.config import settings as _app_settings
+
+    if _app_settings.require_clone_consent and capabilities.supports_cloning:
+        from app.services.consent_service import (
+            has_consent_for_hash,
+            hash_audio_file,
+        )
+
+        first_sample = sample_rows[0]
+        try:
+            source_hash = hash_audio_file(Path(first_sample.file_path))
+        except OSError as exc:
+            from app.core.exceptions import ValidationError
+            raise ValidationError(
+                "Unable to read first sample for consent verification: " + str(exc)
+            )
+        consented = await has_consent_for_hash(db, profile_id, source_hash)
+        if not consented:
+            from app.core.exceptions import ValidationError
+            raise ValidationError(
+                "Voice cloning requires recorded consent for this sample. "
+                "Record consent via POST /api/v1/consent before starting training."
+            )
+
     logger.info(
         "training_validation_passed",
         profile_id=profile_id,
         provider=effective_provider,
         sample_count=sample_count,
+        total_duration_s=round(total_duration, 2),
+        bad_quality_samples=len(bad_samples),
         supports_cloning=capabilities.supports_cloning,
         supports_fine_tuning=capabilities.supports_fine_tuning,
     )
@@ -260,6 +330,118 @@ async def list_versions(db: AsyncSession, profile_id: str) -> list[ModelVersion]
     versions = list(result.scalars().all())
     logger.info("versions_listed", profile_id=profile_id, count=len(versions))
     return versions
+
+
+async def compute_training_readiness(
+    db: AsyncSession, profile_id: str,
+) -> dict:
+    """Pre-flight readiness surface for the training UI (DT-33).
+
+    Answers "can I hit Train right now?" without actually launching a job.
+    Returns a dict with:
+
+    * ``sample_count`` / ``total_duration``
+    * ``quality_passed_count`` / ``quality_failed_samples`` (with reasons)
+    * ``phoneme_coverage_pct`` (via DT-31 analyzer)
+    * ``min_required_by_provider``
+    * ``ready`` bool + ``blockers`` list
+    """
+    result = await db.execute(select(VoiceProfile).where(VoiceProfile.id == profile_id))
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("Profile")
+
+    # Provider capabilities — safe fallback if the provider isn't registered
+    # (e.g. training when no GPU service is reachable).
+    min_required = 0
+    provider_name = profile.provider_name
+    try:
+        provider = provider_registry.get_provider(provider_name)
+        caps = await provider.get_capabilities()
+        min_required = caps.min_samples_for_cloning
+    except Exception:  # noqa: BLE001 — best-effort, never crash the endpoint
+        pass
+
+    samples = (
+        await db.execute(
+            select(AudioSample).where(AudioSample.profile_id == profile_id)
+        )
+    ).scalars().all()
+
+    total_duration = 0.0
+    quality_passed = 0
+    quality_failed: list[dict[str, str | None]] = []
+    for s in samples:
+        total_duration += s.duration_seconds or 0.0
+        if not s.analysis_json:
+            # Treat un-analysed samples as pass-through so the UI doesn't
+            # block every fresh upload.
+            quality_passed += 1
+            continue
+        try:
+            analysis = (
+                json.loads(s.analysis_json)
+                if isinstance(s.analysis_json, str)
+                else s.analysis_json
+            )
+        except (ValueError, TypeError):
+            quality_passed += 1
+            continue
+        if isinstance(analysis, dict) and analysis.get("passed") is False:
+            quality_failed.append({
+                "sample_id": s.id,
+                "filename": s.original_filename or s.filename,
+                "reason": (
+                    analysis.get("reason")
+                    or (analysis.get("failures") or [None])[0]
+                    or "failed quality check"
+                ),
+            })
+        else:
+            quality_passed += 1
+
+    # Phoneme coverage — imported lazily so the service has no hard dep on
+    # phonemizer unless someone actually calls this.
+    from app.services.phoneme_coverage import analyze_profile_coverage
+
+    coverage_report = await analyze_profile_coverage(
+        db, profile_id, language=profile.language or "en",
+    )
+
+    blockers: list[str] = []
+    sample_count = len(samples)
+    if sample_count == 0:
+        blockers.append("no samples")
+    if min_required > 0 and sample_count < min_required:
+        blockers.append(
+            f"provider requires at least {min_required} samples, have {sample_count}",
+        )
+    if sample_count > 0 and total_duration < 5.0:
+        blockers.append(
+            f"only {total_duration:.1f}s of audio; need at least 5s",
+        )
+    if quality_failed and len(quality_failed) == sample_count:
+        blockers.append("all samples failed the audio-quality check")
+    elif quality_failed:
+        blockers.append(
+            f"{len(quality_failed)} of {sample_count} samples failed quality",
+        )
+
+    return {
+        "profile_id": profile_id,
+        "provider_name": provider_name,
+        "sample_count": sample_count,
+        "total_duration": round(total_duration, 2),
+        "quality_passed_count": quality_passed,
+        "quality_failed_samples": quality_failed,
+        "phoneme_coverage_pct": coverage_report.coverage_pct,
+        "phoneme_coverage_method": coverage_report.method,
+        "phoneme_gaps": coverage_report.gaps,
+        "min_required_by_provider": min_required,
+        "ready": not blockers,
+        "blockers": blockers,
+    }
 
 
 async def activate_version(

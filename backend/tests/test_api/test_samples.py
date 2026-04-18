@@ -126,6 +126,29 @@ async def test_upload_too_many_files(client: AsyncClient):
     assert "maximum" in resp.json()["detail"].lower() or "20" in resp.json()["detail"]
 
 
+async def test_upload_aggregate_size_cap(client: AsyncClient, monkeypatch):
+    """P1-13: Uploads whose aggregate size exceeds MAX_TOTAL_UPLOAD_BYTES must 413."""
+    import app.api.v1.endpoints.samples as samples_mod
+
+    # Shrink caps for a fast test: 30KB per file, 50KB aggregate.
+    monkeypatch.setattr(samples_mod, "MAX_FILE_SIZE", 30 * 1024)
+    monkeypatch.setattr(samples_mod, "MAX_TOTAL_UPLOAD_BYTES", 50 * 1024)
+
+    profile_id = await _create_profile(client)
+    # 3 × 25KB wav blobs = 75KB > 50KB aggregate cap but each < 30KB per-file.
+    blob = b"RIFF" + (b"\x00" * (25 * 1024 - 4))
+    files = [
+        ("files", (f"v{i}.wav", io.BytesIO(blob), "audio/wav"))
+        for i in range(3)
+    ]
+    resp = await client.post(
+        f"/api/v1/profiles/{profile_id}/samples",
+        files=files,
+    )
+    assert resp.status_code == 413
+    assert "aggregate" in resp.json()["detail"].lower() or "50" in resp.json()["detail"]
+
+
 # ---------------------------------------------------------------------------
 # List
 # ---------------------------------------------------------------------------

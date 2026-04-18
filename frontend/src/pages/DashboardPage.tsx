@@ -391,6 +391,7 @@ export default function DashboardPage() {
                     </div>
 
                     <WaveformVisualizer
+                      source={item.audio_url}
                       height={16}
                       barCount={8}
                       animated={false}

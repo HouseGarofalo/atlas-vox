@@ -472,6 +472,8 @@ class AzureAuthManager:
             return None
 
         try:
+            import concurrent.futures
+
             from azure.identity import ClientSecretCredential
 
             credential = ClientSecretCredential(
@@ -479,7 +481,20 @@ class AzureAuthManager:
                 client_id=client_id,
                 client_secret=client_secret,
             )
-            result = credential.get_token(_COGNITIVE_SERVICES_SCOPE)
+            # get_token() does blocking network I/O with no user-visible timeout.
+            # Run it in a worker and enforce a hard deadline so token refresh
+            # cannot stall a FastAPI request or Celery worker indefinitely.
+            TOKEN_FETCH_TIMEOUT_SECONDS = 30
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(credential.get_token, _COGNITIVE_SERVICES_SCOPE)
+                try:
+                    result = future.result(timeout=TOKEN_FETCH_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    logger.warning(
+                        "azure_service_principal_auth_timed_out",
+                        timeout_seconds=TOKEN_FETCH_TIMEOUT_SECONDS,
+                    )
+                    return None
 
             with self._lock:
                 self._cached_token = result.token

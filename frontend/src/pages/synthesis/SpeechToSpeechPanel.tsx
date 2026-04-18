@@ -52,6 +52,7 @@ export default function SpeechToSpeechPanel({
               <audio src={stsBlobUrl} controls className="w-full" />
               <div className="mt-3">
                 <WaveformVisualizer
+                  source={stsBlobUrl}
                   height={24}
                   barCount={20}
                   animated={false}
@@ -81,6 +82,7 @@ export default function SpeechToSpeechPanel({
               </div>
             )}
             <WaveformVisualizer
+              source={stsResult.audio_url ?? undefined}
               height={32}
               barCount={20}
               animated={false}

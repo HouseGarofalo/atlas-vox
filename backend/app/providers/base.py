@@ -180,10 +180,40 @@ class TTSProvider(ABC):
         return copy.deepcopy(self._runtime_config)
 
     def get_config_value(self, key: str, default: Any = None) -> Any:
-        """Get config value, checking runtime overrides first, then fallback."""
+        """Get config value, checking runtime overrides first, then fallback.
+
+        NOTE: this reads a shared instance attribute. Do NOT use it for
+        per-request, per-synthesis tunables (voice stability, style, speed).
+        Use :meth:`resolve_setting` with the incoming ``SynthesisSettings``
+        instead — that path is race-free under concurrent requests.
+        """
         if hasattr(self, '_runtime_config') and self._runtime_config and key in self._runtime_config:
             return self._runtime_config[key]
         return default
+
+    def resolve_setting(
+        self,
+        key: str,
+        settings: "SynthesisSettings | None" = None,
+        default: Any = None,
+    ) -> Any:
+        """Resolve a per-request voice-tuning value safely under concurrency.
+
+        Precedence:
+        1. ``settings.voice_settings[key]`` — caller-scoped override (safe).
+        2. ``self._runtime_config[key]`` — admin-provided baseline.
+        3. ``default``.
+
+        This is the only correct way to read per-request values like
+        ``stability``, ``similarity_boost``, ``style``, ``speed``, ``pitch``,
+        ``emotion`` etc. inside a provider's ``synthesize()``. Using
+        :meth:`get_config_value` for these races with concurrent callers.
+        """
+        if settings is not None and settings.voice_settings:
+            vs = settings.voice_settings
+            if key in vs and vs[key] is not None:
+                return vs[key]
+        return self.get_config_value(key, default)
 
     def prepare_output_path(self, prefix: str = "synth", ext: str = "wav") -> Path:
         """Create the output directory and return a unique file path for synthesis output."""

@@ -4,12 +4,14 @@ import { CollapsiblePanel } from "../../components/ui/CollapsiblePanel";
 import { SSMLEditor } from "../../components/audio/SSMLEditor";
 import { AudioPlayer } from "../../components/audio/AudioPlayer";
 import WaveformVisualizer from "../../components/audio/WaveformVisualizer";
+import { ProsodyPreview } from "./ProsodyPreview";
 import type { TextToSpeechPanelProps } from "./types";
 
 export default function TextToSpeechPanel({
   text,
   onSetText,
   lastResult,
+  providerName,
 }: TextToSpeechPanelProps) {
   return (
     <>
@@ -17,7 +19,12 @@ export default function TextToSpeechPanel({
         title="Text Input"
         icon={<Type className="h-5 w-5 text-primary-500" />}
       >
-        <SSMLEditor value={text} onChange={onSetText} minHeight={200} />
+        <SSMLEditor
+          value={text}
+          onChange={onSetText}
+          minHeight={200}
+          providerName={providerName}
+        />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-text-secondary)]">
             {text.length} / 10,000 characters
@@ -29,6 +36,10 @@ export default function TextToSpeechPanel({
             color="primary"
             className="w-32"
           />
+        </div>
+        <div className="mt-3">
+          {/* VQ-37 — live prosody preview. Heuristic only; no synthesize call. */}
+          <ProsodyPreview text={text} />
         </div>
       </CollapsiblePanel>
 
@@ -68,6 +79,7 @@ export default function TextToSpeechPanel({
               )}
             </div>
             <WaveformVisualizer
+              source={lastResult.audio_url}
               height={32}
               barCount={20}
               animated={false}

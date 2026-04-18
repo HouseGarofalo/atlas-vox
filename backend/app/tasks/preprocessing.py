@@ -85,3 +85,77 @@ def preprocess_samples(self, profile_id: str) -> dict:
         errors=len(result["errors"]),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Voice fingerprinting (SC-46)
+# ---------------------------------------------------------------------------
+
+
+async def _compute_sample_fingerprint(sample_id: str) -> dict:
+    """Compute and persist a voice fingerprint for a single uploaded sample.
+
+    Called in the background after sample upload so the main request
+    doesn't have to wait for the embedding to finish.
+    """
+    from sqlalchemy import select
+
+    from app.models.audio_sample import AudioSample
+    from app.models.voice_fingerprint import VoiceFingerprint
+    from app.services.voice_fingerprinter import (
+        compute_fingerprint_with_method,
+        store_fingerprint,
+    )
+    from app.tasks.utils import worker_session
+
+    async with worker_session() as db:
+        result = await db.execute(
+            select(AudioSample).where(AudioSample.id == sample_id)
+        )
+        sample = result.scalar_one_or_none()
+        if sample is None:
+            logger.warning("fingerprint_sample_not_found", sample_id=sample_id)
+            return {"sample_id": sample_id, "ok": False, "reason": "not_found"}
+
+        # Skip if a fingerprint already exists.
+        existing = await db.execute(
+            select(VoiceFingerprint).where(VoiceFingerprint.sample_id == sample_id)
+        )
+        if existing.scalar_one_or_none() is not None:
+            return {"sample_id": sample_id, "ok": True, "reason": "already_exists"}
+
+        try:
+            embedding, method = await compute_fingerprint_with_method(
+                Path(sample.file_path)
+            )
+        except Exception as exc:
+            logger.warning(
+                "fingerprint_compute_failed",
+                sample_id=sample_id,
+                error=str(exc),
+            )
+            return {"sample_id": sample_id, "ok": False, "reason": str(exc)}
+
+        await store_fingerprint(
+            db,
+            sample_id=sample.id,
+            profile_id=sample.profile_id,
+            embedding=embedding,
+            method=method,
+        )
+        await db.commit()
+
+    return {"sample_id": sample_id, "ok": True, "dims": len(embedding), "method": method}
+
+
+@celery_app.task(bind=True, name="app.tasks.preprocessing.compute_sample_fingerprint")
+def compute_sample_fingerprint(self, sample_id: str) -> dict:
+    """Celery entry point for background fingerprint computation."""
+    logger.info(
+        "fingerprint_task_started",
+        sample_id=sample_id,
+        task_id=self.request.id,
+    )
+    result = run_async(_compute_sample_fingerprint(sample_id))
+    logger.info("fingerprint_task_complete", sample_id=sample_id, **result)
+    return result

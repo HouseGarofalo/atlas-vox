@@ -244,7 +244,27 @@ async def update_provider_config(
     # Handle incoming config — preserve secrets that are masked
     if body.config is not None:
         field_defs = PROVIDER_FIELD_DEFINITIONS.get(name, [])
+        allowed_keys = {f.name for f in field_defs}
         secret_fields = {f.name for f in field_defs if f.is_secret}
+
+        # P1-09: strict allow-list. Reject unknown keys rather than silently
+        # merging them — prevents callers from injecting arbitrary values
+        # (e.g. overwriting api_key on a provider whose schema does not
+        # declare it, or slipping in keys that get persisted but never
+        # validated). Providers with no declared schema fall back to
+        # accepting whatever they're sent (unchanged behaviour).
+        if allowed_keys:
+            unknown = set(body.config.keys()) - allowed_keys
+            if unknown:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Unknown config key(s) for provider '{name}': "
+                        f"{', '.join(sorted(unknown))}. "
+                        f"Allowed: {', '.join(sorted(allowed_keys))}."
+                    ),
+                )
+
         new_config = dict(body.config)
         for key in secret_fields:
             if key in new_config:

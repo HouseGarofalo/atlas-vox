@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getErrorMessage } from "../utils/errors";
-import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause } from "lucide-react";
+import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause, Gauge } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -403,6 +403,9 @@ const ProfileCard = React.memo(function ProfileCard({
 }) {
   const isReady = profile.status === "ready";
   const hasLibraryVoice = !!profile.voice_id;
+  // Card-local navigator — the outer page's `navigate` is out of scope inside
+  // this memoised child, so we pull our own via the hook.
+  const navigate = useNavigate();
 
   return (
     <Card className="flex flex-col gap-3">
@@ -446,6 +449,17 @@ const ProfileCard = React.memo(function ProfileCard({
             <GitCompare className="h-3 w-3" />
           </Button>
         )}
+        {/* VQ-36: jump to the per-profile quality dashboard. Enabled as soon
+            as there's any synthesis history or version metrics to show. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => navigate(`/profiles/${profile.id}/quality`)}
+          aria-label="View quality dashboard"
+          title="Quality dashboard"
+        >
+          <Gauge className="h-3 w-3" />
+        </Button>
         <Button size="sm" variant="ghost" onClick={onDelete}>
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -464,6 +478,8 @@ function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile
   const [testText, setTestText] = useState("Hello, this is a version comparison test.");
   const [comparing, setComparing] = useState(false);
   const [results, setResults] = useState<{ version_id: string; audio_url: string | null; error: string | null }[]>([]);
+  const [promoting, setPromoting] = useState<string | null>(null);
+  const { activateVersion } = useProfileStore();
 
   useEffect(() => {
     if (!open || !profile) return;
@@ -481,6 +497,46 @@ function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile
       .catch(() => toast.error("Failed to load versions"))
       .finally(() => setLoading(false));
   }, [open, profile]);
+
+  const handlePromote = async (versionId: string) => {
+    if (!profile) return;
+    setPromoting(versionId);
+    try {
+      await activateVersion(profile.id, versionId);
+      toast.success(`Activated version`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to activate version");
+    } finally {
+      setPromoting(null);
+    }
+  };
+
+  /**
+   * Safely parse the metrics_json field on a version. Returns an empty
+   * object if the payload is missing, malformed, or not an object — so
+   * the UI never blows up on an old version row.
+   */
+  const parseMetrics = (v: VersionInfo | undefined): Record<string, unknown> => {
+    if (!v?.metrics_json) return {};
+    try {
+      const parsed = JSON.parse(v.metrics_json);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const formatMetric = (key: string, val: unknown): string | null => {
+    if (val == null) return null;
+    if (key === "quality_wer" && typeof val === "number") return `WER ${(val * 100).toFixed(1)}%`;
+    if (key === "mos" && typeof val === "number") return `MOS ${val.toFixed(2)}`;
+    if (key === "speaker_similarity" && typeof val === "number") return `Similarity ${(val * 100).toFixed(0)}%`;
+    if (key === "is_regression") return val ? "⚠ Regression" : "✓ No regression";
+    if (key === "method" && typeof val === "string") return `Method: ${val}`;
+    if (typeof val === "number") return `${key}: ${val.toFixed(3)}`;
+    if (typeof val === "string") return `${key}: ${val}`;
+    return null;
+  };
 
   const handleCompare = async () => {
     if (!profile || !selected[0] || !selected[1]) return;
@@ -532,13 +588,68 @@ function VersionCompareModal({ profile, open, onClose }: { profile: VoiceProfile
           <div className="grid grid-cols-2 gap-4">
             {selected.map((vId, idx) => {
               const v = versions.find((ver) => ver.id === vId);
+              const metrics = parseMetrics(v);
+              const isActive = profile?.active_version_id === vId;
               return (
-                <div key={idx} className="rounded border border-[var(--color-border)] p-3 text-xs space-y-1">
+                <div
+                  key={idx}
+                  data-testid={`version-details-${idx}`}
+                  className={`rounded border p-3 text-xs space-y-1 ${
+                    isActive
+                      ? "border-[var(--color-accent)] bg-[var(--color-hover)]"
+                      : "border-[var(--color-border)]"
+                  }`}
+                >
                   {v ? (
                     <>
-                      <p className="font-medium">Version {v.version_number}</p>
-                      <p className="text-[var(--color-text-secondary)]">Provider: {v.provider_name}</p>
-                      <p className="text-[var(--color-text-secondary)]">Created: {new Date(v.created_at).toLocaleString()}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">Version {v.version_number}</p>
+                        {isActive && (
+                          <span className="rounded-full bg-[var(--color-success-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-success)]">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      {v.provider_name && (
+                        <p className="text-[var(--color-text-secondary)]">Provider: {v.provider_name}</p>
+                      )}
+                      <p className="text-[var(--color-text-secondary)]">
+                        Created: {new Date(v.created_at).toLocaleString()}
+                      </p>
+                      {/* Quality metrics (populated by SL-27 regression detector
+                          + per-training Whisper-check). Absent for old rows. */}
+                      {Object.keys(metrics).length > 0 && (
+                        <ul className="mt-1 space-y-0.5" data-testid={`version-metrics-${idx}`}>
+                          {Object.entries(metrics)
+                            .map(([k, val]) => formatMetric(k, val))
+                            .filter((line): line is string => line != null)
+                            .slice(0, 6)
+                            .map((line) => (
+                              <li
+                                key={line}
+                                className={
+                                  line.startsWith("⚠")
+                                    ? "text-amber-500"
+                                    : "text-[var(--color-text-secondary)]"
+                                }
+                              >
+                                {line}
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                      {!isActive && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handlePromote(v.id)}
+                          loading={promoting === v.id}
+                          disabled={promoting !== null}
+                          className="mt-2"
+                        >
+                          Promote to Active
+                        </Button>
+                      )}
                     </>
                   ) : (
                     <p className="text-[var(--color-text-secondary)]">Select a version</p>

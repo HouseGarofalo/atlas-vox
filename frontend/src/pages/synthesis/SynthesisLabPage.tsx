@@ -16,6 +16,8 @@ import SpeechToSpeechPanel from "./SpeechToSpeechPanel";
 import ActivityLog from "./ActivityLog";
 import VoiceChannelCard from "./VoiceChannelCard";
 import AudioControlPanel from "./AudioControlPanel";
+import { VoiceSuggestionBanner } from "./VoiceSuggestionBanner";
+import { useProviderCapabilities } from "../../hooks/useProviderCapabilities";
 import type { BatchLineResult, SynthesisMode } from "./types";
 
 const logger = createLogger("SynthesisLabPage");
@@ -113,6 +115,11 @@ export default function SynthesisLabPage() {
   const selectedProfileData = profiles.find((p) => p.id === profileId);
   const isAzure = selectedProfileData?.provider_name === "azure_speech";
   const isElevenLabs = selectedProfileData?.provider_name === "elevenlabs";
+
+  // Live capability lookup for the selected profile's provider. Controls
+  // that depend on provider-level features (SSML, streaming, word
+  // boundaries) should key off this instead of hard-coded provider names.
+  const providerCaps = useProviderCapabilities(selectedProfileData?.provider_name ?? null);
 
   // ---- Handlers ----
 
@@ -325,11 +332,19 @@ export default function SynthesisLabPage() {
               />
             ) : (
               <>
+                {synthesisMode === "tts" && (
+                  <VoiceSuggestionBanner
+                    text={text}
+                    currentProfileId={profileId}
+                    onAccept={(id) => handleProfileSelect(id)}
+                  />
+                )}
                 {synthesisMode === "tts" ? (
                   <TextToSpeechPanel
                     text={text}
                     onSetText={setText}
                     lastResult={lastResult}
+                    providerName={selectedProfileData?.provider_name ?? null}
                   />
                 ) : (
                   <SpeechToSpeechPanel
@@ -381,6 +396,7 @@ export default function SynthesisLabPage() {
               isAzure={isAzure}
               emotion={emotion}
               onSetEmotion={setEmotion}
+              capabilities={providerCaps.capabilities}
               loading={loading}
               batchLoading={batchLoading}
               stsLoading={stsLoading}

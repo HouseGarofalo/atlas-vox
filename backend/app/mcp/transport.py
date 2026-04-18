@@ -43,31 +43,39 @@ async def _verify_mcp_auth(authorization: str | None) -> dict[str, Any]:
         logger.warning("mcp_auth_failed", reason="empty_api_key")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
-    # Validate against stored API keys and return the key's scopes.
+    # Validate against stored API keys. The key prefix (first 12 chars) is
+    # indexed and carries ~72 bits of entropy — practically collision-free.
+    # We take AT MOST one candidate and run Argon2 verify exactly once, so
+    # auth latency is bounded and attackers cannot induce multi-hash CPU
+    # burn by registering keys that share a hot prefix.
     from sqlalchemy import select
 
     from app.core.database import async_session_factory
     from app.models.api_key import ApiKey
 
-    MAX_KEY_CANDIDATES = 5  # Prevent DoS via Argon2 CPU exhaustion
     prefix = key[:12] if len(key) >= 12 else key
 
     async with async_session_factory() as db:
+        # .limit(1) is the whole timing mitigation — exactly one Argon2
+        # verification regardless of collisions. If someone does manage to
+        # register two keys with the same prefix, the second registration
+        # will succeed at the ORM layer but only the first will ever be
+        # reachable via MCP auth; that's acceptable and surface-able to
+        # admins via /api/v1/admin/api-keys.
         result = await db.execute(
             select(ApiKey).where(
                 ApiKey.key_prefix == prefix,
                 ApiKey.active.is_(True),
-            ).limit(MAX_KEY_CANDIDATES)
+            ).limit(1)
         )
-        candidates = result.scalars().all()
-        for stored_key in candidates:
-            if verify_api_key(key, stored_key.key_hash):
-                # Scopes are stored as a comma-separated string on the model,
-                # or may be absent on older rows — default to read-only.
-                raw_scopes: str = getattr(stored_key, "scopes", "") or ""
-                scopes = [s.strip() for s in raw_scopes.split(",") if s.strip()] or ["read"]
-                logger.debug("mcp_auth_success", scopes=scopes)
-                return {"sub": stored_key.id, "scopes": scopes}
+        stored_key = result.scalar_one_or_none()
+        if stored_key is not None and verify_api_key(key, stored_key.key_hash):
+            # Scopes are stored as a comma-separated string on the model,
+            # or may be absent on older rows — default to read-only.
+            raw_scopes: str = getattr(stored_key, "scopes", "") or ""
+            scopes = [s.strip() for s in raw_scopes.split(",") if s.strip()] or ["read"]
+            logger.debug("mcp_auth_success", scopes=scopes)
+            return {"sub": stored_key.id, "scopes": scopes}
 
     logger.warning("mcp_auth_failed", reason="invalid_api_key")
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")

@@ -9,10 +9,17 @@ import { createLogger } from "./utils/logger";
 
 const logger = createLogger("Main");
 
-// Apply dark mode class from persisted settings, THEN apply theme
-// (order matters: theme.applyToDOM reads the dark class to pick neutrals)
+// Theme class is set by the inline shim in index.html BEFORE this module
+// loads, so first paint uses the correct palette. Here we reconcile: if
+// the DOM and the persisted store disagree (e.g. prefers-color-scheme
+// fallback applied but the user had explicitly saved a different theme),
+// trust the store and sync the class. Then apply the theme palette.
 const initialTheme = useSettingsStore.getState().theme;
-document.documentElement.classList.toggle("dark", initialTheme === "dark");
+const domIsDark = document.documentElement.classList.contains("dark");
+if (domIsDark !== (initialTheme === "dark")) {
+  document.documentElement.classList.toggle("dark", initialTheme === "dark");
+  document.documentElement.setAttribute("data-theme", initialTheme);
+}
 useDesignStore.getState().applyToDOM();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

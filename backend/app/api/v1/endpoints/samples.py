@@ -34,6 +34,9 @@ ALLOWED_FORMATS = {"wav", "mp3", "flac", "ogg", "m4a", "webm"}
 _CONVERT_TO_WAV = {"webm"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB per file
 MAX_FILES_PER_UPLOAD = 20
+# Aggregate cap guards against 20 × 50MB = 1GB per request. Tightened to 500MB
+# total so one upload can't overwhelm the storage volume or memory buffer.
+MAX_TOTAL_UPLOAD_BYTES = 500 * 1024 * 1024
 
 router = APIRouter(prefix="/profiles/{profile_id}/samples", tags=["samples"])
 
@@ -101,6 +104,7 @@ async def upload_samples(
     storage_dir.mkdir(parents=True, exist_ok=True)
 
     created: list[SampleResponse] = []
+    total_bytes = 0  # aggregate size enforced across the whole request
     for upload in files:
         if not upload.filename:
             continue
@@ -120,6 +124,15 @@ async def upload_samples(
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"File '{upload.filename}' exceeds {MAX_FILE_SIZE // (1024*1024)}MB limit",
+            )
+        total_bytes += len(content)
+        if total_bytes > MAX_TOTAL_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Upload exceeds aggregate limit of "
+                    f"{MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)}MB per request"
+                ),
             )
         file_path.write_bytes(content)
 
@@ -165,6 +178,41 @@ async def upload_samples(
             await db.flush()
         except Exception as exc:
             logger.warning("auto_analysis_failed", sample_id=sample.id, error=str(exc))
+
+        # Fire-and-forget voice fingerprint computation (SC-46). Best-effort:
+        # if Celery is unavailable (e.g. in tests without a broker) we fall
+        # back to an inline async task so the fingerprint still gets stored.
+        try:
+            from app.tasks.preprocessing import compute_sample_fingerprint
+
+            compute_sample_fingerprint.delay(sample.id)
+            logger.info("fingerprint_dispatched", sample_id=sample.id)
+        except Exception as fp_exc:
+            logger.warning(
+                "fingerprint_celery_dispatch_failed",
+                sample_id=sample.id,
+                error=str(fp_exc),
+            )
+            try:
+                from app.services.voice_fingerprinter import (
+                    compute_fingerprint_with_method,
+                    store_fingerprint,
+                )
+
+                embedding, method = await compute_fingerprint_with_method(file_path)
+                await store_fingerprint(
+                    db,
+                    sample_id=sample.id,
+                    profile_id=profile_id,
+                    embedding=embedding,
+                    method=method,
+                )
+            except Exception as inline_exc:
+                logger.warning(
+                    "fingerprint_inline_failed",
+                    sample_id=sample.id,
+                    error=str(inline_exc),
+                )
 
         logger.info("sample_uploaded", sample_id=sample.id, profile_id=profile_id, filename=upload.filename)
         created.append(SampleResponse.model_validate(sample))

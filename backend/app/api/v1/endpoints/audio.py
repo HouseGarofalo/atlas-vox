@@ -103,3 +103,40 @@ async def serve_audio_design(request: Request, filename: str, user: CurrentUser)
         media_type=media_type,
         filename=file_path.name,
     )
+
+
+@router.get("/audio/{filename}/verify-watermark")
+@limiter.limit("60/minute")
+async def verify_audio_watermark(
+    request: Request, filename: str, user: CurrentUser
+) -> dict:
+    """Attempt to recover the deepfake watermark embedded in an audio file.
+
+    Returns the payload and confidence if found; 404 otherwise.
+    """
+    from app.services.audio_watermark import verify_watermark
+
+    base_dir = Path(settings.storage_path) / "output"
+    file_path = _safe_audio_path(base_dir, filename)
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found"
+        )
+
+    result = verify_watermark(file_path)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No watermark detected in this audio file",
+        )
+    logger.info(
+        "verify_audio_watermark_ok",
+        filename=file_path.name,
+        confidence=result.get("confidence"),
+    )
+    return {
+        "filename": file_path.name,
+        "payload": result["payload"],
+        "confidence": result["confidence"],
+    }

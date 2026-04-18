@@ -1,5 +1,9 @@
 import type { RefObject } from "react";
-import type { PersonaPreset, SynthesisHistoryItem } from "../../types";
+import type {
+  PersonaPreset,
+  ProviderCapabilities,
+  SynthesisHistoryItem,
+} from "../../types";
 
 /* ------------------------------------------------------------------ */
 /*  Shared constants                                                   */
@@ -91,6 +95,11 @@ export interface TextToSpeechPanelProps {
     latency_ms: number;
     duration_seconds?: number | null;
   } | null;
+  /**
+   * Provider for the currently-selected profile. Passed through to the
+   * Monaco SSML editor so autocomplete and validation can be provider-aware.
+   */
+  providerName?: string | null;
 }
 
 export interface SpeechToSpeechPanelProps {
@@ -141,6 +150,12 @@ export interface AudioControlPanelProps {
   isAzure: boolean;
   emotion: string;
   onSetEmotion: (v: string) => void;
+  /**
+   * Live capability flags for the selected profile's provider. Use these to
+   * show/hide features that depend on provider support (SSML, streaming,
+   * word boundaries, etc.) instead of hard-coding on provider name.
+   */
+  capabilities?: ProviderCapabilities | null;
   // Action button
   loading: boolean;
   batchLoading: boolean;
