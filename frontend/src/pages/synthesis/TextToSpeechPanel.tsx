@@ -4,6 +4,7 @@ import { CollapsiblePanel } from "../../components/ui/CollapsiblePanel";
 import { SSMLEditor } from "../../components/audio/SSMLEditor";
 import { AudioPlayer } from "../../components/audio/AudioPlayer";
 import WaveformVisualizer from "../../components/audio/WaveformVisualizer";
+import { ProsodyPreview } from "./ProsodyPreview";
 import type { TextToSpeechPanelProps } from "./types";
 
 export default function TextToSpeechPanel({
@@ -35,6 +36,10 @@ export default function TextToSpeechPanel({
             color="primary"
             className="w-32"
           />
+        </div>
+        <div className="mt-3">
+          {/* VQ-37 — live prosody preview. Heuristic only; no synthesize call. */}
+          <ProsodyPreview text={text} />
         </div>
       </CollapsiblePanel>
 

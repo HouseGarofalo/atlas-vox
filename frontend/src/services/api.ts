@@ -430,6 +430,46 @@ class ApiClient {
    * maximally fill this profile's remaining phoneme gaps.
    */
   /**
+   * VQ-37 — prosody / emotion preview. Heuristic per-word pitch/energy/
+   * duration + SSML. Cheap enough to call on keystroke (debounce
+   * upstream).
+   */
+  prosodyPreview(
+    text: string,
+    options: { emotion?: string | null; emphasis?: Record<number, string> } = {},
+  ) {
+    return this.request<{
+      text: string;
+      emotion: string | null;
+      words: {
+        index: number;
+        text: string;
+        pitch: number;
+        energy: number;
+        duration_ms: number;
+        syllables: number;
+        is_sentence_end: boolean;
+        emphasis: "normal" | "reduced" | "strong";
+        reasons: string[];
+      }[];
+      sentence_count: number;
+      total_duration_ms: number;
+      pitch_min: number;
+      pitch_max: number;
+      ssml: string;
+      supported_emotions: string[];
+    }>("/synthesis/prosody-preview", {
+      method: "POST",
+      body: JSON.stringify({
+        text,
+        emotion: options.emotion ?? null,
+        emphasis: options.emphasis ?? {},
+      }),
+      cancelKey: "prosodyPreview",
+    });
+  }
+
+  /**
    * SL-30 — context-adaptive voice routing. Classifies the given text
    * into a context (conversational/narrative/emotional/technical/
    * dialogue/long_form) and returns profile recommendations ranked by
