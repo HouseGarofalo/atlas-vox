@@ -4,8 +4,9 @@ import time
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.exceptions import NotFoundError
@@ -16,6 +17,7 @@ from app.schemas.synthesis import (
     SynthesisRequest,
     SynthesisResponse,
 )
+from app.services.context_router import recommend_route
 from app.services.feedback_service import (
     create_feedback,
     feedback_to_response_dict,
@@ -199,6 +201,38 @@ QUALITY_WER_FLAG_THRESHOLD = 0.3
 def _is_quality_flagged(quality_wer: float | None) -> bool:
     """Return True when a synthesis row's WER exceeds the quality threshold."""
     return quality_wer is not None and quality_wer > QUALITY_WER_FLAG_THRESHOLD
+
+
+# --- Context-adaptive voice routing (SL-30) ---
+
+
+class VoiceRecommendRequest(BaseModel):
+    """Body for POST /synthesis/recommend-voice."""
+
+    text: str = Field(..., min_length=1, max_length=20_000)
+    limit: int = Field(default=3, ge=1, le=10)
+
+
+@router.post("/synthesis/recommend-voice")
+@limiter.limit("30/minute")
+async def recommend_voice(
+    request: Request,
+    body: VoiceRecommendRequest,
+    db: DbSession,
+    user: CurrentUser,
+) -> dict:
+    """Suggest which voice profile fits this text best.
+
+    Classifies the input into one of six contexts (conversational,
+    narrative, emotional, technical, dialogue, long_form) and ranks the
+    caller's ready-state profiles by provider affinity + historical
+    preference bias (from SL-26).
+
+    Advisory only — the UI surfaces the suggestion, the user one-clicks
+    to accept.
+    """
+    rec = await recommend_route(db, body.text, limit=body.limit)
+    return rec.to_dict()
 
 
 @router.post(

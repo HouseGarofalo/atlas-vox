@@ -16,6 +16,7 @@ import SpeechToSpeechPanel from "./SpeechToSpeechPanel";
 import ActivityLog from "./ActivityLog";
 import VoiceChannelCard from "./VoiceChannelCard";
 import AudioControlPanel from "./AudioControlPanel";
+import { VoiceSuggestionBanner } from "./VoiceSuggestionBanner";
 import { useProviderCapabilities } from "../../hooks/useProviderCapabilities";
 import type { BatchLineResult, SynthesisMode } from "./types";
 
@@ -331,6 +332,13 @@ export default function SynthesisLabPage() {
               />
             ) : (
               <>
+                {synthesisMode === "tts" && (
+                  <VoiceSuggestionBanner
+                    text={text}
+                    currentProfileId={profileId}
+                    onAccept={(id) => handleProfileSelect(id)}
+                  />
+                )}
                 {synthesisMode === "tts" ? (
                   <TextToSpeechPanel
                     text={text}

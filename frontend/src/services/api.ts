@@ -429,6 +429,32 @@ class ApiClient {
    * sentences selected by greedy set-cover over a curated bank to
    * maximally fill this profile's remaining phoneme gaps.
    */
+  /**
+   * SL-30 — context-adaptive voice routing. Classifies the given text
+   * into a context (conversational/narrative/emotional/technical/
+   * dialogue/long_form) and returns profile recommendations ranked by
+   * provider affinity + preference bias.
+   */
+  recommendVoice(text: string, limit: number = 3) {
+    return this.request<{
+      text_excerpt: string;
+      top_context: "conversational" | "narrative" | "emotional" | "technical" | "dialogue" | "long_form";
+      context_scores: { context: string; score: number; signals: string[] }[];
+      recommendations: {
+        profile_id: string;
+        profile_name: string;
+        provider_name: string;
+        voice_id: string | null;
+        score: number;
+        reasons: string[];
+      }[];
+    }>("/synthesis/recommend-voice", {
+      method: "POST",
+      body: JSON.stringify({ text, limit }),
+      cancelKey: "recommendVoice",  // coalesce rapid typing
+    });
+  }
+
   getRecommendedSamples(profileId: string, count: number = 10) {
     return this.request<{
       profile_id: string;
