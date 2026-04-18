@@ -235,7 +235,20 @@ export interface ModelVersion {
   id: string;
   profile_id: string;
   version_number: number;
-  provider_name: string;
+  /** Optional — not returned by all backend endpoints. */
+  provider_name?: string;
+  /** Raw provider-specific model identifier. */
+  provider_model_id?: string | null;
+  /** Filesystem path for local model checkpoints. */
+  model_path?: string | null;
+  /** JSON-encoded training config snapshot at version creation. */
+  config_json?: string | null;
+  /**
+   * JSON-encoded quality metrics (WER, MOS proxy, similarity, regression
+   * flag, duration_s, etc.). Callers should JSON.parse safely — shape
+   * varies by provider and whether SL-27 regression detector has run.
+   */
+  metrics_json?: string | null;
   created_at: string;
 }
 
