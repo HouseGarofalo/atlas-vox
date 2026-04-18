@@ -247,6 +247,80 @@ async def backup_settings(
     )
 
 
+# ── Voice fingerprint duplicates (SC-46) ────────────────────────────────
+
+
+@router.get("/voice-fingerprints/duplicates")
+async def list_fingerprint_duplicates(
+    db: DbSession,
+    user: CurrentUser,
+    _admin=require_scope("admin"),
+    threshold: float = Query(
+        default=None,
+        description="Override the cosine-similarity threshold (default: settings.fingerprint_match_threshold)",
+    ),
+) -> dict:
+    """Return cross-profile fingerprint matches above the threshold.
+
+    Scans every stored fingerprint and pairs it with every fingerprint from
+    a *different* profile whose cosine similarity exceeds ``threshold``.
+    The result is a list of unique profile-to-profile matches with the
+    best-matching similarity score between them.
+    """
+    import json
+
+    from app.core.config import settings as _settings
+    from app.models.voice_fingerprint import VoiceFingerprint
+    from app.services.voice_fingerprinter import cosine_similarity
+
+    effective_threshold = (
+        threshold if threshold is not None else _settings.fingerprint_match_threshold
+    )
+
+    result = await db.execute(select(VoiceFingerprint))
+    rows = list(result.scalars().all())
+
+    # Decode once.
+    parsed: list[tuple[VoiceFingerprint, list[float]]] = []
+    for row in rows:
+        try:
+            emb = json.loads(row.embedding_json)
+        except (ValueError, TypeError):
+            continue
+        parsed.append((row, emb))
+
+    # Pair-wise compare (O(n^2)) — adequate for an admin diagnostics view.
+    best_matches: dict[tuple[str, str], dict] = {}
+    for i in range(len(parsed)):
+        row_a, emb_a = parsed[i]
+        for j in range(i + 1, len(parsed)):
+            row_b, emb_b = parsed[j]
+            if row_a.profile_id == row_b.profile_id:
+                continue
+            score = cosine_similarity(emb_a, emb_b)
+            if score < effective_threshold:
+                continue
+            key = tuple(sorted((row_a.profile_id, row_b.profile_id)))
+            existing = best_matches.get(key)
+            if existing is None or score > existing["similarity"]:
+                best_matches[key] = {
+                    "profile_a": key[0],
+                    "profile_b": key[1],
+                    "similarity": round(score, 6),
+                    "fingerprint_a_id": row_a.id,
+                    "fingerprint_b_id": row_b.id,
+                }
+
+    matches = sorted(
+        best_matches.values(), key=lambda m: m["similarity"], reverse=True
+    )
+    return {
+        "threshold": effective_threshold,
+        "count": len(matches),
+        "matches": matches,
+    }
+
+
 @router.post("/restore")
 async def restore_settings(
     body: RestoreRequest,

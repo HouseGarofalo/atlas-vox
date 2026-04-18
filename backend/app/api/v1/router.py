@@ -9,8 +9,10 @@ from app.api.v1.endpoints import (
     api_keys,
     audio,
     audio_tools,
+    audiobook,
     auth,
     compare,
+    consent,
     favorites,
     health,
     presets,
@@ -18,6 +20,7 @@ from app.api.v1.endpoints import (
     pronunciation,
     providers,
     samples,
+    stt,
     synthesis,
     text_import,
     training,
@@ -47,3 +50,6 @@ api_router.include_router(pronunciation.router)
 api_router.include_router(usage.router)
 api_router.include_router(favorites.router)
 api_router.include_router(text_import.router)
+api_router.include_router(consent.router)
+api_router.include_router(stt.router)
+api_router.include_router(audiobook.router)

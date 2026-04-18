@@ -711,3 +711,88 @@ async def isolate_file_endpoint(
 
     file_info = await _build_file_info_async(dest, out_id)
     return IsolateFileResponse(file=file_info)
+
+
+# ---------------------------------------------------------------------------
+# Enhance (denoise / dereverb / music duck)
+# ---------------------------------------------------------------------------
+
+class EnhanceRequest(BaseModel):
+    """Request body for /audio-tools/enhance."""
+
+    file_id: str
+    mode: str  # "denoise" | "dereverb" | "duck"
+    music_file_id: str | None = None
+    speech_duck_db: float = -18.0
+
+
+class EnhanceResponse(BaseModel):
+    output_filename: str
+    audio_url: str
+    output_path: str
+    mode: str
+
+
+@router.post("/enhance", response_model=EnhanceResponse)
+async def enhance_audio(
+    body: EnhanceRequest,
+    user: CurrentUser,
+) -> EnhanceResponse:
+    """Apply post-processing: denoise, dereverb, or music ducking.
+
+    * ``denoise`` — broadband noise reduction on ``file_id``.
+    * ``dereverb`` — stationary spectral gating approximation of reverb.
+    * ``duck`` — mix ``file_id`` (speech) with ``music_file_id`` (music),
+      lowering the music by ``speech_duck_db`` during speech.
+    """
+    from app.services import audio_enhancement
+
+    source = _file_path(body.file_id)
+
+    mode = body.mode.lower().strip()
+    if mode not in {"denoise", "dereverb", "duck"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown enhance mode: {body.mode}",
+        )
+
+    try:
+        if mode == "denoise":
+            out = await audio_enhancement.denoise(source)
+        elif mode == "dereverb":
+            out = await audio_enhancement.dereverb(source)
+        else:  # duck
+            if not body.music_file_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="music_file_id is required for duck mode",
+                )
+            music = _file_path(body.music_file_id)
+            out = await audio_enhancement.duck_music(
+                source, music, speech_duck_db=body.speech_duck_db
+            )
+    except RuntimeError as exc:
+        # Missing optional dependency (noisereduce / pyloudnorm etc.)
+        logger.warning("audio_enhance_unavailable", mode=mode, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    logger.info(
+        "audio_enhance_complete", mode=mode, file_id=body.file_id, output=str(out)
+    )
+    return EnhanceResponse(
+        output_filename=out.name,
+        audio_url=_audio_url(out.name),
+        output_path=str(out),
+        mode=mode,
+    )

@@ -1,4 +1,4 @@
-"""Synthesis endpoints — single, stream, batch, history."""
+"""Synthesis endpoints — single, stream, batch, history, feedback."""
 
 import time
 from pathlib import Path
@@ -8,11 +8,18 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import NotFoundError
 from app.core.rate_limit import limiter
+from app.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.schemas.synthesis import (
     BatchSynthesisRequest,
     SynthesisRequest,
     SynthesisResponse,
+)
+from app.services.feedback_service import (
+    create_feedback,
+    feedback_to_response_dict,
+    list_feedback_for_history,
 )
 from app.services.synthesis_service import (
     batch_synthesize,
@@ -171,7 +178,76 @@ async def synthesis_history(
             "output_format": h.output_format,
             "duration_seconds": h.duration_seconds,
             "latency_ms": h.latency_ms,
+            "quality_wer": h.quality_wer,
+            "quality_flagged": _is_quality_flagged(h.quality_wer),
             "created_at": h.created_at.isoformat(),
         }
         for h in history
     ]
+
+
+# ---------------------------------------------------------------------------
+# Feedback (SL-25)
+# ---------------------------------------------------------------------------
+
+# WER above this threshold flags a synthesis as potentially low-quality.
+# Mirrors the default in ``app.tasks.preferences`` — kept in one place so the
+# API response and the Celery side stay consistent.
+QUALITY_WER_FLAG_THRESHOLD = 0.3
+
+
+def _is_quality_flagged(quality_wer: float | None) -> bool:
+    """Return True when a synthesis row's WER exceeds the quality threshold."""
+    return quality_wer is not None and quality_wer > QUALITY_WER_FLAG_THRESHOLD
+
+
+@router.post(
+    "/synthesis/{history_id}/feedback",
+    response_model=FeedbackResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_synthesis_feedback(
+    history_id: str,
+    payload: FeedbackCreate,
+    db: DbSession,
+    user: CurrentUser,
+) -> FeedbackResponse:
+    """Record a thumbs up/down rating for a past synthesis.
+
+    Returns 404 if the history row does not exist, 422 on invalid payload.
+    """
+    logger.info(
+        "submit_synthesis_feedback_called",
+        history_id=history_id,
+        rating=payload.rating,
+    )
+    user_id = user.get("sub") if user else None
+    try:
+        row = await create_feedback(
+            db,
+            history_id=history_id,
+            rating=payload.rating,
+            tags=payload.tags,
+            note=payload.note,
+            user_id=user_id,
+        )
+    except NotFoundError as exc:
+        logger.info("submit_synthesis_feedback_not_found", history_id=history_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=exc.detail
+        )
+    return FeedbackResponse(**feedback_to_response_dict(row))
+
+
+@router.get(
+    "/synthesis/{history_id}/feedback",
+    response_model=list[FeedbackResponse],
+)
+async def list_synthesis_feedback(
+    history_id: str,
+    db: DbSession,
+    user: CurrentUser,
+) -> list[FeedbackResponse]:
+    """List all feedback entries for a specific synthesis history row."""
+    rows = await list_feedback_for_history(db, history_id)
+    return [FeedbackResponse(**feedback_to_response_dict(r)) for r in rows]

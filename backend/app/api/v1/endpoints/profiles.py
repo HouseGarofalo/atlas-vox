@@ -13,7 +13,9 @@ from app.schemas.profile import (
     ProfileResponse,
     ProfileUpdate,
 )
+from app.schemas.feedback import ProfileFeedbackSummary
 from app.schemas.training import ModelVersionListResponse, ModelVersionResponse
+from app.services.feedback_service import aggregate_feedback_for_profile
 from app.services.profile_service import (
     create_profile,
     delete_profile,
@@ -152,3 +154,24 @@ async def activate_profile_version(
     except (NotFoundError, ValidationError) as e:
         logger.error("activate_profile_version_failed", profile_id=profile_id, version_id=version_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# --- Feedback aggregation (SL-25) ---
+
+
+@router.get("/{profile_id}/feedback-summary", response_model=ProfileFeedbackSummary)
+async def get_profile_feedback_summary(
+    profile_id: str, db: DbSession, user: CurrentUser
+) -> ProfileFeedbackSummary:
+    """Return thumbs up/down counts aggregated across all syntheses for a profile."""
+    logger.info("get_profile_feedback_summary_called", profile_id=profile_id)
+    profile = await get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    counts = await aggregate_feedback_for_profile(db, profile_id)
+    return ProfileFeedbackSummary(
+        profile_id=profile_id,
+        up=counts["up"],
+        down=counts["down"],
+        total=counts["total"],
+    )

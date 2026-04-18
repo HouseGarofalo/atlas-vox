@@ -443,6 +443,32 @@ async def synthesize(
     db.add(usage)
     await db.flush()
 
+    # Embed deepfake watermark (SC-45). Skipped when disabled in settings.
+    # Best-effort: any failure logs a warning but does not break synthesis.
+    # Watermarks are embedded in the WAV carrier; for non-WAV outputs
+    # embed_watermark returns the sibling .wav file, and we rewrite the
+    # history record + response to point at it so downloads receive the
+    # watermarked file.
+    if not settings.disable_watermark:
+        try:
+            from app.services.audio_watermark import embed_watermark, make_payload
+
+            payload = make_payload(profile_id, history.id)
+            watermarked_path = embed_watermark(Path(result.audio_path), payload)
+            if str(watermarked_path) != str(result.audio_path):
+                history.output_path = str(watermarked_path)
+                history.output_format = "wav"
+                result.audio_path = watermarked_path
+                result.format = "wav"
+                await db.flush()
+        except Exception as wm_exc:
+            logger.warning(
+                "watermark_embed_failed",
+                profile_id=profile_id,
+                history_id=history.id,
+                error=str(wm_exc),
+            )
+
     # Dispatch synthesis.complete webhook (best-effort, non-blocking)
     try:
         import asyncio
@@ -456,6 +482,15 @@ async def synthesize(
         ))
     except Exception as wh_exc:
         logger.warning("webhook_synthesis_complete_failed", error=str(wh_exc))
+
+    # SL-28 — fire-and-forget Whisper verification (WER vs. input text).
+    # Broker unavailable (e.g. unit tests without Redis) must never fail
+    # synthesis, so we swallow dispatch errors and only log them.
+    try:
+        from app.tasks.preferences import verify_synthesis
+        verify_synthesis.delay(history.id)
+    except Exception as vs_exc:
+        logger.warning("verify_synthesis_dispatch_failed", error=str(vs_exc))
 
     # Build audio URL
     filename = Path(result.audio_path).name

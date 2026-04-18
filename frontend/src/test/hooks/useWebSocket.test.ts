@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTrainingProgress } from '../../hooks/useWebSocket';
 
 vi.mock('../../utils/logger', () => ({
@@ -11,9 +11,18 @@ vi.mock('../../utils/logger', () => ({
   }),
 }));
 
+vi.mock('../../services/api', () => ({
+  default: {
+    getTrainingJob: vi.fn(),
+  },
+}));
+import apiClient from '../../services/api';
+
 // Mock WebSocket
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
+  static CLOSED = 3;
+  static OPEN = 1;
   url: string;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
@@ -35,6 +44,7 @@ class MockWebSocket {
     // noop
   }
 }
+(MockWebSocket as unknown as { CLOSED: number }).CLOSED = 3;
 
 beforeEach(() => {
   MockWebSocket.instances = [];
@@ -97,6 +107,100 @@ describe('useTrainingProgress', () => {
 
     // WebSocket constructor should NOT have been called again (no reconnect)
     expect(MockWebSocket.instances).toHaveLength(1);
+
+    vi.useRealTimers();
+  });
+
+  it('exposes reconnecting status after a transient close', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useTrainingProgress('job-re'));
+    const ws = MockWebSocket.instances[0];
+    act(() => {
+      ws.onopen?.();
+    });
+    expect(result.current.connectionStatus).toBe('connected');
+
+    // Simulate an unexpected close.
+    act(() => {
+      ws.onclose?.();
+    });
+    expect(result.current.connectionStatus).toBe('reconnecting');
+    expect(result.current.connectionBanner).toContain('Reconnecting');
+
+    vi.useRealTimers();
+  });
+
+  it('falls back to polling after MAX_RECONNECT_ATTEMPTS WebSocket failures', async () => {
+    vi.useFakeTimers();
+    // Every getTrainingJob resolves with a non-terminal state so polling keeps ticking.
+    (apiClient.getTrainingJob as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'job-poll',
+      status: 'training',
+      progress: 0.42,
+      current_step: 'Training model',
+    });
+
+    const { result } = renderHook(() => useTrainingProgress('job-poll'));
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    // Burn through all WebSocket reconnects: close the current ws, advance
+    // past its backoff timer, repeat. MAX_RECONNECT_ATTEMPTS = 5 so we need
+    // 6 closes in total (1 initial + 5 retries) before the hook gives up and
+    // falls back to HTTP polling.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      await act(async () => {
+        ws.onclose?.();
+        // Let any synchronously-scheduled reconnect timer fire.
+        await vi.advanceTimersByTimeAsync(60000);
+      });
+    }
+
+    // After exhausting WS attempts, hook should be polling.
+    expect(result.current.connectionStatus).toBe('polling');
+    expect(result.current.connectionBanner).toContain('polling');
+
+    // The initial poll should have fired already; confirm it was called.
+    expect(apiClient.getTrainingJob).toHaveBeenCalledWith('job-poll');
+
+    // Let the poll's async chain resolve and flush any pending microtasks.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(result.current.progress?.percent).toBe(42);
+    expect(result.current.progress?.state).toBe('PROGRESS');
+
+    vi.useRealTimers();
+  });
+
+  it('stops polling on terminal state', async () => {
+    vi.useFakeTimers();
+    (apiClient.getTrainingJob as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'job-done',
+      status: 'completed',
+      progress: 1.0,
+      current_step: 'Done',
+    });
+
+    const { result } = renderHook(() => useTrainingProgress('job-done'));
+
+    // Force-drop to polling by burning through reconnects.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      await act(async () => {
+        ws.onclose?.();
+        await vi.advanceTimersByTimeAsync(60000);
+      });
+    }
+
+    // Let the poll's async chain resolve.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(result.current.progress?.state).toBe('DONE');
+    expect(result.current.connectionStatus).toBe('idle');
 
     vi.useRealTimers();
   });

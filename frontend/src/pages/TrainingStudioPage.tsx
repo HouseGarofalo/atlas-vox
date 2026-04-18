@@ -33,7 +33,7 @@ export default function TrainingStudioPage() {
   const [loadingReadiness, setLoadingReadiness] = useState(false);
   const [enhancing, setEnhancing] = useState<string | null>(null);
   const [enhancingAll, setEnhancingAll] = useState(false);
-  const { progress } = useTrainingProgress(activeJobId);
+  const { progress, connectionStatus, connectionBanner } = useTrainingProgress(activeJobId);
 
   useEffect(() => {
     fetchProfiles().catch(() => toast.error("Failed to load profiles"));
@@ -215,6 +215,30 @@ export default function TrainingStudioPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Training Studio</h1>
+      {activeJobId && connectionBanner && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="training-connection-banner"
+          data-connection-status={connectionStatus}
+          className={`flex items-center gap-3 rounded-lg border p-3 text-sm ${
+            connectionStatus === "failed"
+              ? "border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]"
+              : "border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning)]"
+          }`}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              connectionStatus === "polling"
+                ? "bg-amber-400 animate-pulse"
+                : connectionStatus === "reconnecting"
+                  ? "bg-amber-400 animate-pulse"
+                  : "bg-red-400"
+            }`}
+          />
+          <span>{connectionBanner}</span>
+        </div>
+      )}
       <Select label="Voice Profile" value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)} options={[{ value: "", label: "Select a profile..." }, ...profileOptions]} />
 
       {selectedProfile && (

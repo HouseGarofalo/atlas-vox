@@ -28,6 +28,7 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.preprocessing.*": {"queue": "preprocessing"},
         "app.tasks.training.*": {"queue": "training"},
+        "app.tasks.preferences.*": {"queue": "preferences"},
     },
     task_default_queue="default",
     beat_schedule={
@@ -35,8 +36,18 @@ celery_app.conf.update(
             "task": "app.tasks.cleanup.cleanup_old_audio",
             "schedule": 3600.0,  # every hour
         },
+        # SL-26 — nightly preference rollup (24h ≈ 86400s)
+        "rollup-preferences-nightly": {
+            "task": "app.tasks.preferences.rollup_preferences",
+            "schedule": 86400.0,
+        },
     },
 )
 
 # Auto-discover tasks in these modules
-celery_app.autodiscover_tasks(["app.tasks.preprocessing", "app.tasks.training", "app.tasks.cleanup"])
+celery_app.autodiscover_tasks([
+    "app.tasks.preprocessing",
+    "app.tasks.training",
+    "app.tasks.cleanup",
+    "app.tasks.preferences",
+])

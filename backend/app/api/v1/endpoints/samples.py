@@ -179,6 +179,41 @@ async def upload_samples(
         except Exception as exc:
             logger.warning("auto_analysis_failed", sample_id=sample.id, error=str(exc))
 
+        # Fire-and-forget voice fingerprint computation (SC-46). Best-effort:
+        # if Celery is unavailable (e.g. in tests without a broker) we fall
+        # back to an inline async task so the fingerprint still gets stored.
+        try:
+            from app.tasks.preprocessing import compute_sample_fingerprint
+
+            compute_sample_fingerprint.delay(sample.id)
+            logger.info("fingerprint_dispatched", sample_id=sample.id)
+        except Exception as fp_exc:
+            logger.warning(
+                "fingerprint_celery_dispatch_failed",
+                sample_id=sample.id,
+                error=str(fp_exc),
+            )
+            try:
+                from app.services.voice_fingerprinter import (
+                    compute_fingerprint_with_method,
+                    store_fingerprint,
+                )
+
+                embedding, method = await compute_fingerprint_with_method(file_path)
+                await store_fingerprint(
+                    db,
+                    sample_id=sample.id,
+                    profile_id=profile_id,
+                    embedding=embedding,
+                    method=method,
+                )
+            except Exception as inline_exc:
+                logger.warning(
+                    "fingerprint_inline_failed",
+                    sample_id=sample.id,
+                    error=str(inline_exc),
+                )
+
         logger.info("sample_uploaded", sample_id=sample.id, profile_id=profile_id, filename=upload.filename)
         created.append(SampleResponse.model_validate(sample))
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 from sqlalchemy import func, select
@@ -105,6 +106,34 @@ async def start_training(
             + ", ".join(bad_samples[:5])
             + (f" (and {len(bad_samples) - 5} more)" if len(bad_samples) > 5 else "")
         )
+
+    # Voice-clone consent gate (SC-44). For cloning workflows (i.e. the
+    # provider supports cloning), verify a matching CloneConsent row exists
+    # keyed on the sha256 of the first sample. Gated behind a setting so
+    # backward-compat is preserved.
+    from app.core.config import settings as _app_settings
+
+    if _app_settings.require_clone_consent and capabilities.supports_cloning:
+        from app.services.consent_service import (
+            has_consent_for_hash,
+            hash_audio_file,
+        )
+
+        first_sample = sample_rows[0]
+        try:
+            source_hash = hash_audio_file(Path(first_sample.file_path))
+        except OSError as exc:
+            from app.core.exceptions import ValidationError
+            raise ValidationError(
+                "Unable to read first sample for consent verification: " + str(exc)
+            )
+        consented = await has_consent_for_hash(db, profile_id, source_hash)
+        if not consented:
+            from app.core.exceptions import ValidationError
+            raise ValidationError(
+                "Voice cloning requires recorded consent for this sample. "
+                "Record consent via POST /api/v1/consent before starting training."
+            )
 
     logger.info(
         "training_validation_passed",

@@ -97,6 +97,19 @@ class Settings(BaseSettings):
     healing_enabled: bool = True
     healing_mcp_enabled: bool = False
 
+    # Safety & consent controls
+    # When True, voice-cloning workflows must have a matching CloneConsent row
+    # recorded (keyed on sha256 of the first sample) before start_training
+    # will dispatch a Celery job. Off by default for backward-compat; turn on
+    # in production / regulated environments.
+    require_clone_consent: bool = False
+    # When True, skip embedding the deepfake watermark into synthesized audio.
+    # Off (i.e. watermarking enabled) by default.
+    disable_watermark: bool = False
+    # Cosine-similarity threshold for flagging a voice fingerprint as a
+    # potential match with an existing profile.
+    fingerprint_match_threshold: float = 0.85
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:

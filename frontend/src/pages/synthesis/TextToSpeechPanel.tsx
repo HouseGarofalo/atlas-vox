@@ -68,6 +68,7 @@ export default function TextToSpeechPanel({
               )}
             </div>
             <WaveformVisualizer
+              source={lastResult.audio_url}
               height={32}
               barCount={20}
               animated={false}
