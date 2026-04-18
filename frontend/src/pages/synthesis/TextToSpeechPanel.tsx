@@ -10,6 +10,7 @@ export default function TextToSpeechPanel({
   text,
   onSetText,
   lastResult,
+  providerName,
 }: TextToSpeechPanelProps) {
   return (
     <>
@@ -17,7 +18,12 @@ export default function TextToSpeechPanel({
         title="Text Input"
         icon={<Type className="h-5 w-5 text-primary-500" />}
       >
-        <SSMLEditor value={text} onChange={onSetText} minHeight={200} />
+        <SSMLEditor
+          value={text}
+          onChange={onSetText}
+          minHeight={200}
+          providerName={providerName}
+        />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-text-secondary)]">
             {text.length} / 10,000 characters

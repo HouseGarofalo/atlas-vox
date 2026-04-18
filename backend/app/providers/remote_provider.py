@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from pathlib import Path
 
 import httpx
 import structlog
@@ -66,9 +65,7 @@ class RemoteProvider(TTSProvider):
     ) -> AudioResult:
         """Synthesize text via the remote GPU service."""
         url = f"{self._base_url}/providers/{self._name}/synthesize"
-        output_dir = Path(settings.storage_path) / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{self._name}_{uuid.uuid4().hex[:12]}.wav"
+        output_file = self.prepare_output_path(prefix=self._name, ext="wav")
 
         logger.info(
             "remote_synthesize_started",

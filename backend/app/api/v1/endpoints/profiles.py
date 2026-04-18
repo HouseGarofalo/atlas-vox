@@ -156,6 +156,50 @@ async def activate_profile_version(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+# --- Regression detector (SL-27) ---
+
+
+@router.get("/{profile_id}/versions/{version_id}/regression-report")
+async def get_regression_report(
+    profile_id: str,
+    version_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    baseline: str = Query(..., description="Baseline ModelVersion ID to compare against"),
+) -> dict:
+    """Compute a quality regression report between two model versions.
+
+    Returns the ``RegressionReport`` payload.  ``404`` if either version is
+    missing or the ``version_id`` does not belong to ``profile_id``.
+    """
+    logger.info(
+        "get_regression_report_called",
+        profile_id=profile_id,
+        version_id=version_id,
+        baseline=baseline,
+    )
+
+    from app.services.regression_detector import detect_regression
+
+    # Validate that version_id belongs to the given profile (defence-in-depth;
+    # avoids cross-profile leakage of training metrics via a guessed URL).
+    profile = await get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
+    try:
+        report = await detect_regression(
+            db,
+            new_version_id=version_id,
+            baseline_version_id=baseline,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.detail)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return report.to_dict()
+
+
 # --- Feedback aggregation (SL-25) ---
 
 

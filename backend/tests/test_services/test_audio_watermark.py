@@ -9,6 +9,7 @@ import pytest
 import soundfile as sf
 
 from app.services.audio_watermark import (
+    BIT_REPEAT,
     CARRIER_STRIDE,
     PAYLOAD_LENGTH,
     embed_watermark,
@@ -18,9 +19,9 @@ from app.services.audio_watermark import (
 
 
 SAMPLE_RATE = 22050
-# Long enough to carry the full watermark frame (36 bytes × 8 bits ×
-# CARRIER_STRIDE samples) with room to spare.
-DEFAULT_LENGTH = CARRIER_STRIDE * (PAYLOAD_LENGTH + 5) * 8 + 1000
+# Long enough to carry the full watermark frame (37 bytes × 8 bits ×
+# BIT_REPEAT × CARRIER_STRIDE samples) with room to spare.
+DEFAULT_LENGTH = CARRIER_STRIDE * BIT_REPEAT * (PAYLOAD_LENGTH + 5) * 8 + 1000
 
 
 def _write_signal(path: Path, samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> None:

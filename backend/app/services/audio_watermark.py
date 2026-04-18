@@ -48,6 +48,11 @@ TOTAL_BITS = TOTAL_BYTES * 8
 # clip still has ~86 carrier slots — plenty for TOTAL_BITS=296.
 CARRIER_STRIDE = 64
 
+# Each bit is redundantly embedded across ``BIT_REPEAT`` carrier samples
+# and recovered via majority vote.  Provides robustness against the loss
+# of a small fraction of samples (see robustness test).
+BIT_REPEAT = 5
+
 # Quantization step size for QIM-based embedding.  The carrier sample is
 # rounded to the nearest multiple of ``QIM_DELTA`` and then offset by
 # ``QIM_DELTA / 2`` if the bit is 1.  Larger values are more robust to
@@ -168,21 +173,24 @@ def embed_watermark(audio_path: Path, payload: str) -> Path:
     bits = _bits_from_bytes(frame)
     assert len(bits) == TOTAL_BITS
 
-    required_length = CARRIER_STRIDE * len(bits)
+    n_slots = len(bits) * BIT_REPEAT
+    required_length = CARRIER_STRIDE * n_slots
     if len(working) < required_length:
         raise ValueError(
             f"Audio is too short to watermark: need at least "
             f"{required_length} samples, got {len(working)}"
         )
 
-    modulation = _modulation_sequence(len(bits))
+    modulation = _modulation_sequence(n_slots)
 
     watermarked = working.copy()
     for i, bit in enumerate(bits):
-        idx = i * CARRIER_STRIDE
-        watermarked[idx] = _qim_embed_bit(
-            float(working[idx]), int(bit), float(modulation[i])
-        )
+        for r in range(BIT_REPEAT):
+            slot = i * BIT_REPEAT + r
+            idx = slot * CARRIER_STRIDE
+            watermarked[idx] = _qim_embed_bit(
+                float(working[idx]), int(bit), float(modulation[slot])
+            )
 
     # Clamp to the valid [-1.0, 1.0] float range so soundfile won't clip.
     np.clip(watermarked, -1.0, 1.0, out=watermarked)
@@ -220,15 +228,20 @@ def verify_watermark(audio_path: Path) -> dict | None:
     if working.ndim == 2:
         working = working.mean(axis=1)
 
-    required_length = CARRIER_STRIDE * TOTAL_BITS
+    n_slots = TOTAL_BITS * BIT_REPEAT
+    required_length = CARRIER_STRIDE * n_slots
     if len(working) < required_length:
         return None
 
-    modulation = _modulation_sequence(TOTAL_BITS)
+    modulation = _modulation_sequence(n_slots)
     bits = np.zeros(TOTAL_BITS, dtype=np.int8)
     for i in range(TOTAL_BITS):
-        idx = i * CARRIER_STRIDE
-        bits[i] = _qim_extract_bit(float(working[idx]), float(modulation[i]))
+        votes = 0
+        for r in range(BIT_REPEAT):
+            slot = i * BIT_REPEAT + r
+            idx = slot * CARRIER_STRIDE
+            votes += _qim_extract_bit(float(working[idx]), float(modulation[slot]))
+        bits[i] = 1 if votes * 2 > BIT_REPEAT else 0
 
     frame = _bytes_from_bits(bits)
     payload = _unpack_payload(frame)

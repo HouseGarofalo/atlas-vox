@@ -10,24 +10,18 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.models.synthesis_history import SynthesisHistory
 from app.models.usage_event import UsageEvent
+from app.services.cost_estimator import PROVIDER_COST_PER_1K_CHARS
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 
-# Estimated cost per 1000 characters by provider (USD)
-DEFAULT_COST_PER_1K: dict[str, float] = {
-    "elevenlabs": 0.30,
-    "azure_speech": 0.016,
-    "kokoro": 0.0,
-    "piper": 0.0,
-    "coqui_xtts": 0.0,
-    "styletts2": 0.0,
-    "cosyvoice": 0.0,
-    "dia": 0.0,
-    "dia2": 0.0,
-}
+# Estimated cost per 1000 characters by provider (USD).
+# Single source of truth lives in ``cost_estimator``; this alias preserves the
+# legacy name other code may rely on.
+DEFAULT_COST_PER_1K: dict[str, float] = PROVIDER_COST_PER_1K_CHARS
 
 
 @router.get("")
@@ -66,7 +60,7 @@ async def get_usage(
         chars = row.total_characters or 0
         requests = row.total_requests or 0
         avg_latency = int(row.avg_duration_ms or 0)
-        cost = (chars / 1000) * DEFAULT_COST_PER_1K.get(p, 0.0)
+        cost = (chars / 1000) * PROVIDER_COST_PER_1K_CHARS.get(p, 0.0)
 
         by_provider[p] = {
             "characters": chars,
@@ -122,13 +116,99 @@ async def get_usage(
             "cost_usd": round(day_cost, 6),
         }
 
+    # VQ-39 — dashboard widget convenience: {provider: cost_usd} flat map.
+    cost_by_provider: dict[str, float] = {
+        p: stats["cost_usd"] for p, stats in by_provider.items()
+    }
+
     return {
         "period_days": days,
         "total_characters": total_chars,
         "total_requests": total_requests,
         "total_estimated_cost_usd": round(total_cost, 4),
         "by_provider": by_provider,
+        "cost_by_provider": cost_by_provider,
         "daily": dict(sorted(daily.items())),
+    }
+
+
+# ---------------------------------------------------------------------------
+# VQ-39 — dedicated cost aggregation using ``synthesis_history`` stamps.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cost")
+async def get_cost(
+    db: DbSession,
+    user: CurrentUser,
+    provider: str | None = Query(None),
+    profile_id: str | None = Query(None),
+    since: datetime | None = Query(None),
+    until: datetime | None = Query(None),
+) -> dict:
+    """Aggregate synthesis cost using the per-row ``estimated_cost_usd`` stamp.
+
+    Pulls from :class:`SynthesisHistory` rather than :class:`UsageEvent` so
+    the numbers match what individual rows show on the history view. Rows
+    missing a cost stamp (written before the migration) are treated as 0.0.
+    """
+    query = select(
+        SynthesisHistory.provider_name,
+        SynthesisHistory.profile_id,
+        func.coalesce(func.sum(SynthesisHistory.estimated_cost_usd), 0.0).label("cost"),
+        func.count().label("requests"),
+        func.avg(SynthesisHistory.latency_ms).label("avg_latency_ms"),
+    ).group_by(SynthesisHistory.provider_name, SynthesisHistory.profile_id)
+
+    if provider:
+        query = query.where(SynthesisHistory.provider_name == provider)
+    if profile_id:
+        query = query.where(SynthesisHistory.profile_id == profile_id)
+    if since is not None:
+        query = query.where(SynthesisHistory.created_at >= since)
+    if until is not None:
+        query = query.where(SynthesisHistory.created_at <= until)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    by_provider: dict[str, float] = {}
+    by_profile: dict[str, float] = {}
+    latency_accum: dict[str, list[tuple[int, float]]] = {}
+    total_cost = 0.0
+    total_requests = 0
+
+    for row in rows:
+        p = row.provider_name
+        prof = row.profile_id
+        cost = float(row.cost or 0.0)
+        reqs = int(row.requests or 0)
+        by_provider[p] = round(by_provider.get(p, 0.0) + cost, 6)
+        by_profile[prof] = round(by_profile.get(prof, 0.0) + cost, 6)
+        if row.avg_latency_ms is not None:
+            latency_accum.setdefault(p, []).append((reqs, float(row.avg_latency_ms)))
+        total_cost += cost
+        total_requests += reqs
+
+    # Reduce per-provider latency to a request-weighted average.
+    avg_latency_by_provider: dict[str, int] = {}
+    for p, pairs in latency_accum.items():
+        total_reqs = sum(r for r, _ in pairs) or 1
+        weighted = sum(r * lat for r, lat in pairs) / total_reqs
+        avg_latency_by_provider[p] = int(weighted)
+
+    return {
+        "total_cost_usd": round(total_cost, 4),
+        "total_requests": total_requests,
+        "by_provider": by_provider,
+        "by_profile": by_profile,
+        "avg_latency_ms_by_provider": avg_latency_by_provider,
+        "filters": {
+            "provider": provider,
+            "profile_id": profile_id,
+            "since": since.isoformat() if since else None,
+            "until": until.isoformat() if until else None,
+        },
     }
 
 

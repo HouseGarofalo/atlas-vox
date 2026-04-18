@@ -25,6 +25,19 @@ from app.services.voice_fingerprinter import (
 SAMPLE_RATE = 22050
 
 
+@pytest.fixture(autouse=True)
+def _force_mfcc_path(monkeypatch):
+    """Force the MFCC fallback — resemblyzer is optional and slow.
+
+    Tests exercise the fast deterministic path so they stay under the
+    end-to-end ``pytest`` budget.
+    """
+    monkeypatch.setattr(
+        "app.services.voice_fingerprinter._try_resemblyzer",
+        lambda _path: None,
+    )
+
+
 def _write_signal(path: Path, signal: np.ndarray, sr: int = SAMPLE_RATE) -> None:
     sf.write(str(path), signal.astype(np.float32), sr)
 
