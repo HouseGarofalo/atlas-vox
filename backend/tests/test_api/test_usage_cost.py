@@ -75,10 +75,15 @@ async def test_cost_endpoint_filters_by_provider(
     await _seed_history(db_session, profile.id, "elevenlabs", cost=1.0)
     await _seed_history(db_session, profile.id, "azure_speech", cost=2.0)
 
-    resp = await client.get(f"{BASE}/usage/cost?provider=azure_speech")
+    # Filter by BOTH profile_id and provider so we assert only our seeded rows
+    # — other tests in this module also write azure rows via the same session
+    # and the conftest savepoint cleanup runs after all tests in the module.
+    resp = await client.get(
+        f"{BASE}/usage/cost?provider=azure_speech&profile_id={profile.id}"
+    )
     assert resp.status_code == 200
     data = resp.json()
-    # Only azure rows counted.
+    # Only azure rows counted, and only ones for OUR profile.
     assert "elevenlabs" not in data["by_provider"]
     assert data["by_provider"]["azure_speech"] == pytest.approx(2.0, rel=1e-3)
 
@@ -100,8 +105,14 @@ async def test_cost_endpoint_filters_by_since(
     await db_session.flush()
 
     since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-    resp = await client.get(f"{BASE}/usage/cost?since={since}")
-    assert resp.status_code == 200
+    # Use httpx `params=` so the ISO datetime's `+00:00` zone suffix gets
+    # URL-encoded as `%2B00%3A00` instead of decoding to a bare space that
+    # FastAPI's Query parser rejects with 422.
+    resp = await client.get(
+        f"{BASE}/usage/cost",
+        params={"since": since, "profile_id": profile.id},
+    )
+    assert resp.status_code == 200, resp.text
     assert resp.json()["by_provider"]["elevenlabs"] == pytest.approx(1.0, rel=1e-3)
 
 
