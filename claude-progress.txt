@@ -179,3 +179,74 @@ All 6 services running and healthy:
 - Playwright E2E: 117/117 passing
 - Documentation: Updated
 
+## Session: 2026-04-18 — 50-Task Review Remediation + Parallel Agents
+
+### Summary
+- 50 prioritized tasks logged in Archon (P0 critical → IN integration)
+- Foreground work completed 15 tasks by Coding Agent with regression tests
+- 4 background agents completed parallel tracks (self-learning, audio production,
+  safety/consent, refactoring & quality surface)
+
+### 2026-04-06 Audit Claims — Verification Result
+All 12 fixes from the 2026-03-25 session VERIFIED present:
+✓ Celery dispatch after DB flush (training_service.py:168,173)
+✓ run_sync utility applied to 7 providers (base.py + all provider imports)
+✓ Upload size limits 50MB × 20 files (samples.py:35-36)
+✓ MCP API key validation (transport.py — now hardened in P1-10)
+✓ WebSocket token auth with 4001 close code (training.py:117)
+✓ SSRF blocklist, ExitStack, CurrentUser, batch max_length=100, etc.
+
+### Drift Found & Fixed (this session)
+Items the progress notes claimed were "done" that still had issues:
+- Coqui XTTS fine_tune() was a stub returning fake VoiceModel → now raises
+  NotImplementedError (P0-01)
+- Provider singleton voice_settings race — acknowledged as "Awaiting
+  implementation" — now fixed via resolve_setting() helper (P0-02)
+- Azure credential.get_token() had no timeout → wrapped with 30s deadline (P1-08)
+- Upload total-size cap missing (per-file capped, aggregate uncapped) →
+  added MAX_TOTAL_UPLOAD_BYTES=500MB (P1-13)
+- Provider config update lacked allow-list → now rejects unknown keys (P1-09)
+- JWT decoders used PyJWT defaults (optional claim verification) → explicit
+  require=[exp, iat, iss] (P1-11)
+- MCP Argon2 verify looped up to 5 times → now exactly one, O(log n) lookup (P1-10)
+
+### P0 / P1 / P2 Remediation (foreground — 15 tasks)
+P0-01 capability honesty  - 18 tests
+P0-02 voice_settings race - 8 tests
+P0-03 real waveforms (useAudioPeaks) - 5 tests
+P0-04 WebSocket resilience + polling fallback - 8 tests
+P0-05 Monaco SSML editor with schema + validation - 12 tests
+P1-08 subprocess + HTTP client timeouts - 4 tests
+P1-09 provider config allow-list - 3 tests
+P1-10 MCP Argon2 timing fix + key_prefix index - 4 tests
+P1-11 JWT hardening (require exp/iat/iss) - 10 tests
+P1-12 training pre-flight (duration + quality gates) - 3 tests
+P1-13 upload aggregate size cap - 1 test
+P1-14 frontend provider capability adaptation hook - 5 tests
+P1-15 theme FOUC inline shim - 8 tests
+P2-21 api.ts AbortController + dedup registry - 3 tests
+P2-23 ErrorBoundary UX upgrade (context, copy details) - 9 tests
+
+### Background Agents (parallel)
+Landed in same worktree, separate commits:
+- Self-learning: SL-25/26/27/28 (feedback model, preference aggregator,
+  regression detector, STT verify loop)
+- Audio production: AP-40/41/42/43 (streaming Whisper, audiobook stitcher,
+  markdown→SSML, de-reverb/ducking)
+- Safety/consent: SC-44/45/46 (consent ledger, watermarking, fingerprinting)
+- Refactoring & quality: P2-17/19/22 + VQ-38/39 + DT-31/33 (god-class
+  decomposition, path consolidation, N+1 fix, pronunciation editor,
+  cost tracker, phoneme coverage, training-readiness endpoint)
+
+### Remaining Work (deferred)
+- P0-06 Azure CNV status polling (backend — needs celery-beat wiring)
+- P0-07 Profile versioning end-to-end (backend + UI modal)
+- P2-18 Zustand createAsyncStore factory (cleanup)
+- P2-20 Decompose large page components (cleanup)
+- P2-24 Additional targeted test coverage
+- SL-29/30 Active-learning recommender, context-adaptive routing
+- DT-32/34/35 Dataset augmentation, diarization, LoRA (GPU-dependent)
+- VQ-36/37 Quality dashboard, prosody preview (UI-heavy)
+- IN-47/48/49/50 WebRTC, Agent SDK, OBS, SIP (external infra needed)
+
+
