@@ -130,6 +130,36 @@ async def test_update_provider_config_unknown(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_update_provider_config_rejects_unknown_keys(client: AsyncClient):
+    """P1-09: PUT with a config key not declared in the provider schema must 422.
+
+    This prevents callers from injecting arbitrary attributes into the
+    provider config (e.g., overriding ``api_key`` on a provider whose
+    schema does not declare it, or smuggling in keys that get persisted
+    but never validated).
+    """
+    response = await client.put(
+        "/api/v1/providers/elevenlabs/config",
+        json={"config": {"totally_bogus_key_xyz": "attacker-value"}},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "totally_bogus_key_xyz" in detail
+    assert "Allowed" in detail
+
+
+@pytest.mark.asyncio
+async def test_update_provider_config_accepts_known_keys(client: AsyncClient):
+    """P1-09 counterpart: whitelisted keys still succeed (model_id is declared)."""
+    response = await client.put(
+        "/api/v1/providers/elevenlabs/config",
+        json={"config": {"model_id": "eleven_flash_v2_5"}},
+    )
+    # 200 means the allow-list passed; actual persistence tested elsewhere.
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_test_provider(client: AsyncClient):
     """POST /api/v1/providers/kokoro/test with mocked synthesize returns test result."""
     from app.providers.base import AudioResult

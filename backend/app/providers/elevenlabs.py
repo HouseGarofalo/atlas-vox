@@ -69,22 +69,28 @@ class ElevenLabsProvider(TTSProvider):
                 raise ImportError("pip install elevenlabs")
         return self._client
 
-    def _build_voice_settings(self):
-        """Build VoiceSettings from runtime config, using ElevenLabs SDK defaults."""
+    def _build_voice_settings(self, request_settings: SynthesisSettings | None = None):
+        """Build VoiceSettings preferring per-request overrides over shared config.
+
+        When ``request_settings.voice_settings`` supplies ``stability`` /
+        ``similarity_boost`` / ``style`` / ``use_speaker_boost`` it wins over
+        the shared ``_runtime_config`` — so concurrent syntheses with
+        different tunables don't race.
+        """
         try:
             from elevenlabs import VoiceSettings
         except ImportError:
             raise ImportError("pip install elevenlabs")
 
         return VoiceSettings(
-            stability=float(self.get_config_value('stability', 0.5)),
-            similarity_boost=float(self.get_config_value('similarity_boost', 0.75)),
-            style=float(self.get_config_value('style', 0.0)),
-            use_speaker_boost=bool(self.get_config_value('use_speaker_boost', False)),
+            stability=float(self.resolve_setting('stability', request_settings, 0.5)),
+            similarity_boost=float(self.resolve_setting('similarity_boost', request_settings, 0.75)),
+            style=float(self.resolve_setting('style', request_settings, 0.0)),
+            use_speaker_boost=bool(self.resolve_setting('use_speaker_boost', request_settings, False)),
         )
 
-    def _get_model_id(self) -> str:
-        return self.get_config_value('model_id', settings.elevenlabs_model_id)
+    def _get_model_id(self, request_settings: SynthesisSettings | None = None) -> str:
+        return self.resolve_setting('model_id', request_settings, settings.elevenlabs_model_id)
 
     async def synthesize(
         self, text: str, voice_id: str, settings_: SynthesisSettings
@@ -95,8 +101,8 @@ class ElevenLabsProvider(TTSProvider):
         logger.info("elevenlabs_synthesize_started", voice_id=voice_id, text_length=len(text))
         start = time.perf_counter()
 
-        model_id = self._get_model_id()
-        voice_settings = self._build_voice_settings()
+        model_id = self._get_model_id(settings_)
+        voice_settings = self._build_voice_settings(settings_)
 
         def _synth():
             gen = client.text_to_speech.convert(
@@ -146,8 +152,8 @@ class ElevenLabsProvider(TTSProvider):
         whitespace token boundaries.
         """
         client = self._get_client()
-        model_id = self._get_model_id()
-        voice_settings = self._build_voice_settings()
+        model_id = self._get_model_id(settings_)
+        voice_settings = self._build_voice_settings(settings_)
 
         logger.info(
             "elevenlabs_synthesize_with_timestamps_started",
@@ -546,8 +552,8 @@ class ElevenLabsProvider(TTSProvider):
         import concurrent.futures
 
         client = self._get_client()
-        model_id = self._get_model_id()
-        voice_settings = self._build_voice_settings()
+        model_id = self._get_model_id(settings_)
+        voice_settings = self._build_voice_settings(settings_)
 
         queue = asyncio.Queue()
         loop = asyncio.get_running_loop()

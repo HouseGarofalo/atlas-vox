@@ -51,11 +51,15 @@ async def start_training(
         from app.core.exceptions import ValidationError
         raise ValidationError(f"Provider '{effective_provider}' does not support training or cloning")
 
-    # Check sample count
-    sample_count_result = await db.execute(
-        select(func.count()).where(AudioSample.profile_id == profile_id)
-    )
-    sample_count = sample_count_result.scalar() or 0
+    # Load samples so we can pre-flight: count, total duration, and quality
+    # pass-rate checks must all happen before we enqueue a Celery job that
+    # would otherwise fail silently in the worker.
+    sample_rows = (
+        await db.execute(
+            select(AudioSample).where(AudioSample.profile_id == profile_id)
+        )
+    ).scalars().all()
+    sample_count = len(sample_rows)
     if sample_count == 0:
         from app.core.exceptions import ValidationError
         raise ValidationError("Profile has no audio samples — upload samples before training")
@@ -67,11 +71,48 @@ async def start_training(
             f"samples, but only {sample_count} available"
         )
 
+    # Duration floor — cloning on <5 s of audio produces garbage; enforce
+    # a realistic minimum before wasting a worker slot.
+    total_duration = sum((s.duration_seconds or 0.0) for s in sample_rows)
+    MIN_TOTAL_DURATION_S = 5.0
+    if total_duration < MIN_TOTAL_DURATION_S:
+        from app.core.exceptions import ValidationError
+        raise ValidationError(
+            f"Profile has only {total_duration:.1f}s of audio total; "
+            f"at least {MIN_TOTAL_DURATION_S:.0f}s required before training."
+        )
+
+    # Quality gate — if every sample has been analysed and failed quality
+    # we refuse to train on known-bad data.  Samples without an analysis_json
+    # are treated as unknown (allowed) so existing flows don't regress.
+    bad_samples: list[str] = []
+    any_analysed = False
+    for s in sample_rows:
+        if not s.analysis_json:
+            continue
+        any_analysed = True
+        try:
+            analysis = json.loads(s.analysis_json) if isinstance(s.analysis_json, str) else s.analysis_json
+        except (ValueError, TypeError):
+            continue
+        if isinstance(analysis, dict) and analysis.get("passed") is False:
+            bad_samples.append(s.original_filename or s.filename)
+    if any_analysed and len(bad_samples) == sample_count:
+        from app.core.exceptions import ValidationError
+        raise ValidationError(
+            "All samples failed the audio-quality check. "
+            "Re-record or fix the following before training: "
+            + ", ".join(bad_samples[:5])
+            + (f" (and {len(bad_samples) - 5} more)" if len(bad_samples) > 5 else "")
+        )
+
     logger.info(
         "training_validation_passed",
         profile_id=profile_id,
         provider=effective_provider,
         sample_count=sample_count,
+        total_duration_s=round(total_duration, 2),
+        bad_quality_samples=len(bad_samples),
         supports_cloning=capabilities.supports_cloning,
         supports_fine_tuning=capabilities.supports_fine_tuning,
     )

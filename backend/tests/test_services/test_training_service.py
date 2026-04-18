@@ -49,8 +49,11 @@ def _make_wav(path: Path) -> None:
     path.write_bytes(header + struct.pack(f"<{num_samples}h", *([0] * num_samples)))
 
 
-async def _add_sample(db: AsyncSession, profile_id: str, tmp_path: Path) -> AudioSample:
-    wav = tmp_path / f"sample_{profile_id[:6]}.wav"
+async def _add_sample(
+    db: AsyncSession, profile_id: str, tmp_path: Path,
+    duration_seconds: float = 10.0,
+) -> AudioSample:
+    wav = tmp_path / f"sample_{profile_id[:6]}_{duration_seconds}.wav"
     _make_wav(wav)
     sample = AudioSample(
         profile_id=profile_id,
@@ -59,6 +62,7 @@ async def _add_sample(db: AsyncSession, profile_id: str, tmp_path: Path) -> Audi
         file_path=str(wav),
         format="wav",
         file_size_bytes=wav.stat().st_size,
+        duration_seconds=duration_seconds,
     )
     db.add(sample)
     await db.flush()
@@ -104,6 +108,70 @@ async def test_start_training_no_samples(db_session: AsyncSession):
     ):
         with pytest.raises(ValidationError, match="no audio samples"):
             await start_training(db_session, profile_id=profile.id)
+
+
+async def test_start_training_rejects_short_total_duration(
+    db_session: AsyncSession, tmp_path: Path,
+):
+    """P1-12: Training must refuse to start on <5s of total audio."""
+    profile = await _make_profile(db_session, provider="elevenlabs")
+    # Two samples totalling just 3 seconds — below the 5s floor.
+    await _add_sample(db_session, profile.id, tmp_path, duration_seconds=1.5)
+    await _add_sample(db_session, profile.id, tmp_path, duration_seconds=1.5)
+
+    with patch(
+        "app.services.training_service.provider_registry.get_provider",
+        return_value=_mock_training_provider(),
+    ):
+        with pytest.raises(ValidationError, match=r"\d+\.\d+s of audio"):
+            await start_training(db_session, profile_id=profile.id)
+
+
+async def test_start_training_rejects_all_failed_quality(
+    db_session: AsyncSession, tmp_path: Path,
+):
+    """P1-12: All samples failing quality gate must block training."""
+    import json as _json
+    profile = await _make_profile(db_session, provider="elevenlabs")
+    s1 = await _add_sample(db_session, profile.id, tmp_path, duration_seconds=6.0)
+    s2 = await _add_sample(db_session, profile.id, tmp_path, duration_seconds=6.0)
+    # Mark BOTH samples as having failed the audio-quality check.
+    s1.analysis_json = _json.dumps({"passed": False, "reason": "clipping"})
+    s2.analysis_json = _json.dumps({"passed": False, "reason": "silence"})
+    await db_session.flush()
+
+    with patch(
+        "app.services.training_service.provider_registry.get_provider",
+        return_value=_mock_training_provider(),
+    ):
+        with pytest.raises(ValidationError, match="quality check"):
+            await start_training(db_session, profile_id=profile.id)
+
+
+async def test_start_training_allows_mixed_quality(
+    db_session: AsyncSession, tmp_path: Path,
+):
+    """P1-12: Some passing quality samples are enough to proceed."""
+    import json as _json
+    profile = await _make_profile(db_session, provider="elevenlabs")
+    s1 = await _add_sample(db_session, profile.id, tmp_path, duration_seconds=6.0)
+    s2 = await _add_sample(db_session, profile.id, tmp_path, duration_seconds=6.0)
+    s1.analysis_json = _json.dumps({"passed": False})
+    s2.analysis_json = _json.dumps({"passed": True})
+    await db_session.flush()
+
+    fake_celery_task = MagicMock()
+    fake_celery_task.id = "celery-task-mixed"
+
+    with patch(
+        "app.services.training_service.provider_registry.get_provider",
+        return_value=_mock_training_provider(),
+    ), patch(
+        "app.tasks.training.train_model.delay",
+        return_value=fake_celery_task,
+    ):
+        job = await start_training(db_session, profile_id=profile.id)
+    assert job.status == "queued"
 
 
 async def test_start_training_provider_no_training(db_session: AsyncSession):

@@ -147,8 +147,21 @@ class AzureTokenManager:
             now = time.time()
             if self._token is None or now >= (self._expires_on - self._refresh_margin):
                 credential = self._get_credential()
+                # Hard timeout — credential.get_token() does blocking network I/O
+                # with no user-visible timeout; never let it stall the event loop.
+                import concurrent.futures
+                TOKEN_FETCH_TIMEOUT_SECONDS = 30
                 try:
-                    result = credential.get_token(_COGNITIVE_SERVICES_SCOPE)
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        future = pool.submit(credential.get_token, _COGNITIVE_SERVICES_SCOPE)
+                        try:
+                            result = future.result(timeout=TOKEN_FETCH_TIMEOUT_SECONDS)
+                        except concurrent.futures.TimeoutError as exc:
+                            raise RuntimeError(
+                                f"Azure token fetch timed out after "
+                                f"{TOKEN_FETCH_TIMEOUT_SECONDS}s. Check network "
+                                f"reachability to login.microsoftonline.com."
+                            ) from exc
                 except Exception as exc:
                     error_msg = str(exc)
                     # Provide actionable error messages for auth failures

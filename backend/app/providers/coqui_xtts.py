@@ -134,6 +134,16 @@ class CoquiXTTSProvider(TTSProvider):
 
         Requires minimum 6 seconds of reference audio.
         """
+        # Library must be present; otherwise the capability flag should be
+        # False and the caller shouldn't have routed here.
+        try:
+            from TTS.api import TTS  # noqa: F401
+        except ImportError as exc:
+            raise NotImplementedError(
+                "Coqui TTS is not installed in this environment. "
+                "Install it with `pip install TTS` or use the GPU worker image."
+            ) from exc
+
         if not samples:
             raise ValueError("At least one audio sample is required for voice cloning")
 
@@ -169,41 +179,16 @@ class CoquiXTTSProvider(TTSProvider):
     async def fine_tune(
         self, model_id: str, samples: list[ProviderAudioSample], config: FineTuneConfig
     ) -> VoiceModel:
-        """Fine-tune XTTS v2 on the provided audio samples."""
-        if not samples:
-            raise ValueError("Audio samples required for fine-tuning")
+        """XTTS v2 fine-tuning is not implemented in-process.
 
-        self._get_tts()  # Ensure model is loaded
-
-        model_dir = Path(settings.storage_path) / "models" / "coqui_xtts" / f"ft_{uuid.uuid4().hex[:8]}"
-        model_dir.mkdir(parents=True, exist_ok=True)
-
-        # Prepare training data paths
-        wav_files = [str(s.file_path) for s in samples]
-
-        logger.info(
-            "xtts_fine_tune_started",
-            samples=len(wav_files),
-            epochs=config.epochs,
-            lr=config.learning_rate,
-        )
-
-        # NOTE: Full XTTS fine-tuning requires the TTS training API.
-        # This is a simplified implementation — production would use
-        # TTS.api.TTS.train() or the Coqui training scripts.
-        # For now, we treat it like cloning with metadata about the config.
-
-        ft_model_id = uuid.uuid4().hex[:12]
-        return VoiceModel(
-            model_id=ft_model_id,
-            model_path=model_dir,
-            provider_model_id=str(model_dir),
-            metrics={
-                "method": "fine_tune",
-                "epochs": config.epochs,
-                "learning_rate": config.learning_rate,
-                "samples_count": len(wav_files),
-            },
+        Full fine-tuning requires the upstream Coqui training scripts and a GPU
+        trainer. Use ``clone_voice`` for zero-shot voice reference, or run the
+        Coqui trainer externally and register the resulting checkpoint.
+        """
+        raise NotImplementedError(
+            "Coqui XTTS v2 fine-tuning is not supported via this provider. "
+            "Use clone_voice() for zero-shot voice reference, or train the model "
+            "externally with the Coqui training scripts and register the weights."
         )
 
     async def list_voices(self) -> list[VoiceInfo]:

@@ -35,6 +35,9 @@ def _ensure_wav(file_path: Path) -> Path:
     wav_path = file_path.with_suffix(".wav")
     if wav_path.exists():
         return wav_path
+    # Hard timeout so a stuck ffmpeg never blocks a Celery worker indefinitely.
+    # 120s is plenty for a single training sample (max ~2 min of audio).
+    FFMPEG_TIMEOUT_SECONDS = 120
     try:
         subprocess.run(
             [
@@ -44,11 +47,25 @@ def _ensure_wav(file_path: Path) -> Path:
             ],
             capture_output=True,
             check=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
         )
         logger.info("converted_to_wav", source=str(file_path), target=str(wav_path))
     except FileNotFoundError:
         logger.warning("ffmpeg_not_found", hint="Install ffmpeg for automatic audio conversion")
         return file_path  # Fall back to original if ffmpeg unavailable
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "ffmpeg_conversion_timed_out",
+            source=str(file_path),
+            timeout_seconds=FFMPEG_TIMEOUT_SECONDS,
+        )
+        # Clean up the (likely truncated) partial output so a future retry won't
+        # mistake it for a successful conversion.
+        try:
+            wav_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return file_path
     except subprocess.CalledProcessError as exc:
         logger.warning("ffmpeg_conversion_failed", source=str(file_path), error=exc.stderr.decode(errors="replace"))
         return file_path  # Fall back to original

@@ -101,6 +101,15 @@ def decode_access_token(token: str) -> dict | None:
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
             issuer="atlas-vox",
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "verify_iss": True,
+                # Require these claims — a token missing ``exp`` would otherwise
+                # be treated as non-expiring by PyJWT's default behaviour.
+                "require": ["exp", "iat", "iss"],
+            },
         )
         token_type = claims.get("type", "access")  # pre-typed tokens default to access
         if token_type != "access":
@@ -160,6 +169,13 @@ def decode_refresh_token(token: str) -> dict | None:
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
             issuer="atlas-vox",
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "verify_iss": True,
+                "require": ["exp", "iat", "iss", "jti"],
+            },
         )
         if claims.get("type") != "refresh":
             logger.warning("refresh_token_decode_failed", reason="wrong_type", type=claims.get("type"))
