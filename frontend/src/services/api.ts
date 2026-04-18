@@ -413,6 +413,38 @@ class ApiClient {
     return this.request<{ ready: boolean; score: number; sample_count: number; total_duration: number; issues: { code: string; severity: string; message: string }[]; recommendations: string[] }>(`/profiles/${profileId}/samples/readiness`);
   }
 
+  /**
+   * VQ-36 — per-profile quality dashboard. One aggregated payload with
+   * WER time-series, per-version metrics, rating distribution, and
+   * sample health so the page renders instantly.
+   */
+  getQualityDashboard(profileId: string, werLimit: number = 50) {
+    return this.request<QualityDashboardResponse>(
+      `/profiles/${profileId}/quality-dashboard?wer_limit=${werLimit}`,
+    );
+  }
+
+  /**
+   * SL-29 — active-learning sample recommender. Returns up to `count`
+   * sentences selected by greedy set-cover over a curated bank to
+   * maximally fill this profile's remaining phoneme gaps.
+   */
+  getRecommendedSamples(profileId: string, count: number = 10) {
+    return this.request<{
+      profile_id: string;
+      method: "phonemizer" | "bigram_approx";
+      gap_count_before: number;
+      gap_count_after: number;
+      already_recorded_skipped: number;
+      recommendations: {
+        text: string;
+        fills_gaps: string[];
+        gap_fill_count: number;
+        priority: number;
+      }[];
+    }>(`/profiles/${profileId}/recommended-samples?count=${count}`);
+  }
+
   // Audio Tools
   enhanceSample(profileId: string, sampleId: string) {
     return this.request<{ output_filename: string; audio_url: string }>("/audio-tools/isolate", {

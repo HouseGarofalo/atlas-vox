@@ -241,6 +241,70 @@ async def get_phoneme_coverage(
     return report.to_dict()
 
 
+# --- Per-profile quality dashboard (VQ-36) ---
+
+
+@router.get("/{profile_id}/quality-dashboard")
+async def get_quality_dashboard(
+    profile_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    wer_limit: int = Query(default=50, ge=1, le=500),
+) -> dict:
+    """Aggregate every available quality signal for a profile in one payload.
+
+    Combines:
+      - WER time-series from Whisper-check (SL-28)
+      - Per-version metrics (SL-27 regression detector)
+      - Rating distribution (SL-25 thumbs up/down)
+      - Training-sample health breakdown (audio_quality validator)
+
+    Returns a scalar overall_score plus time-series data for charts.
+    404 when the profile does not exist.
+    """
+    from app.services.quality_dashboard import build_quality_dashboard
+
+    try:
+        report = await build_quality_dashboard(
+            db, profile_id, wer_limit=wer_limit,
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        )
+    return report.to_dict()
+
+
+# --- Active-learning sample recommender (SL-29) ---
+
+
+@router.get("/{profile_id}/recommended-samples")
+async def get_recommended_samples(
+    profile_id: str,
+    db: DbSession,
+    user: CurrentUser,
+    count: int = Query(default=10, ge=1, le=30),
+    language: str = Query(default="en"),
+) -> dict:
+    """Recommend the next ``count`` sentences to record for max coverage.
+
+    Uses greedy set-cover over a curated sentence bank (CMU Arctic +
+    phoneme-targeted extras) to maximally fill the profile's remaining
+    phoneme gaps. Sentences the user has already recorded are skipped.
+    """
+    profile = await get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        )
+    from app.services.sample_recommender import recommend_next_samples
+
+    recommendation = await recommend_next_samples(
+        db, profile_id, count=count, language=language,
+    )
+    return recommendation.to_dict()
+
+
 # --- Training readiness (DT-33) ---
 
 

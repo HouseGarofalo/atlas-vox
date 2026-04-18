@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getErrorMessage } from "../utils/errors";
-import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause } from "lucide-react";
+import { Library, Mic, Plus, Trash2, Upload, Volume2, GitCompare, Sparkles, Play, Pause, Gauge } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -403,6 +403,9 @@ const ProfileCard = React.memo(function ProfileCard({
 }) {
   const isReady = profile.status === "ready";
   const hasLibraryVoice = !!profile.voice_id;
+  // Card-local navigator — the outer page's `navigate` is out of scope inside
+  // this memoised child, so we pull our own via the hook.
+  const navigate = useNavigate();
 
   return (
     <Card className="flex flex-col gap-3">
@@ -446,6 +449,17 @@ const ProfileCard = React.memo(function ProfileCard({
             <GitCompare className="h-3 w-3" />
           </Button>
         )}
+        {/* VQ-36: jump to the per-profile quality dashboard. Enabled as soon
+            as there's any synthesis history or version metrics to show. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => navigate(`/profiles/${profile.id}/quality`)}
+          aria-label="View quality dashboard"
+          title="Quality dashboard"
+        >
+          <Gauge className="h-3 w-3" />
+        </Button>
         <Button size="sm" variant="ghost" onClick={onDelete}>
           <Trash2 className="h-3 w-3" />
         </Button>

@@ -27,6 +27,7 @@ const AudioDesignPage = lazy(() => import("./pages/AudioDesignPage"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 const CloneWizardPage = lazy(() => import("./pages/CloneWizardPage"));
 const PronunciationPage = lazy(() => import("./pages/PronunciationPage"));
+const QualityDashboardPage = lazy(() => import("./pages/QualityDashboardPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 
@@ -108,6 +109,7 @@ function App() {
             <Route path="history" element={<Page component={HistoryPage} context="history page" />} />
             <Route path="clone" element={<Page component={CloneWizardPage} context="clone wizard" />} />
             <Route path="pronunciation" element={<Page component={PronunciationPage} context="pronunciation editor" />} />
+            <Route path="profiles/:id/quality" element={<Page component={QualityDashboardPage} context="quality dashboard" />} />
             <Route path="*" element={<Page component={NotFoundPage} context="404 page" />} />
           </Route>
         </Route>

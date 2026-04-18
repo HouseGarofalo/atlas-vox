@@ -231,6 +231,56 @@ export interface HealingIncident {
 
 // --- Model Version (previously local to ProfilesPage) ---
 
+// --- VQ-36 quality dashboard payload ---
+
+export interface QualityWerPoint {
+  history_id: string;
+  created_at: string;
+  quality_wer: number;
+}
+
+export interface QualityVersionMetric {
+  version_id: string;
+  version_number: number;
+  created_at: string;
+  quality_wer: number | null;
+  mos: number | null;
+  speaker_similarity: number | null;
+  is_regression: boolean | null;
+  method: string | null;
+  is_active: boolean;
+}
+
+export interface QualityRatingDistribution {
+  up: number;
+  down: number;
+  total: number;
+  up_pct: number;
+}
+
+export interface QualitySampleHealth {
+  total: number;
+  passed: number;
+  failed: number;
+  unknown: number;
+  pass_rate_pct: number;
+}
+
+export interface QualityDashboardResponse {
+  profile_id: string;
+  profile_name: string;
+  generated_at: string;
+  overall_score: number;
+  recent_wer: number | null;
+  active_version_id: string | null;
+  wer_series: QualityWerPoint[];
+  version_metrics: QualityVersionMetric[];
+  rating_distribution: QualityRatingDistribution;
+  sample_health: QualitySampleHealth;
+  synthesis_count: number;
+  warnings: string[];
+}
+
 export interface ModelVersion {
   id: string;
   profile_id: string;

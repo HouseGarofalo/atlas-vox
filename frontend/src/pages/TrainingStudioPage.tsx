@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Music, Cpu, History, AlertTriangle, Play, Pause, Search, CheckCircle, Wand2 } from "lucide-react";
+import { Music, Cpu, History, AlertTriangle, Play, Pause, Search, CheckCircle, Wand2, Sparkles, ClipboardCopy } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
@@ -33,6 +33,12 @@ export default function TrainingStudioPage() {
   const [loadingReadiness, setLoadingReadiness] = useState(false);
   const [enhancing, setEnhancing] = useState<string | null>(null);
   const [enhancingAll, setEnhancingAll] = useState(false);
+  // SL-29 active-learning recommender
+  const [recommendations, setRecommendations] = useState<{
+    text: string; fills_gaps: string[]; gap_fill_count: number; priority: number;
+  }[]>([]);
+  const [recommendationMethod, setRecommendationMethod] = useState<"phonemizer" | "bigram_approx" | null>(null);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const { progress, connectionStatus, connectionBanner } = useTrainingProgress(activeJobId);
 
   useEffect(() => {
@@ -43,6 +49,10 @@ export default function TrainingStudioPage() {
     if (selectedProfile) {
       logger.info("profile_selected", { profile_id: selectedProfile });
       loadSamples();
+      loadRecommendations();
+    } else {
+      setRecommendations([]);
+      setRecommendationMethod(null);
     }
   }, [selectedProfile]);
 
@@ -61,6 +71,34 @@ export default function TrainingStudioPage() {
 
   const loadSamples = async () => {
     try { const { samples: s } = await api.listSamples(selectedProfile); setSamples(s); } catch { setSamples([]); }
+  };
+
+  /**
+   * Fetch active-learning recommendations (SL-29). Refreshed when the
+   * profile changes AND when new samples are uploaded (the recommender
+   * excludes already-recorded sentences).
+   */
+  const loadRecommendations = useCallback(async () => {
+    if (!selectedProfile) return;
+    setLoadingRecommendations(true);
+    try {
+      const res = await api.getRecommendedSamples(selectedProfile, 10);
+      setRecommendations(res.recommendations);
+      setRecommendationMethod(res.method);
+    } catch (err) {
+      logger.warn("recommendations_failed", { error: String(err) });
+      setRecommendations([]);
+      setRecommendationMethod(null);
+    } finally {
+      setLoadingRecommendations(false);
+    }
+  }, [selectedProfile]);
+
+  const handleCopySentence = (text: string) => {
+    navigator.clipboard?.writeText(text).then(
+      () => toast.success("Copied to clipboard"),
+      () => toast.error("Clipboard unavailable"),
+    );
   };
 
   const loadReadiness = useCallback(async () => {
@@ -153,6 +191,9 @@ export default function TrainingStudioPage() {
       toast.success(`${files.length} file(s) uploaded and analyzed`);
       logger.info("file_upload_complete", { count: files.length });
       await loadSamples();
+      // Refresh recommendations — newly-recorded sentences now get excluded
+      // and remaining gaps may have shrunk, so the next-N suggestions change.
+      void loadRecommendations();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Upload failed";
       logger.error("file_upload_error", { error: message });
@@ -356,6 +397,85 @@ export default function TrainingStudioPage() {
               </div>
             </div>
           )}
+
+          <CollapsiblePanel
+            title="Record These Next"
+            icon={<Sparkles className="h-4 w-4 text-electric-500" />}
+            defaultOpen={samples.length === 0}
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                <span>
+                  Phoneme-balanced sentences ranked by how many gaps each fills.
+                  Record them in order for the best-quality voice clone.
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={loadRecommendations}
+                  loading={loadingRecommendations}
+                >
+                  Refresh
+                </Button>
+              </div>
+              {recommendationMethod === "bigram_approx" && (
+                <div className="rounded border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] p-2 text-xs text-[var(--color-warning)]">
+                  <AlertTriangle className="inline h-3 w-3 mr-1" />
+                  Using character-bigram fallback — install espeak + phonemizer
+                  for full phoneme-accurate recommendations.
+                </div>
+              )}
+              {loadingRecommendations ? (
+                <p className="text-sm text-[var(--color-text-secondary)]">Loading recommendations…</p>
+              ) : recommendations.length === 0 ? (
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  No recommendations available. Select a profile or try refreshing.
+                </p>
+              ) : (
+                <ol
+                  data-testid="sample-recommendations"
+                  className="space-y-2"
+                >
+                  {recommendations.map((r) => (
+                    <li
+                      key={`${r.priority}-${r.text}`}
+                      className="flex items-start gap-3 rounded border border-[var(--color-border)] p-2"
+                    >
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-electric-500/10 text-xs font-medium text-electric-500">
+                        {r.priority}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[var(--color-text)]">{r.text}</p>
+                        {r.gap_fill_count > 0 ? (
+                          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                            Fills {r.gap_fill_count} phoneme gap{r.gap_fill_count !== 1 ? "s" : ""}
+                            {r.fills_gaps.length > 0 && r.fills_gaps.length <= 8 ? (
+                              <span className="ml-1 font-mono">
+                                ({r.fills_gaps.join(", ")})
+                              </span>
+                            ) : null}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-[var(--color-text-tertiary)] italic">
+                            Variety pick (no new gaps to fill)
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopySentence(r.text)}
+                        aria-label={`Copy sentence ${r.priority}`}
+                        title="Copy to clipboard"
+                      >
+                        <ClipboardCopy className="h-3 w-3" />
+                      </Button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </CollapsiblePanel>
 
           {samples.length > 0 && (
             <CollapsiblePanel
