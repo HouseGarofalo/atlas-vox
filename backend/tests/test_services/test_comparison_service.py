@@ -115,6 +115,98 @@ async def test_compare_success(db_session: AsyncSession):
         assert "error" not in r
 
 
+async def test_compare_three_profiles_runs_concurrently_and_returns_all(
+    db_session: AsyncSession,
+):
+    """P2-24: comparison with 3+ profiles must dispatch concurrently and
+    return one entry per profile_id even under interleaved completion.
+
+    The test asserts:
+      1. exactly 3 result rows (one per profile_id)
+      2. each profile_id appears exactly once
+      3. results preserve a consistent shape
+      4. synthesize() was invoked once per profile
+    """
+    pids = [
+        await _make_profile(db_session, f"Concurrent Profile {i}") for i in range(3)
+    ]
+
+    call_log: list[str] = []
+
+    async def _staggered_synthesize(db, *, text, profile_id, **kwargs):
+        # Simulate different latencies so completion order ≠ call order.
+        import asyncio
+        delay = 0.02 * (pids.index(profile_id) + 1)
+        await asyncio.sleep(delay)
+        call_log.append(profile_id)
+        return {
+            "id": f"h-{profile_id}",
+            "audio_url": f"/api/v1/audio/{profile_id}.wav",
+            "duration_seconds": 1.0,
+            "latency_ms": int(delay * 1000),
+            "profile_id": profile_id,
+            "provider_name": "kokoro",
+        }
+
+    with patch("app.services.comparison_service.synthesize", side_effect=_staggered_synthesize):
+        results = await compare_voices(
+            db_session,
+            text="Race three voices",
+            profile_ids=pids,
+        )
+
+    # 1. all three ran
+    assert len(results) == 3
+    # 2. one entry per profile id
+    returned = sorted(r["profile_id"] for r in results)
+    assert returned == sorted(pids)
+    # 3. clean shape — no errors
+    for r in results:
+        assert "error" not in r
+        assert r["audio_url"].endswith(".wav")
+        assert r["duration_seconds"] == 1.0
+    # 4. synthesize called exactly once per profile
+    assert sorted(call_log) == sorted(pids)
+
+
+async def test_compare_five_profiles_mixed_success_and_failure(
+    db_session: AsyncSession,
+):
+    """P2-24: 5-way comparison where two profiles fail must still return
+    exactly 5 entries, with the 2 failures tagged and 3 successes intact.
+    """
+    pids = [
+        await _make_profile(db_session, f"Profile 5-{i}") for i in range(5)
+    ]
+    failing = {pids[1], pids[3]}
+
+    async def _mixed(db, *, text, profile_id, **kwargs):
+        if profile_id in failing:
+            raise RuntimeError(f"boom: {profile_id}")
+        return {
+            "id": f"h-{profile_id}",
+            "audio_url": f"/api/v1/audio/{profile_id}.wav",
+            "duration_seconds": 2.0,
+            "latency_ms": 25,
+            "profile_id": profile_id,
+            "provider_name": "kokoro",
+        }
+
+    with patch("app.services.comparison_service.synthesize", side_effect=_mixed):
+        results = await compare_voices(
+            db_session,
+            text="Hello",
+            profile_ids=pids,
+        )
+
+    assert len(results) == 5
+    errors = [r for r in results if "error" in r]
+    successes = [r for r in results if "error" not in r]
+    assert len(errors) == 2
+    assert len(successes) == 3
+    assert {r["profile_id"] for r in errors} == failing
+
+
 async def test_compare_returns_error_entry_on_synthesis_failure(db_session: AsyncSession):
     """When one synthesis fails the service logs the error and includes an error entry."""
     pid_a = await _make_profile(db_session, "Good Voice")
